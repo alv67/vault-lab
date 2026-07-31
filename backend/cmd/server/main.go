@@ -23,6 +23,7 @@ import (
 	"github.com/amelamela/vault-lab/internal/auth"
 	"github.com/amelamela/vault-lab/internal/config"
 	"github.com/amelamela/vault-lab/internal/handler"
+	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
 	"github.com/amelamela/vault-lab/internal/service"
 )
@@ -60,7 +61,8 @@ func main() {
 	jwtAuth := auth.NewJWTAuth(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
 	repos := repository.New(dbPool)
-	svc := service.New(repos, jwtAuth)
+	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval)
+	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL)
 
 	h := handler.New(svc, jwtAuth)
 
@@ -139,8 +141,10 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/assets", h.ListAssets)
 			r.Get("/assets/search", h.SearchAssets)
 			r.Get("/assets/lookup", h.LookupAsset)
+			r.Get("/assets/meta", h.GetAssetMeta)
 			r.Get("/assets/{id}", h.GetAsset)
 			r.Post("/assets", h.CreateAsset)
+			r.Delete("/assets/{id}", h.DeleteAsset)
 
 			r.Get("/portfolios", h.ListPortfolios)
 			r.Post("/portfolios", h.CreatePortfolio)
@@ -150,11 +154,15 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 
 			r.Get("/portfolios/{id}/transactions", h.ListTransactions)
 			r.Post("/portfolios/{id}/transactions", h.CreateTransaction)
+			r.Patch("/transactions/{id}", h.UpdateTransaction)
+			r.Delete("/transactions/{id}", h.DeleteTransaction)
 
 			r.Get("/portfolios/{id}/summary", h.GetPortfolioSummary)
 			r.Get("/portfolios/{id}/performance", h.GetPortfolioPerformance)
 			r.Get("/portfolios/{id}/allocation", h.GetPortfolioAllocation)
 			r.Get("/portfolios/{id}/roi", h.GetPortfolioROI)
+
+			r.Get("/dashboard", h.GetDashboard)
 
 			r.Get("/prices/{assetID}", h.GetPrices)
 			r.Post("/prices/refresh", h.RefreshPrices)

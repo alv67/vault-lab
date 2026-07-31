@@ -171,6 +171,45 @@ func (h *Handler) ListAssets(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, assets)
 }
 
+func (h *Handler) GetAssetMeta(w http.ResponseWriter, r *http.Request) {
+	ticker := r.URL.Query().Get("ticker")
+	if ticker == "" {
+		respondError(w, http.StatusBadRequest, "ticker parameter required")
+		return
+	}
+
+	meta, err := h.svc.GetAssetMeta(r.Context(), ticker)
+	if err != nil {
+		log.Error().Err(err).Str("ticker", ticker).Msg("asset meta failed")
+		respondError(w, http.StatusInternalServerError, "meta lookup failed")
+		return
+	}
+
+	respond(w, http.StatusOK, meta)
+}
+
+func (h *Handler) DeleteAsset(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	err = h.svc.DeleteAsset(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetInUse {
+			respondError(w, http.StatusConflict, "asset is used in transactions and cannot be deleted")
+			return
+		}
+		log.Error().Err(err).Msg("delete asset failed")
+		respondError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+
+	respond(w, http.StatusNoContent, nil)
+}
+
 func (h *Handler) GetAsset(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	uid, err := parseUUID(id)

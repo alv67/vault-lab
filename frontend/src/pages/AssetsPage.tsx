@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { assetApi, type AssetLookupResult } from '@/services/api'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import toast from 'react-hot-toast'
-import { Plus, Loader2, Search } from 'lucide-react'
+import { Plus, Loader2, Search, Trash2 } from 'lucide-react'
 
 export default function AssetsPage() {
   const [showCreate, setShowCreate] = useState(false)
@@ -18,11 +19,12 @@ export default function AssetsPage() {
   const [selectedTicker, setSelectedTicker] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
+  const debouncedLookup = useDebouncedValue(lookupQuery, 350)
 
   const { data: lookupResults, isFetching: lookupLoading } = useQuery({
-    queryKey: ['asset-lookup', lookupQuery],
-    queryFn: () => assetApi.lookup(lookupQuery),
-    enabled: lookupQuery.length >= 1 && !selectedTicker,
+    queryKey: ['asset-lookup', debouncedLookup],
+    queryFn: () => assetApi.lookup(debouncedLookup),
+    enabled: debouncedLookup.length >= 2 && !selectedTicker,
   })
 
   useEffect(() => {
@@ -37,10 +39,10 @@ export default function AssetsPage() {
     setForm({ ...form, ticker: value.toUpperCase() })
     setSelectedTicker(false)
     setLookupQuery(value)
-    setShowSuggestions(value.length >= 1)
+    setShowSuggestions(value.length >= 2)
   }
 
-  const selectSuggestion = (result: AssetLookupResult) => {
+  const selectSuggestion = async (result: AssetLookupResult) => {
     setForm({
       ticker: result.ticker,
       name: result.name || '',
@@ -51,6 +53,19 @@ export default function AssetsPage() {
     setSelectedTicker(true)
     setShowSuggestions(false)
     setLookupQuery(result.ticker)
+
+    try {
+      const { data: meta } = await assetApi.meta(result.ticker)
+      setForm((prev) => ({
+        ...prev,
+        name: meta.name || prev.name,
+        type: meta.type || prev.type,
+        currency: meta.currency || prev.currency,
+        country: meta.country || prev.country,
+      }))
+    } catch {
+      // keep lookup defaults; currency/type remain editable
+    }
   }
 
   const { data, isLoading } = useQuery({
@@ -65,6 +80,17 @@ export default function AssetsPage() {
       setShowCreate(false)
       setForm({ ticker: '', name: '', type: 'stock', currency: 'USD', country: '' })
       toast.success('Asset created')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => assetApi.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assets'] })
+      toast.success('Asset deleted')
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || 'Delete failed')
     },
   })
 
@@ -92,7 +118,7 @@ export default function AssetsPage() {
                 placeholder="Ticker (e.g. AAPL)"
                 value={form.ticker}
                 onChange={(e) => handleTickerChange(e.target.value)}
-                onFocus={() => form.ticker.length >= 1 && setShowSuggestions(true)}
+                onFocus={() => form.ticker.length >= 2 && setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 className="w-full rounded-lg border px-3 py-2 pr-8 text-sm"
               />
@@ -142,16 +168,10 @@ export default function AssetsPage() {
               <option value="stock">Stock</option>
               <option value="etf">ETF</option>
               <option value="bond">Bond</option>
+              <option value="mutual_fund">Mutual fund</option>
               <option value="crypto">Crypto</option>
               <option value="commodity">Commodity</option>
             </select>
-            <input
-              type="text"
-              placeholder="Country"
-              value={form.country}
-              onChange={(e) => setForm({ ...form, country: e.target.value })}
-              className="rounded-lg border px-3 py-2 text-sm"
-            />
             <select
               value={form.currency}
               onChange={(e) => setForm({ ...form, currency: e.target.value })}
@@ -184,6 +204,7 @@ export default function AssetsPage() {
               <th className="pb-2">Type</th>
               <th className="pb-2">Currency</th>
               <th className="pb-2">Country</th>
+              <th className="pb-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -198,6 +219,19 @@ export default function AssetsPage() {
                 </td>
                 <td className="py-2">{a.currency}</td>
                 <td className="py-2">{a.country || '-'}</td>
+                <td className="py-2 text-right">
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Delete ${a.ticker}?`)) {
+                        deleteMutation.mutate(a.id)
+                      }
+                    }}
+                    className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                    title="Delete asset"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

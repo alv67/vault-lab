@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 
@@ -16,139 +18,336 @@ import (
 )
 
 type YahooFetcher struct {
-	repos  *repository.Repository
-	client *http.Client
+	repos           *repository.Repository
+	client          *http.Client
+	refreshInterval time.Duration
+	mu              sync.Mutex
 }
 
-func NewYahooFetcher(repos *repository.Repository) *YahooFetcher {
+func NewYahooFetcher(repos *repository.Repository, refreshInterval time.Duration) *YahooFetcher {
 	return &YahooFetcher{
-		repos: repos,
+		repos:           repos,
+		refreshInterval: refreshInterval,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
 	}
 }
 
-type yahooQuoteResult struct {
-	RegularMarketPrice float64 `json:"regularMarketPrice"`
-	RegularMarketDayHigh float64 `json:"regularMarketDayHigh"`
-	RegularMarketDayLow float64 `json:"regularMarketDayLow"`
-	RegularMarketOpen float64 `json:"regularMarketOpen"`
-	RegularMarketVolume int64 `json:"regularMarketVolume"`
-	RegularMarketPreviousClose float64 `json:"regularMarketPreviousClose"`
+type yahooChartQuote struct {
+	Open   []*float64 `json:"open"`
+	High   []*float64 `json:"high"`
+	Low    []*float64 `json:"low"`
+	Close  []*float64 `json:"close"`
+	Volume []*int64   `json:"volume"`
 }
 
-type yahooResponse struct {
-	QuoteResponse struct {
-		Result []struct {
-			Symbol string `json:"symbol"`
-			RegularMarketPrice float64 `json:"regularMarketPrice"`
-			RegularMarketDayHigh float64 `json:"regularMarketDayHigh"`
-			RegularMarketDayLow float64 `json:"regularMarketDayLow"`
-			RegularMarketOpen float64 `json:"regularMarketOpen"`
-			RegularMarketVolume int64 `json:"regularMarketVolume"`
-			RegularMarketPreviousClose float64 `json:"regularMarketPreviousClose"`
-		} `json:"result"`
-		Error interface{} `json:"error"`
-	} `json:"quoteResponse"`
+type yahooChartResult struct {
+	Meta struct {
+		Symbol           string `json:"symbol"`
+		Currency         string `json:"currency"`
+		ExchangeName     string `json:"exchangeName"`
+		FullExchangeName string `json:"fullExchangeName"`
+		InstrumentType   string `json:"instrumentType"`
+		LongName         string `json:"longName"`
+		ShortName        string `json:"shortName"`
+	} `json:"meta"`
+	Timestamp  []int64 `json:"timestamp"`
+	Indicators struct {
+		Quote []yahooChartQuote `json:"quote"`
+	} `json:"indicators"`
 }
 
+type yahooChartResponse struct {
+	Chart struct {
+		Result []yahooChartResult `json:"result"`
+		Error  interface{}        `json:"error"`
+	} `json:"chart"`
+}
+
+// FetchAll refreshes prices for every asset in the DB that is stale and keeps
+// the USD->X FX rates fresh. Used by the worker.
 func (f *YahooFetcher) FetchAll(ctx context.Context) error {
 	assets, err := f.repos.Asset.List(ctx)
 	if err != nil {
 		return fmt.Errorf("list assets: %w", err)
 	}
 
-	if len(assets) == 0 {
-		log.Info().Msg("no assets to fetch prices for")
-		return nil
-	}
-
-	// Process in batches of 10
-	batchSize := 10
-	for i := 0; i < len(assets); i += batchSize {
-		end := i + batchSize
-		if end > len(assets) {
-			end = len(assets)
-		}
-		batch := assets[i:end]
-
-		if err := f.fetchBatch(ctx, batch); err != nil {
-			log.Warn().Err(err).Int("batch", i/batchSize).Msg("batch fetch failed")
-		}
-
-		// Rate limiting
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return nil
-}
-
-func (f *YahooFetcher) fetchBatch(ctx context.Context, assets []*model.Asset) error {
-	symbols := ""
-	for i, a := range assets {
-		if i > 0 {
-			symbols += ","
-		}
-		symbols += a.Ticker
-	}
-
-	url := fmt.Sprintf("https://query1.finance.yahoo.com/v7/finance/quote?symbols=%s", symbols)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	refreshed, err := f.RefreshStale(ctx, assets)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0")
+	if len(refreshed) > 0 {
+		log.Info().Strs("symbols", refreshed).Msg("prices refreshed")
+	} else {
+		log.Info().Msg("no stale prices to refresh")
+	}
 
-	resp, err := f.client.Do(req)
+	if err := f.RefreshFX(ctx); err != nil {
+		log.Warn().Err(err).Msg("fx refresh failed")
+	}
+	return nil
+}
+
+// RefreshFX keeps USD->X rates for every currency used by assets up to date,
+// using the same staleness/throttle logic as asset prices.
+func (f *YahooFetcher) RefreshFX(ctx context.Context) error {
+	currencies, err := f.repos.Asset.Currencies(ctx)
 	if err != nil {
-		return fmt.Errorf("yahoo request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
+		return fmt.Errorf("list currencies: %w", err)
 	}
 
-	var result yahooResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return fmt.Errorf("unmarshal: %w (body: %s)", err, string(body))
-	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	if result.QuoteResponse.Error != nil {
-		return fmt.Errorf("yahoo error: %v", result.QuoteResponse.Error)
-	}
-
-	for _, q := range result.QuoteResponse.Result {
-		price := &model.Price{
-			Date:   time.Now().Truncate(24 * time.Hour),
-			Open:   decimal.NewFromFloat(q.RegularMarketOpen),
-			High:   decimal.NewFromFloat(q.RegularMarketDayHigh),
-			Low:    decimal.NewFromFloat(q.RegularMarketDayLow),
-			Close:  decimal.NewFromFloat(q.RegularMarketPrice),
-			Volume: q.RegularMarketVolume,
-			Source: "yahoo",
+	now := time.Now().UTC()
+	for _, quote := range currencies {
+		if quote == "USD" || quote == "" {
+			continue
 		}
-
-		// Find matching asset
-		for _, a := range assets {
-			if a.Ticker == q.Symbol {
-				price.AssetID = a.ID
-				break
-			}
-		}
-
-		if price.AssetID == [16]byte{} {
-			log.Warn().Str("symbol", q.Symbol).Msg("no matching asset found, skipping")
+		fetchedAt, err := f.repos.FX.FetchedAt(ctx, quote)
+		if err == nil && fetchedAt.Add(f.refreshInterval).After(now) {
 			continue
 		}
 
-		if _, err := f.repos.Price.Create(ctx, price); err != nil {
-			log.Warn().Err(err).Str("symbol", q.Symbol).Msg("failed to save price")
+		rate, err := f.fetchFX(ctx, quote)
+		if err != nil {
+			log.Warn().Err(err).Str("currency", quote).Msg("fx fetch failed")
+			continue
+		}
+		if err := f.repos.FX.Upsert(ctx, "USD", quote, rate); err != nil {
+			log.Warn().Err(err).Str("currency", quote).Msg("fx save failed")
+			continue
+		}
+		log.Info().Str("currency", quote).Str("rate", rate.String()).Msg("fx rate updated")
+	}
+	return nil
+}
+
+func (f *YahooFetcher) fetchFX(ctx context.Context, quote string) (decimal.Decimal, error) {
+	chart, err := f.fetchChart(ctx, "USD"+quote+"=X")
+	if err != nil {
+		return decimal.Zero, err
+	}
+	if len(chart.Indicators.Quote) == 0 {
+		return decimal.Zero, fmt.Errorf("no quote indicators")
+	}
+	quoteData := chart.Indicators.Quote[0]
+
+	idx := -1
+	for i := len(chart.Timestamp) - 1; i >= 0; i-- {
+		if i < len(quoteData.Close) && quoteData.Close[i] != nil {
+			idx = i
+			break
 		}
 	}
+	if idx == -1 {
+		return decimal.Zero, fmt.Errorf("no fx rate available")
+	}
+	return decimal.NewFromFloat(*quoteData.Close[idx]), nil
+}
 
+// fetchChart performs one Yahoo chart request and returns the parsed result.
+func (f *YahooFetcher) fetchChart(ctx context.Context, ticker string) (*yahooChartResult, error) {
+	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=5d", ticker)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("yahoo request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("yahoo returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var result yahooChartResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w (body: %s)", err, string(body))
+	}
+	if result.Chart.Error != nil {
+		return nil, fmt.Errorf("yahoo error: %v", result.Chart.Error)
+	}
+	if len(result.Chart.Result) == 0 {
+		return nil, fmt.Errorf("no chart data")
+	}
+
+	chart := &result.Chart.Result[0]
+	return chart, nil
+}
+
+// RefreshStaleForPortfolio refreshes prices for assets currently held in a
+// portfolio. Used by POST /prices/refresh on page open.
+func (f *YahooFetcher) RefreshStaleForPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]string, error) {
+	assets, err := f.repos.Portfolio.HeldAssets(ctx, portfolioID)
+	if err != nil {
+		return nil, fmt.Errorf("list held assets: %w", err)
+	}
+	return f.RefreshStale(ctx, assets)
+}
+
+// RefreshStale fetches quotes from Yahoo only for assets whose stored close is
+// stale (old close date) and that haven't been fetched recently. This keeps the
+// number of calls to Yahoo Finance as low as possible.
+func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if len(assets) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]uuid.UUID, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID)
+	}
+
+	latest, err := f.repos.Price.FindLatestForAssets(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("find latest prices: %w", err)
+	}
+
+	now := time.Now().UTC()
+	expected := latestExpectedClose(now)
+	var stale []*model.Asset
+	for _, a := range assets {
+		lp, ok := latest[a.ID]
+		if !ok {
+			// No price stored yet: fetch.
+			stale = append(stale, a)
+			continue
+		}
+		if a.PriceFetchedAt != nil && a.PriceFetchedAt.Add(f.refreshInterval).After(now) {
+			// Fetched recently: skip to respect throttling.
+			continue
+		}
+		if !lp.Date.Before(expected) {
+			// Stored close is already fresh enough.
+			continue
+		}
+		stale = append(stale, a)
+	}
+
+	if len(stale) == 0 {
+		return nil, nil
+	}
+
+	log.Info().
+		Strs("symbols", tickers(stale)).
+		Str("expected_close", expected.Format("2006-01-02")).
+		Msg("refreshing stale prices")
+
+	refreshed := f.fetchQuotes(ctx, stale)
+	if len(refreshed) == 0 {
+		return nil, nil
+	}
+
+	if err := f.repos.Asset.MarkPricesFetched(ctx, assetIDs(stale), now); err != nil {
+		log.Warn().Err(err).Msg("failed to mark prices as fetched")
+	}
+	return refreshed, nil
+}
+
+// fetchQuotes fetches the latest OHLCV close for every asset, one Yahoo chart
+// request per symbol, and persists them. Returns the symbols that were updated.
+func (f *YahooFetcher) fetchQuotes(ctx context.Context, assets []*model.Asset) []string {
+	var refreshed []string
+	for i, a := range assets {
+		if err := f.fetchQuote(ctx, a); err != nil {
+			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("quote fetch failed")
+		} else {
+			refreshed = append(refreshed, a.Ticker)
+		}
+
+		if i < len(assets)-1 {
+			// Rate limiting between requests.
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	return refreshed
+}
+
+func (f *YahooFetcher) fetchQuote(ctx context.Context, asset *model.Asset) error {
+	chart, err := f.fetchChart(ctx, asset.Ticker)
+	if err != nil {
+		return err
+	}
+	if len(chart.Indicators.Quote) == 0 {
+		return fmt.Errorf("no quote indicators")
+	}
+	quote := chart.Indicators.Quote[0]
+
+	// Find the last complete daily bar (all values present).
+	idx := -1
+	for i := len(chart.Timestamp) - 1; i >= 0; i-- {
+		if i < len(quote.Open) && i < len(quote.High) && i < len(quote.Low) &&
+			i < len(quote.Close) && i < len(quote.Volume) &&
+			quote.Open[i] != nil && quote.High[i] != nil && quote.Low[i] != nil &&
+			quote.Close[i] != nil && quote.Volume[i] != nil {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return fmt.Errorf("no complete daily bar")
+	}
+
+	price := &model.Price{
+		AssetID: asset.ID,
+		Date:    priceDate(chart.Timestamp[idx]),
+		Open:    decimal.NewFromFloat(*quote.Open[idx]),
+		High:    decimal.NewFromFloat(*quote.High[idx]),
+		Low:     decimal.NewFromFloat(*quote.Low[idx]),
+		Close:   decimal.NewFromFloat(*quote.Close[idx]),
+		Volume:  *quote.Volume[idx],
+		Source:  "yahoo",
+	}
+
+	if _, err := f.repos.Price.Create(ctx, price); err != nil {
+		return fmt.Errorf("save price: %w", err)
+	}
 	return nil
+}
+
+// priceDate returns the UTC calendar day the quote refers to.
+func priceDate(marketTime int64) time.Time {
+	return time.Unix(marketTime, 0).UTC().Truncate(24 * time.Hour)
+}
+
+// latestExpectedClose returns the most recent weekday (Mon-Fri) at UTC midnight.
+// Used as the "latest close we should already have stored" reference point.
+func latestExpectedClose(now time.Time) time.Time {
+	d := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	for d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		d = d.AddDate(0, 0, -1)
+	}
+	return d
+}
+
+func assetIDs(assets []*model.Asset) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID)
+	}
+	return ids
+}
+
+func tickers(assets []*model.Asset) []string {
+	ts := make([]string, 0, len(assets))
+	for _, a := range assets {
+		ts = append(ts, a.Ticker)
+	}
+	return ts
 }

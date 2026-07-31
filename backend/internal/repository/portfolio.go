@@ -21,6 +21,9 @@ type PortfolioRepository interface {
 	GetAllocation(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetAllocation, error)
 	GetPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error)
 	GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetROI, error)
+	HeldAssets(ctx context.Context, portfolioID uuid.UUID) ([]*model.Asset, error)
+	HoldingsDetailed(ctx context.Context, portfolioIDs []uuid.UUID) ([]*model.Holding, error)
+	PerformanceSeries(ctx context.Context, portfolioID uuid.UUID, portfolioCurrency string) ([]*model.PortfolioPerformance, error)
 }
 
 type portfolioRepo struct {
@@ -316,13 +319,164 @@ func (r *portfolioRepo) GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*m
 	return rois, nil
 }
 
-type AssetROI struct {
-	AssetID       string          `json:"asset_id"`
-	Ticker        string          `json:"ticker"`
-	Name          string          `json:"name"`
-	ROI           decimal.Decimal `json:"roi"`
-	TotalInvested decimal.Decimal `json:"total_invested"`
-	CurrentValue  decimal.Decimal `json:"current_value"`
+func (r *portfolioRepo) HeldAssets(ctx context.Context, portfolioID uuid.UUID) ([]*model.Asset, error) {
+	rows, err := r.db.Query(ctx, `
+		WITH buy AS (
+			SELECT asset_id, SUM(quantity) AS qty
+			FROM transactions
+			WHERE portfolio_id = $1 AND type = 'buy'
+			GROUP BY asset_id
+		),
+		sell AS (
+			SELECT asset_id, SUM(quantity) AS qty
+			FROM transactions
+			WHERE portfolio_id = $1 AND type = 'sell'
+			GROUP BY asset_id
+		)
+		SELECT a.id, a.ticker, a.isin, a.name, a.type, a.category_id, a.country, a.currency, a.created_at, a.price_fetched_at
+		FROM buy b
+		LEFT JOIN sell s ON s.asset_id = b.asset_id
+		JOIN assets a ON a.id = b.asset_id
+		WHERE b.qty - COALESCE(s.qty, 0) > 0
+	`, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var assets []*model.Asset
+	for rows.Next() {
+		a := &model.Asset{}
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
+			return nil, err
+		}
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
+}
+
+func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uuid.UUID) ([]*model.Holding, error) {
+	if len(portfolioIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		WITH buy AS (
+			SELECT portfolio_id, asset_id,
+				SUM(quantity * price * exchange_rate + fees) AS cost,
+				SUM(quantity * price) AS cost_ccy,
+				SUM(quantity) AS qty
+			FROM transactions
+			WHERE portfolio_id = ANY($1::uuid[]) AND type = 'buy'
+			GROUP BY portfolio_id, asset_id
+		),
+		sell AS (
+			SELECT portfolio_id, asset_id,
+				SUM(quantity * price * exchange_rate - fees) AS proceeds,
+				SUM(quantity * price) AS proceeds_ccy,
+				SUM(quantity) AS qty
+			FROM transactions
+			WHERE portfolio_id = ANY($1::uuid[]) AND type = 'sell'
+			GROUP BY portfolio_id, asset_id
+		),
+		holdings AS (
+			SELECT b.portfolio_id, b.asset_id,
+				(b.qty - COALESCE(s.qty, 0)) AS qty,
+				(b.cost - COALESCE(s.proceeds, 0)) AS cost,
+				(b.cost_ccy - COALESCE(s.proceeds_ccy, 0)) AS cost_ccy
+			FROM buy b
+			LEFT JOIN sell s ON s.portfolio_id = b.portfolio_id AND s.asset_id = b.asset_id
+		)
+		SELECT h.portfolio_id, h.asset_id, a.ticker, a.name, a.currency,
+			h.qty, h.cost, h.cost_ccy,
+			COALESCE(p.close, 0) AS last_close,
+			(p.close IS NOT NULL) AS has_price
+		FROM holdings h
+		JOIN assets a ON a.id = h.asset_id
+		LEFT JOIN LATERAL (
+			SELECT close FROM prices WHERE asset_id = h.asset_id ORDER BY date DESC LIMIT 1
+		) p ON TRUE
+		WHERE h.qty > 0
+		ORDER BY h.portfolio_id, a.ticker
+	`, portfolioIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var holdings []*model.Holding
+	for rows.Next() {
+		h := &model.Holding{}
+		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency,
+			&h.Qty, &h.Cost, &h.CostCCY, &h.LastClose, &h.HasPrice); err != nil {
+			return nil, err
+		}
+		holdings = append(holdings, h)
+	}
+	return holdings, rows.Err()
+}
+
+// PerformanceSeries returns the historical value of a portfolio per date,
+// consolidated into the portfolio reference currency using the latest FX rate.
+func (r *portfolioRepo) PerformanceSeries(ctx context.Context, portfolioID uuid.UUID, portfolioCurrency string) ([]*model.PortfolioPerformance, error) {
+	rows, err := r.db.Query(ctx, `
+		WITH buy AS (
+			SELECT asset_id, date, quantity, price, exchange_rate
+			FROM transactions
+			WHERE portfolio_id = $1 AND type = 'buy'
+		),
+		sell AS (
+			SELECT asset_id, date, quantity
+			FROM transactions
+			WHERE portfolio_id = $1 AND type = 'sell'
+		),
+		dates AS (
+			SELECT DISTINCT p.date
+			FROM prices p
+			WHERE p.asset_id IN (SELECT asset_id FROM buy)
+			AND p.date >= (SELECT MIN(date) FROM buy)
+		),
+		holdings_at_date AS (
+			SELECT d.date, b.asset_id, b.quantity - COALESCE(s.sold_qty, 0) AS qty
+			FROM dates d
+			JOIN buy b ON b.date <= d.date
+			LEFT JOIN (
+				SELECT asset_id, date, SUM(quantity) AS sold_qty
+				FROM sell GROUP BY asset_id, date
+			) s ON s.asset_id = b.asset_id AND s.date <= d.date
+		)
+		SELECT d.date,
+			COALESCE(SUM(
+				h.qty * p.close *
+				CASE
+					WHEN a.currency = $2 THEN 1
+					WHEN a.currency = 'USD' THEN COALESCE(f_p.rate, 0)
+					WHEN $2 = 'USD' THEN 1.0 / NULLIF(f_a.rate, 0)
+					ELSE COALESCE(f_p.rate, 0) / NULLIF(f_a.rate, 0)
+				END
+			), 0) AS value
+		FROM dates d
+		LEFT JOIN holdings_at_date h ON h.date = d.date
+		LEFT JOIN prices p ON p.asset_id = h.asset_id AND p.date = d.date
+		LEFT JOIN assets a ON a.id = h.asset_id
+		LEFT JOIN fx_rates f_a ON f_a.base_currency = 'USD' AND f_a.quote_currency = a.currency
+		LEFT JOIN fx_rates f_p ON f_p.base_currency = 'USD' AND f_p.quote_currency = $2
+		GROUP BY d.date
+		ORDER BY d.date
+	`, portfolioID, portfolioCurrency)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var perf []*model.PortfolioPerformance
+	for rows.Next() {
+		p := &model.PortfolioPerformance{}
+		if err := rows.Scan(&p.Date, &p.Value); err != nil {
+			return nil, err
+		}
+		perf = append(perf, p)
+	}
+	return perf, rows.Err()
 }
 
 // Ensure unused imports compile

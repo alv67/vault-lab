@@ -14,6 +14,7 @@ type PriceRepository interface {
 	Create(ctx context.Context, price *model.Price) (*model.Price, error)
 	FindByAsset(ctx context.Context, assetID uuid.UUID) ([]*model.Price, error)
 	FindLatest(ctx context.Context, assetID uuid.UUID) (*model.Price, error)
+	FindLatestForAssets(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]*model.Price, error)
 }
 
 type priceRepo struct {
@@ -25,7 +26,8 @@ func (r *priceRepo) Create(ctx context.Context, price *model.Price) (*model.Pric
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO prices (asset_id, date, open, high, low, close, volume, source)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		 ON CONFLICT (asset_id, date) DO UPDATE SET close = $6, source = $8
+		 ON CONFLICT (asset_id, date) DO UPDATE
+		   SET open = $3, high = $4, low = $5, close = $6, volume = $7, source = $8
 		 RETURNING id, asset_id, date, open, high, low, close, volume, source, created_at`,
 		price.AssetID, price.Date, price.Open, price.High, price.Low, price.Close, price.Volume, price.Source,
 	).Scan(&p.ID, &p.AssetID, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume, &p.Source, &p.CreatedAt)
@@ -68,6 +70,33 @@ func (r *priceRepo) FindLatest(ctx context.Context, assetID uuid.UUID) (*model.P
 		return nil, err
 	}
 	return p, nil
+}
+
+func (r *priceRepo) FindLatestForAssets(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]*model.Price, error) {
+	if len(assetIDs) == 0 {
+		return map[uuid.UUID]*model.Price{}, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT DISTINCT ON (asset_id) asset_id, id, date, open, high, low, close, volume, source, created_at
+		 FROM prices
+		 WHERE asset_id = ANY($1::uuid[])
+		 ORDER BY asset_id, date DESC`,
+		assetIDs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	latest := make(map[uuid.UUID]*model.Price)
+	for rows.Next() {
+		p := &model.Price{}
+		if err := rows.Scan(&p.AssetID, &p.ID, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume, &p.Source, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		latest[p.AssetID] = p
+	}
+	return latest, rows.Err()
 }
 
 // Ensure unused import compiles

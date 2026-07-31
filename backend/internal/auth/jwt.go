@@ -23,9 +23,9 @@ type Claims struct {
 }
 
 type JWTAuth struct {
-	secret      string
-	accessTTL   time.Duration
-	refreshTTL  time.Duration
+	secret     string
+	accessTTL  time.Duration
+	refreshTTL time.Duration
 }
 
 func NewJWTAuth(secret string, accessTTL, refreshTTL time.Duration) *JWTAuth {

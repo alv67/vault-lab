@@ -20,12 +20,12 @@ type AssetLookup struct {
 
 type yahooSearchResponse struct {
 	Quotes []struct {
-		Symbol        string `json:"symbol"`
-		LongName      string `json:"longname"`
-		ShortName     string `json:"shortname"`
-		QuoteType     string `json:"quoteType"`
-		Currency      string `json:"currency"`
-		Exchange      string `json:"exchange"`
+		Symbol    string `json:"symbol"`
+		LongName  string `json:"longname"`
+		ShortName string `json:"shortname"`
+		QuoteType string `json:"quoteType"`
+		Currency  string `json:"currency"`
+		Exchange  string `json:"exchange"`
 	} `json:"quotes"`
 }
 
@@ -102,5 +102,3 @@ func mapType(quoteType string) string {
 		return "stock"
 	}
 }
-
-

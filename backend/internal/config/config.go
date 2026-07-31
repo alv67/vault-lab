@@ -17,9 +17,9 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 
-	JWTSecret       string
-	JWTAccessTTL    time.Duration
-	JWTRefreshTTL   time.Duration
+	JWTSecret     string
+	JWTAccessTTL  time.Duration
+	JWTRefreshTTL time.Duration
 
 	ServerPort int
 	ServerHost string
@@ -28,6 +28,7 @@ type Config struct {
 
 	YahooFinanceEnabled bool
 	PriceFetchInterval  time.Duration
+	LookupCacheTTL      time.Duration
 }
 
 func Load() *Config {
@@ -53,6 +54,7 @@ func Load() *Config {
 
 		YahooFinanceEnabled: getEnvBool("VAULT_YAHOO_FINANCE_ENABLED", true),
 		PriceFetchInterval:  getEnvDuration("VAULT_PRICE_FETCH_INTERVAL", 1*time.Hour),
+		LookupCacheTTL:      getEnvDuration("VAULT_LOOKUP_CACHE_TTL", 7*24*time.Hour),
 	}
 }
 

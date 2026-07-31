@@ -32,7 +32,7 @@ func main() {
 	defer dbPool.Close()
 
 	repos := repository.New(dbPool)
-	fetcher := price.NewYahooFetcher(repos)
+	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval)
 
 	log.Info().Dur("interval", cfg.PriceFetchInterval).Msg("price worker started")
 

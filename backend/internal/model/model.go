@@ -39,25 +39,26 @@ type Portfolio struct {
 type AssetType string
 
 const (
-	AssetTypeStock       AssetType = "stock"
-	AssetTypeETF         AssetType = "etf"
-	AssetTypeBond        AssetType = "bond"
-	AssetTypeMutualFund  AssetType = "mutual_fund"
-	AssetTypeCrypto      AssetType = "crypto"
-	AssetTypeCommodity   AssetType = "commodity"
-	AssetTypeCash        AssetType = "cash"
+	AssetTypeStock      AssetType = "stock"
+	AssetTypeETF        AssetType = "etf"
+	AssetTypeBond       AssetType = "bond"
+	AssetTypeMutualFund AssetType = "mutual_fund"
+	AssetTypeCrypto     AssetType = "crypto"
+	AssetTypeCommodity  AssetType = "commodity"
+	AssetTypeCash       AssetType = "cash"
 )
 
 type Asset struct {
-	ID          uuid.UUID `json:"id"`
-	Ticker      string    `json:"ticker"`
-	ISIN        string    `json:"isin,omitempty"`
-	Name        string    `json:"name"`
-	Type        AssetType `json:"type"`
-	CategoryID  *uuid.UUID `json:"category_id,omitempty"`
-	Country     string    `json:"country,omitempty"`
-	Currency    string    `json:"currency"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             uuid.UUID  `json:"id"`
+	Ticker         string     `json:"ticker"`
+	ISIN           string     `json:"isin,omitempty"`
+	Name           string     `json:"name"`
+	Type           AssetType  `json:"type"`
+	CategoryID     *uuid.UUID `json:"category_id,omitempty"`
+	Country        string     `json:"country,omitempty"`
+	Currency       string     `json:"currency"`
+	CreatedAt      time.Time  `json:"created_at"`
+	PriceFetchedAt *time.Time `json:"price_fetched_at,omitempty"`
 }
 
 type Category struct {
@@ -69,11 +70,11 @@ type Category struct {
 type TransactionType string
 
 const (
-	TxBuy     TransactionType = "buy"
-	TxSell    TransactionType = "sell"
+	TxBuy      TransactionType = "buy"
+	TxSell     TransactionType = "sell"
 	TxDividend TransactionType = "dividend"
-	TxSplit   TransactionType = "split"
-	TxFee     TransactionType = "fee"
+	TxSplit    TransactionType = "split"
+	TxFee      TransactionType = "fee"
 )
 
 type Transaction struct {

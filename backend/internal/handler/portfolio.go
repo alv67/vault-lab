@@ -161,6 +161,75 @@ func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusCreated, created)
 }
 
+func (h *Handler) UpdateTransaction(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	txID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid transaction id")
+		return
+	}
+
+	var tx model.Transaction
+	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tx.ID = txID
+
+	if err := h.svc.UpdateTransaction(r.Context(), claims.UserID, &tx); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if err == service.ErrNotFound {
+			respondError(w, http.StatusNotFound, "transaction not found")
+			return
+		}
+		log.Error().Err(err).Msg("update transaction failed")
+		respondError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	respond(w, http.StatusOK, tx)
+}
+
+func (h *Handler) DeleteTransaction(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	txID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid transaction id")
+		return
+	}
+
+	if err := h.svc.DeleteTransaction(r.Context(), claims.UserID, txID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		if err == service.ErrNotFound {
+			respondError(w, http.StatusNotFound, "transaction not found")
+			return
+		}
+		log.Error().Err(err).Msg("delete transaction failed")
+		respondError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+
+	respond(w, http.StatusNoContent, nil)
+}
+
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
@@ -269,6 +338,50 @@ func (h *Handler) GetPrices(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, prices)
 }
 
+func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dash, err := h.svc.GetDashboard(r.Context(), claims.UserID)
+	if err != nil {
+		log.Error().Err(err).Msg("get dashboard failed")
+		respondError(w, http.StatusInternalServerError, "dashboard failed")
+		return
+	}
+
+	respond(w, http.StatusOK, dash)
+}
+
 func (h *Handler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
-	respondError(w, http.StatusNotImplemented, "not implemented yet")
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var portfolioID *uuid.UUID
+	if pid := r.URL.Query().Get("portfolio_id"); pid != "" {
+		uid, err := parseUUID(pid)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid portfolio id")
+			return
+		}
+		if _, err := h.svc.GetPortfolio(r.Context(), uid, claims.UserID); err != nil {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		portfolioID = &uid
+	}
+
+	refreshed, err := h.svc.RefreshPrices(r.Context(), portfolioID)
+	if err != nil {
+		log.Error().Err(err).Msg("refresh prices failed")
+		respondError(w, http.StatusInternalServerError, "refresh failed")
+		return
+	}
+
+	respond(w, http.StatusOK, map[string]interface{}{"refreshed": refreshed})
 }

@@ -7,12 +7,14 @@ import (
 )
 
 type Repository struct {
-	DB *pgxpool.Pool
-	User UserRepository
-	Asset AssetRepository
-	Portfolio PortfolioRepository
+	DB          *pgxpool.Pool
+	User        UserRepository
+	Asset       AssetRepository
+	Portfolio   PortfolioRepository
 	Transaction TransactionRepository
-	Price PriceRepository
+	Price       PriceRepository
+	Lookup      LookupRepository
+	FX          FXRepository
 }
 
 func New(db *pgxpool.Pool) *Repository {
@@ -23,6 +25,8 @@ func New(db *pgxpool.Pool) *Repository {
 		Portfolio:   &portfolioRepo{db},
 		Transaction: &transactionRepo{db},
 		Price:       &priceRepo{db},
+		Lookup:      &lookupRepo{db},
+		FX:          &fxRepo{db},
 	}
 }
 

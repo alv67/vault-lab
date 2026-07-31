@@ -1,15 +1,39 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { portfolioApi, transactionApi, assetApi } from '@/services/api'
+import { portfolioApi, transactionApi, assetApi, pricesApi, type Transaction } from '@/services/api'
 import toast from 'react-hot-toast'
-import { Plus } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/format'
+
+const defaultForm = () => ({
+  asset_id: '',
+  type: 'buy' as string,
+  quantity: '',
+  price: '',
+  date: new Date().toISOString().split('T')[0],
+  fees: '0',
+  notes: '',
+})
 
 export default function PortfolioDetailPage() {
   const { id } = useParams<{ id: string }>()
   const queryClient = useQueryClient()
+  const refreshed = useRef<Set<string>>(new Set())
   const [showTx, setShowTx] = useState(false)
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [txForm, setTxForm] = useState(defaultForm())
+
+  useEffect(() => {
+    if (!id || refreshed.current.has(id)) return
+    refreshed.current.add(id)
+    pricesApi
+      .refresh(id)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['portfolio-summary', id] })
+      })
+      .catch(() => {})
+  }, [id, queryClient])
 
   const { data: portfolio } = useQuery({
     queryKey: ['portfolio', id],
@@ -32,24 +56,41 @@ export default function PortfolioDetailPage() {
   const s = summary?.data
   const currency = portfolio?.data?.currency || 'USD'
   const gainLossClass = s && Number(s.gain_loss) >= 0 ? 'text-green-600' : 'text-red-600'
-  const [txForm, setTxForm] = useState({
-    asset_id: '',
-    type: 'buy' as string,
-    quantity: '',
-    price: '',
-    date: new Date().toISOString().split('T')[0],
-    fees: '0',
-    notes: '',
-  })
 
   const { data: assets } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assetApi.list(),
   })
 
+  const closeTx = () => {
+    setShowTx(false)
+    setEditingTx(null)
+    setTxForm(defaultForm())
+  }
+
+  const openNewTx = () => {
+    setEditingTx(null)
+    setTxForm(defaultForm())
+    setShowTx(true)
+  }
+
+  const startEdit = (tx: Transaction) => {
+    setEditingTx(tx)
+    setTxForm({
+      asset_id: tx.asset_id,
+      type: tx.type,
+      quantity: tx.quantity,
+      price: tx.price,
+      date: new Date(tx.date).toISOString().split('T')[0],
+      fees: tx.fees || '0',
+      notes: tx.notes || '',
+    })
+    setShowTx(true)
+  }
+
   const txMutation = useMutation({
-    mutationFn: () =>
-      transactionApi.create(id!, {
+    mutationFn: () => {
+      const payload = {
         asset_id: txForm.asset_id,
         type: txForm.type as any,
         quantity: txForm.quantity,
@@ -57,12 +98,36 @@ export default function PortfolioDetailPage() {
         date: new Date(txForm.date).toISOString(),
         fees: txForm.fees,
         notes: txForm.notes,
-      }),
+      }
+      if (editingTx) {
+        return transactionApi.update(editingTx.id, {
+          ...payload,
+          currency: editingTx.currency,
+          exchange_rate: editingTx.exchange_rate,
+        })
+      }
+      return transactionApi.create(id!, payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions', id] })
       queryClient.invalidateQueries({ queryKey: ['portfolio-summary', id] })
-      setShowTx(false)
-      toast.success('Transaction added')
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      closeTx()
+      toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (txId: string) => transactionApi.remove(txId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions', id] })
+      queryClient.invalidateQueries({ queryKey: ['portfolio-summary', id] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      closeTx()
+      toast.success('Transaction deleted')
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || 'Delete failed')
     },
   })
 
@@ -91,7 +156,7 @@ export default function PortfolioDetailPage() {
 
       {/* Add transaction button */}
       <button
-        onClick={() => setShowTx(!showTx)}
+        onClick={() => (showTx ? closeTx() : openNewTx())}
         className="mb-4 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
       >
         <Plus className="h-4 w-4" />
@@ -100,7 +165,7 @@ export default function PortfolioDetailPage() {
 
       {showTx && (
         <div className="mb-6 rounded-xl border bg-white p-4">
-          <h3 className="mb-3 font-semibold">New Transaction</h3>
+          <h3 className="mb-3 font-semibold">{editingTx ? 'Edit Transaction' : 'New Transaction'}</h3>
           <div className="grid grid-cols-2 gap-3">
             <select
               value={txForm.asset_id}
@@ -153,13 +218,35 @@ export default function PortfolioDetailPage() {
               className="rounded-lg border px-3 py-2 text-sm"
             />
           </div>
-          <button
-            onClick={() => txMutation.mutate()}
-            disabled={!txForm.asset_id || !txForm.quantity || !txForm.price || txMutation.isPending}
-            className="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {txMutation.isPending ? 'Saving...' : 'Save'}
-          </button>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={() => txMutation.mutate()}
+              disabled={!txForm.asset_id || !txForm.quantity || !txForm.price || txMutation.isPending}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {txMutation.isPending ? 'Saving...' : editingTx ? 'Save Changes' : 'Save'}
+            </button>
+            {editingTx && (
+              <button
+                onClick={() => {
+                  if (window.confirm('Delete this transaction?')) {
+                    deleteMutation.mutate(editingTx.id)
+                  }
+                }}
+                disabled={deleteMutation.isPending}
+                className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </button>
+            )}
+            <button
+              onClick={closeTx}
+              className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -175,6 +262,7 @@ export default function PortfolioDetailPage() {
               <th className="pb-2">Quantity</th>
               <th className="pb-2">Price</th>
               <th className="pb-2">Total</th>
+              <th className="pb-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -202,6 +290,15 @@ export default function PortfolioDetailPage() {
                 <td className="py-2">{formatCurrency(tx.price, currency)}</td>
                 <td className="py-2">
                   {formatCurrency(Number(tx.quantity) * Number(tx.price), currency)}
+                </td>
+                <td className="py-2 text-right">
+                  <button
+                    onClick={() => startEdit(tx)}
+                    className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    title="Edit transaction"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
                 </td>
               </tr>
             ))}

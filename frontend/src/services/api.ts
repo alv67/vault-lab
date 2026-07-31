@@ -121,6 +121,61 @@ export interface AssetROI {
   current_value: string
 }
 
+export interface CurrencyPerformance {
+  currency: string
+  invested: string
+  value: string
+  gain_loss: string
+  gain_loss_pct: string
+}
+
+export interface PortfolioPerformanceSummary {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  invested: string
+  value: string
+  gain_loss: string
+  gain_loss_pct: string
+  asset_count: number
+  fx_missing: number
+}
+
+export interface AssetPerformance {
+  asset_id: string
+  ticker: string
+  name: string
+  currency: string
+  qty: string
+  invested: string
+  value: string
+  gain_loss: string
+  roi: string
+  fx_missing: boolean
+  value_pf: string
+}
+
+export interface PortfolioAssets {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  assets: AssetPerformance[]
+}
+
+export interface PortfolioHistory {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  series: PortfolioPerformance[]
+}
+
+export interface Dashboard {
+  by_currency: CurrencyPerformance[]
+  portfolios: PortfolioPerformanceSummary[]
+  assets: PortfolioAssets[]
+  history: PortfolioHistory[]
+}
+
 export interface AuthResponse {
   user: User
   access_token: string
@@ -145,6 +200,7 @@ export const portfolioApi = {
   allocation: (id: string) => api.get<AssetAllocation[]>(`/portfolios/${id}/allocation`),
   performance: (id: string) => api.get<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => api.get<AssetROI[]>(`/portfolios/${id}/roi`),
+  dashboard: () => api.get<Dashboard>('/dashboard'),
 }
 
 export interface AssetLookupResult {
@@ -155,12 +211,23 @@ export interface AssetLookupResult {
   exchange: string
 }
 
+export interface AssetMeta {
+  ticker: string
+  name: string
+  type: string
+  currency: string
+  exchange: string
+  country: string
+}
+
 export const assetApi = {
   list: () => api.get<Asset[]>('/assets'),
   search: (q: string) => api.get<Asset[]>(`/assets/search?q=${q}`),
   lookup: (q: string) => api.get<AssetLookupResult[]>(`/assets/lookup?q=${q}`),
+  meta: (ticker: string) => api.get<AssetMeta>(`/assets/meta?ticker=${ticker}`),
   get: (id: string) => api.get<Asset>(`/assets/${id}`),
   create: (data: Partial<Asset>) => api.post<Asset>('/assets', data),
+  remove: (id: string) => api.delete(`/assets/${id}`),
 }
 
 export const transactionApi = {
@@ -168,4 +235,14 @@ export const transactionApi = {
     api.get<Transaction[]>(`/portfolios/${portfolioId}/transactions`),
   create: (portfolioId: string, data: Partial<Transaction>) =>
     api.post<Transaction>(`/portfolios/${portfolioId}/transactions`, data),
+  update: (id: string, data: Partial<Transaction>) =>
+    api.patch<Transaction>(`/transactions/${id}`, data),
+  remove: (id: string) => api.delete(`/transactions/${id}`),
+}
+
+export const pricesApi = {
+  refresh: (portfolioId?: string) =>
+    api.post<{ refreshed: string[] }>('/prices/refresh', null, {
+      params: portfolioId ? { portfolio_id: portfolioId } : {},
+    }),
 }
