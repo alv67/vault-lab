@@ -137,6 +137,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Use(jwtAuth.Middleware)
 			r.Get("/users/me", h.GetCurrentUser)
 			r.Patch("/users/me", h.UpdateCurrentUser)
+			r.Post("/users/me/password", h.ChangePassword)
 
 			r.Get("/assets", h.ListAssets)
 			r.Get("/assets/search", h.SearchAssets)
@@ -161,6 +162,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/portfolios/{id}/performance", h.GetPortfolioPerformance)
 			r.Get("/portfolios/{id}/allocation", h.GetPortfolioAllocation)
 			r.Get("/portfolios/{id}/roi", h.GetPortfolioROI)
+			r.Get("/portfolios/{id}/history", h.GetPortfolioHistory)
 
 			r.Get("/dashboard", h.GetDashboard)
 

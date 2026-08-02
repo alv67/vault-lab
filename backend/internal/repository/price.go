@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/amelamela/vault-lab/internal/model"
@@ -15,6 +17,8 @@ type PriceRepository interface {
 	FindByAsset(ctx context.Context, assetID uuid.UUID) ([]*model.Price, error)
 	FindLatest(ctx context.Context, assetID uuid.UUID) (*model.Price, error)
 	FindLatestForAssets(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]*model.Price, error)
+	FindForPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.Price, error)
+	MinMaxDate(ctx context.Context, assetID uuid.UUID) (earliest, latest *time.Time, err error)
 }
 
 type priceRepo struct {
@@ -99,5 +103,42 @@ func (r *priceRepo) FindLatestForAssets(ctx context.Context, assetIDs []uuid.UUI
 	return latest, rows.Err()
 }
 
-// Ensure unused import compiles
-var _ time.Time
+func (r *priceRepo) FindForPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.Price, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT p.asset_id, p.date, p.close
+		 FROM prices p
+		 WHERE p.asset_id IN (SELECT DISTINCT asset_id FROM transactions WHERE portfolio_id = $1)
+		   AND p.date >= (SELECT MIN(date::date) FROM transactions WHERE portfolio_id = $1)
+		 ORDER BY p.date ASC`,
+		portfolioID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var prices []model.Price
+	for rows.Next() {
+		var pr model.Price
+		if err := rows.Scan(&pr.AssetID, &pr.Date, &pr.Close); err != nil {
+			return nil, err
+		}
+		prices = append(prices, pr)
+	}
+	return prices, rows.Err()
+}
+
+func (r *priceRepo) MinMaxDate(ctx context.Context, assetID uuid.UUID) (*time.Time, *time.Time, error) {
+	var earliest, latest *time.Time
+	err := r.db.QueryRow(ctx,
+		`SELECT MIN(date), MAX(date) FROM prices WHERE asset_id = $1`,
+		assetID,
+	).Scan(&earliest, &latest)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	return earliest, latest, nil
+}

@@ -6,7 +6,7 @@
   import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency } from '$lib/format'
-  import type { PortfolioHistory } from '$lib/services/api'
+  import type { DashboardHistory } from '$lib/services/api'
 
   use([LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -30,7 +30,7 @@
 
   let {
     data = [] as ChartRow[],
-    histories = [] as PortfolioHistory[],
+    histories = [] as DashboardHistory[],
     colors = DEFAULT_COLORS,
   } = $props()
 

@@ -9,10 +9,12 @@
     pricesApi,
     type Portfolio,
     type PortfolioSummary,
+    type PortfolioHistory,
     type Transaction,
     type Asset,
   } from '$lib/services/api'
   import { formatCurrency, formatPercent } from '$lib/format'
+  import PositionChart from '$lib/components/PositionChart.svelte'
   import { Plus, Pencil, Trash2 } from 'lucide-svelte'
 
   const id = $derived(page.params.id as string | undefined)
@@ -42,6 +44,8 @@
   let summary = $state<PortfolioSummary | null>(null)
   let transactions = $state<Transaction[] | null>(null)
   let assets = $state<Asset[] | null>(null)
+  let history = $state<PortfolioHistory | null>(null)
+  let selectedAsset = $state('')
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
   let txForm = $state<TxForm>(defaultForm())
@@ -53,6 +57,13 @@
   const gainLossClass = $derived(
     summary && Number(summary.gain_loss) >= 0 ? 'text-green-600' : 'text-red-600',
   )
+  const realizedClass = $derived(
+    summary && Number(summary.realized_gl) >= 0 ? 'text-green-600' : 'text-red-600',
+  )
+
+  function pnlClass(value?: string | number): string {
+    return Number(value ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
+  }
 
   onMount(load)
 
@@ -71,6 +82,13 @@
       assets = a
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load portfolio'
+      toast.error(message)
+    }
+
+    try {
+      history = await portfolioApi.history(id)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load history'
       toast.error(message)
     }
 
@@ -135,6 +153,7 @@
       }
       transactions = await transactionApi.list(id)
       summary = await portfolioApi.summary(id)
+      history = await portfolioApi.history(id)
       closeTx()
       toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
     } catch (err: unknown) {
@@ -152,6 +171,7 @@
       await transactionApi.remove(txId)
       transactions = await transactionApi.list(id)
       summary = await portfolioApi.summary(id)
+      history = await portfolioApi.history(id)
       closeTx()
       toast.success('Transaction deleted')
     } catch (err: unknown) {
@@ -178,13 +198,19 @@
   <h1 class="mb-2 text-2xl font-bold">{portfolio?.name ?? 'Portfolio'}</h1>
   <p class="mb-6 text-sm text-gray-500">{portfolio?.description}</p>
 
-  <div class="mb-6 grid grid-cols-3 gap-4">
+  <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
     <div class="rounded-xl bg-white p-4 shadow">
       <p class="text-sm text-gray-500">Value</p>
       <p class="text-xl font-bold">{formatCurrency(summary?.total_value || 0, currency)}</p>
     </div>
     <div class="rounded-xl bg-white p-4 shadow">
-      <p class="text-sm text-gray-500">Gain/Loss</p>
+      <p class="text-sm text-gray-500">Realized</p>
+      <p class="text-xl font-bold {realizedClass}">
+        {formatCurrency(summary?.realized_gl || 0, currency)}
+      </p>
+    </div>
+    <div class="rounded-xl bg-white p-4 shadow">
+      <p class="text-sm text-gray-500">Gain/Loss (open)</p>
       <p class="text-xl font-bold {gainLossClass}">
         {formatCurrency(summary?.gain_loss || 0, currency)} ({formatPercent(summary?.gain_loss_pct || 0)})
       </p>
@@ -193,6 +219,86 @@
       <p class="text-sm text-gray-500">Assets</p>
       <p class="text-xl font-bold">{summary?.asset_count || 0}</p>
     </div>
+  </div>
+
+  {#if summary?.holdings && summary.holdings.length > 0}
+    <div class="mb-6 rounded-xl bg-white p-4 shadow">
+      <h2 class="mb-4 font-semibold">Positions</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="border-b text-gray-500">
+              <th class="pb-2">Ticker</th>
+              <th class="pb-2 text-right">Qty</th>
+              <th class="pb-2 text-right">Cost</th>
+              <th class="pb-2 text-right">Value</th>
+              <th class="pb-2 text-right">Realized</th>
+              <th class="pb-2 text-right">Unrealized</th>
+              <th class="pb-2 text-right">ROI</th>
+              <th class="pb-2">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each summary.holdings as h (h.asset_id)}
+              <tr class="border-b last:border-0">
+                <td class="py-2">
+                  <span class="font-medium">{h.ticker}</span>
+                  <span class="block text-xs text-gray-500">{h.name}</span>
+                </td>
+                <td class="py-2 text-right">{h.closed ? '-' : h.qty}</td>
+                <td class="py-2 text-right">{h.closed ? '-' : formatCurrency(h.cost, currency)}</td>
+                <td class="py-2 text-right">{h.closed ? '-' : formatCurrency(h.value_pf, currency)}</td>
+                <td class="py-2 text-right font-medium {pnlClass(h.realized)}">
+                  {formatCurrency(h.realized, currency)}
+                </td>
+                <td class="py-2 text-right font-medium {pnlClass(h.unrealized)}">
+                  {h.closed ? '-' : formatCurrency(h.unrealized, currency)}
+                </td>
+                <td class="py-2 text-right font-medium {pnlClass(h.roi)}">
+                  {h.closed ? '-' : formatPercent(h.roi)}
+                </td>
+                <td class="py-2">
+                  {#if h.closed}
+                    <span
+                      class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+                    >
+                      Closed
+                    </span>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {:else}
+    <p class="mb-6 text-sm text-gray-500">No positions</p>
+  {/if}
+
+  <div class="mb-6 rounded-xl bg-white p-4 shadow">
+    <h2 class="mb-4 font-semibold">Performance history</h2>
+    {#if history && history.series.length > 0}
+      <div class="mb-4">
+        <select bind:value={selectedAsset} class="rounded-lg border px-3 py-2 text-sm">
+          <option value="">Portfolio</option>
+          {#each history.assets as a (a.asset_id)}
+            <option value={a.asset_id}>{a.ticker} - {a.name}</option>
+          {/each}
+        </select>
+      </div>
+      <PositionChart
+        series={selectedAsset
+          ? history.assets.find((a) => a.asset_id === selectedAsset)?.series ?? []
+          : history.series}
+        splits={selectedAsset
+          ? history.assets.find((a) => a.asset_id === selectedAsset)?.splits ?? []
+          : history.splits}
+        {currency}
+      />
+    {:else}
+      <p class="text-sm text-gray-400">No data</p>
+    {/if}
   </div>
 
   <button

@@ -12,6 +12,7 @@ import (
 type TransactionRepository interface {
 	Create(ctx context.Context, tx *model.Transaction) (*model.Transaction, error)
 	FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error)
+	FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error)
 	CountByAsset(ctx context.Context, assetID uuid.UUID) (int64, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error)
 	Update(ctx context.Context, tx *model.Transaction) error
@@ -83,6 +84,37 @@ func (r *transactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.
 		 WHERE t.portfolio_id = $1
 		 ORDER BY t.date DESC`,
 		portfolioID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var txs []model.TransactionWithAsset
+	for rows.Next() {
+		var tx model.TransactionWithAsset
+		if err := rows.Scan(
+			&tx.ID, &tx.PortfolioID, &tx.AssetID,
+			&tx.AssetTicker, &tx.AssetName, &tx.Type,
+			&tx.Quantity, &tx.Price, &tx.Currency,
+			&tx.ExchangeRate, &tx.Fees, &tx.Date, &tx.Notes, &tx.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+	return txs, nil
+}
+
+func (r *transactionRepo) FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT t.id, t.portfolio_id, t.asset_id, a.ticker, a.name, t.type,
+		        t.quantity, t.price, t.currency, t.exchange_rate, t.fees, t.date, t.notes, t.created_at
+		 FROM transactions t
+		 JOIN assets a ON a.id = t.asset_id
+		 WHERE t.portfolio_id = ANY($1::uuid[])
+		 ORDER BY t.date ASC, t.created_at ASC`,
+		portfolioIDs,
 	)
 	if err != nil {
 		return nil, err

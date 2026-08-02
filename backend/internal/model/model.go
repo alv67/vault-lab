@@ -128,3 +128,10 @@ type PortfolioShare struct {
 	Role        Role      `json:"role"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+type Split struct {
+	AssetID     uuid.UUID       `json:"asset_id"`
+	Date        time.Time       `json:"date"`
+	Numerator   decimal.Decimal `json:"numerator"`
+	Denominator decimal.Decimal `json:"denominator"`
+}

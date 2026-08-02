@@ -320,6 +320,39 @@ func (h *Handler) GetPortfolioROI(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, roi)
 }
 
+func (h *Handler) GetPortfolioHistory(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), uid, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
+		return
+	}
+
+	history, err := h.svc.GetPortfolioHistory(r.Context(), uid)
+	if err != nil {
+		log.Error().Err(err).Msg("get portfolio history failed")
+		respondError(w, http.StatusInternalServerError, "history failed")
+		return
+	}
+
+	respond(w, http.StatusOK, history)
+}
+
 func (h *Handler) GetPrices(w http.ResponseWriter, r *http.Request) {
 	assetID := chi.URLParam(r, "assetID")
 	uid, err := parseUUID(assetID)

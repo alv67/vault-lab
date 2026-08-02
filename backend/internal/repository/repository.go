@@ -15,6 +15,7 @@ type Repository struct {
 	Price       PriceRepository
 	Lookup      LookupRepository
 	FX          FXRepository
+	Split       SplitRepository
 }
 
 func New(db *pgxpool.Pool) *Repository {
@@ -22,11 +23,12 @@ func New(db *pgxpool.Pool) *Repository {
 		DB:          db,
 		User:        &userRepo{db},
 		Asset:       &assetRepo{db},
-		Portfolio:   &portfolioRepo{db},
+		Portfolio:   &portfolioRepo{db: db, transactions: &transactionRepo{db}, splits: &splitRepo{db}},
 		Transaction: &transactionRepo{db},
 		Price:       &priceRepo{db},
 		Lookup:      &lookupRepo{db},
 		FX:          &fxRepo{db},
+		Split:       &splitRepo{db},
 	}
 }
 

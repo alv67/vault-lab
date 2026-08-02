@@ -21,6 +21,8 @@ type YahooFetcher struct {
 	repos           *repository.Repository
 	client          *http.Client
 	refreshInterval time.Duration
+	historyCooldown map[uuid.UUID]time.Time
+	splitCooldown   map[uuid.UUID]time.Time
 	mu              sync.Mutex
 }
 
@@ -28,6 +30,8 @@ func NewYahooFetcher(repos *repository.Repository, refreshInterval time.Duration
 	return &YahooFetcher{
 		repos:           repos,
 		refreshInterval: refreshInterval,
+		historyCooldown: map[uuid.UUID]time.Time{},
+		splitCooldown:   map[uuid.UUID]time.Time{},
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -52,10 +56,22 @@ type yahooChartResult struct {
 		LongName         string `json:"longName"`
 		ShortName        string `json:"shortName"`
 	} `json:"meta"`
-	Timestamp  []int64 `json:"timestamp"`
+	Timestamp  []int64           `json:"timestamp"`
 	Indicators struct {
 		Quote []yahooChartQuote `json:"quote"`
 	} `json:"indicators"`
+	Events *yahooChartEvents `json:"events"`
+}
+
+type yahooChartEvents struct {
+	Splits map[string]yahooSplitEvent `json:"splits"`
+}
+
+type yahooSplitEvent struct {
+	Date        int64   `json:"date"`
+	Numerator   float64 `json:"numerator"`
+	Denominator float64 `json:"denominator"`
+	SplitRatio  string  `json:"splitRatio"`
 }
 
 type yahooChartResponse struct {
@@ -63,6 +79,17 @@ type yahooChartResponse struct {
 		Result []yahooChartResult `json:"result"`
 		Error  interface{}        `json:"error"`
 	} `json:"chart"`
+}
+
+type historyBar struct {
+	Date  time.Time
+	Close decimal.Decimal
+}
+
+type HistoryAsset struct {
+	ID     uuid.UUID
+	Ticker string
+	From   time.Time
 }
 
 // FetchAll refreshes prices for every asset in the DB that is stale and keeps
@@ -186,6 +213,188 @@ func (f *YahooFetcher) fetchChart(ctx context.Context, ticker string) (*yahooCha
 
 	chart := &result.Chart.Result[0]
 	return chart, nil
+}
+
+func (f *YahooFetcher) fetchChartRange(ctx context.Context, ticker string, from, to time.Time) ([]historyBar, error) {
+	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&period1=%d&period2=%d", ticker, from.Unix(), to.Unix())
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("yahoo request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("yahoo returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var result yahooChartResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w (body: %s)", err, string(body))
+	}
+	if result.Chart.Error != nil {
+		return nil, fmt.Errorf("yahoo error: %v", result.Chart.Error)
+	}
+	if len(result.Chart.Result) == 0 {
+		return nil, fmt.Errorf("no chart data")
+	}
+
+	chart := &result.Chart.Result[0]
+	var bars []historyBar
+	if len(chart.Indicators.Quote) > 0 {
+		quote := chart.Indicators.Quote[0]
+		for i, ts := range chart.Timestamp {
+			if i < len(quote.Close) && quote.Close[i] != nil {
+				bars = append(bars, historyBar{
+					Date:  priceDate(ts),
+					Close: decimal.NewFromFloat(*quote.Close[i]),
+				})
+			}
+		}
+	}
+	if len(bars) == 0 {
+		return nil, fmt.Errorf("no history bars")
+	}
+	return bars, nil
+}
+
+// EnsureHistory backfills daily closes from Yahoo for the given assets so the
+// portfolio history series has market values from the first transaction to now.
+func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	now := time.Now().UTC()
+	for _, a := range assets {
+		earliest, latest, err := f.repos.Price.MinMaxDate(ctx, a.ID)
+		if err != nil {
+			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("history range failed")
+			continue
+		}
+
+		var bars []historyBar
+		switch {
+		case latest == nil || earliest == nil || earliest.After(a.From.Add(30*24*time.Hour)):
+			if last, ok := f.historyCooldown[a.ID]; ok && last.Add(f.refreshInterval).After(now) {
+				continue
+			}
+			bars, err = f.fetchChartRange(ctx, a.Ticker, a.From, now)
+			f.historyCooldown[a.ID] = now
+		case latest.Add(f.refreshInterval).Before(now):
+			bars, err = f.fetchChartRange(ctx, a.Ticker, *latest, now)
+		default:
+			continue
+		}
+		if err != nil {
+			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("history fetch failed")
+			continue
+		}
+		for _, b := range bars {
+			if _, err := f.repos.Price.Create(ctx, &model.Price{AssetID: a.ID, Date: b.Date, Close: b.Close, Source: "yahoo"}); err != nil {
+				log.Warn().Err(err).Str("symbol", a.Ticker).Str("date", b.Date.Format("2006-01-02")).Msg("history save failed")
+			}
+		}
+	}
+	return nil
+}
+
+func (f *YahooFetcher) fetchSplits(ctx context.Context, ticker string) ([]model.Split, error) {
+	url := fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1wk&events=split&range=max", ticker)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("yahoo request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		io.Copy(io.Discard, resp.Body)
+		return nil, fmt.Errorf("yahoo returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var result yahooChartResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w (body: %s)", err, string(body))
+	}
+	if result.Chart.Error != nil {
+		return nil, fmt.Errorf("yahoo error: %v", result.Chart.Error)
+	}
+	if len(result.Chart.Result) == 0 || result.Chart.Result[0].Events == nil {
+		return []model.Split{}, nil
+	}
+
+	var splits []model.Split
+	for _, e := range result.Chart.Result[0].Events.Splits {
+		if e.Numerator == 0 || e.Denominator == 0 {
+			continue
+		}
+		splits = append(splits, model.Split{
+			Date:        time.Unix(e.Date, 0).UTC().Truncate(24 * time.Hour),
+			Numerator:   decimal.NewFromFloat(e.Numerator),
+			Denominator: decimal.NewFromFloat(e.Denominator),
+		})
+	}
+	return splits, nil
+}
+
+// EnsureSplits fetches stock split events for assets without stored splits and
+// persists them, respecting a per-asset cooldown.
+func (f *YahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	now := time.Now().UTC()
+	for _, a := range assets {
+		if last, ok := f.splitCooldown[a.ID]; ok && last.Add(f.refreshInterval).After(now) {
+			continue
+		}
+		existing, err := f.repos.Split.FindByAssets(ctx, []uuid.UUID{a.ID})
+		if err != nil {
+			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("split lookup failed")
+			f.splitCooldown[a.ID] = now
+			continue
+		}
+		if len(existing) > 0 {
+			f.splitCooldown[a.ID] = now
+			continue
+		}
+		splits, err := f.fetchSplits(ctx, a.Ticker)
+		f.splitCooldown[a.ID] = now
+		if err != nil {
+			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("split fetch failed")
+			continue
+		}
+		for _, sp := range splits {
+			sp.AssetID = a.ID
+			if err := f.repos.Split.Upsert(ctx, &sp); err != nil {
+				log.Warn().Err(err).Str("symbol", a.Ticker).Str("date", sp.Date.Format("2006-01-02")).Msg("split save failed")
+			}
+		}
+	}
+	return nil
 }
 
 // RefreshStaleForPortfolio refreshes prices for assets currently held in a

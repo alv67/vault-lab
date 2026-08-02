@@ -2,13 +2,13 @@ package repository
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
 	"github.com/amelamela/vault-lab/internal/model"
+	"github.com/amelamela/vault-lab/internal/position"
 )
 
 type PortfolioRepository interface {
@@ -23,11 +23,12 @@ type PortfolioRepository interface {
 	GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetROI, error)
 	HeldAssets(ctx context.Context, portfolioID uuid.UUID) ([]*model.Asset, error)
 	HoldingsDetailed(ctx context.Context, portfolioIDs []uuid.UUID) ([]*model.Holding, error)
-	PerformanceSeries(ctx context.Context, portfolioID uuid.UUID, portfolioCurrency string) ([]*model.PortfolioPerformance, error)
 }
 
 type portfolioRepo struct {
-	db *pgxpool.Pool
+	db           *pgxpool.Pool
+	transactions TransactionRepository
+	splits       SplitRepository
 }
 
 func (r *portfolioRepo) Create(ctx context.Context, p *model.Portfolio) (*model.Portfolio, error) {
@@ -360,124 +361,70 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 		return nil, nil
 	}
 	rows, err := r.db.Query(ctx, `
-		WITH buy AS (
-			SELECT portfolio_id, asset_id,
-				SUM(quantity * price * exchange_rate + fees) AS cost,
-				SUM(quantity * price) AS cost_ccy,
-				SUM(quantity) AS qty
-			FROM transactions
-			WHERE portfolio_id = ANY($1::uuid[]) AND type = 'buy'
-			GROUP BY portfolio_id, asset_id
-		),
-		sell AS (
-			SELECT portfolio_id, asset_id,
-				SUM(quantity * price * exchange_rate - fees) AS proceeds,
-				SUM(quantity * price) AS proceeds_ccy,
-				SUM(quantity) AS qty
-			FROM transactions
-			WHERE portfolio_id = ANY($1::uuid[]) AND type = 'sell'
-			GROUP BY portfolio_id, asset_id
-		),
-		holdings AS (
-			SELECT b.portfolio_id, b.asset_id,
-				(b.qty - COALESCE(s.qty, 0)) AS qty,
-				(b.cost - COALESCE(s.proceeds, 0)) AS cost,
-				(b.cost_ccy - COALESCE(s.proceeds_ccy, 0)) AS cost_ccy
-			FROM buy b
-			LEFT JOIN sell s ON s.portfolio_id = b.portfolio_id AND s.asset_id = b.asset_id
-		)
-		SELECT h.portfolio_id, h.asset_id, a.ticker, a.name, a.currency,
-			h.qty, h.cost, h.cost_ccy,
-			COALESCE(p.close, 0) AS last_close,
-			(p.close IS NOT NULL) AS has_price
-		FROM holdings h
-		JOIN assets a ON a.id = h.asset_id
+		SELECT DISTINCT t.portfolio_id, t.asset_id, a.ticker, a.name, a.currency,
+			COALESCE(p.close, 0) AS last_close, (p.close IS NOT NULL) AS has_price
+		FROM transactions t
+		JOIN assets a ON a.id = t.asset_id
 		LEFT JOIN LATERAL (
-			SELECT close FROM prices WHERE asset_id = h.asset_id ORDER BY date DESC LIMIT 1
+			SELECT close FROM prices WHERE asset_id = t.asset_id ORDER BY date DESC LIMIT 1
 		) p ON TRUE
-		WHERE h.qty > 0
-		ORDER BY h.portfolio_id, a.ticker
-	`, portfolioIDs)
+		WHERE t.portfolio_id = ANY($1::uuid[])
+		ORDER BY t.portfolio_id, a.ticker`, portfolioIDs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var holdings []*model.Holding
+	base := make([]*model.Holding, 0)
 	for rows.Next() {
 		h := &model.Holding{}
-		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency,
-			&h.Qty, &h.Cost, &h.CostCCY, &h.LastClose, &h.HasPrice); err != nil {
+		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency, &h.LastClose, &h.HasPrice); err != nil {
 			return nil, err
 		}
-		holdings = append(holdings, h)
+		base = append(base, h)
 	}
-	return holdings, rows.Err()
-}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-// PerformanceSeries returns the historical value of a portfolio per date,
-// consolidated into the portfolio reference currency using the latest FX rate.
-func (r *portfolioRepo) PerformanceSeries(ctx context.Context, portfolioID uuid.UUID, portfolioCurrency string) ([]*model.PortfolioPerformance, error) {
-	rows, err := r.db.Query(ctx, `
-		WITH buy AS (
-			SELECT asset_id, date, quantity, price, exchange_rate
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'buy'
-		),
-		sell AS (
-			SELECT asset_id, date, quantity
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'sell'
-		),
-		dates AS (
-			SELECT DISTINCT p.date
-			FROM prices p
-			WHERE p.asset_id IN (SELECT asset_id FROM buy)
-			AND p.date >= (SELECT MIN(date) FROM buy)
-		),
-		holdings_at_date AS (
-			SELECT d.date, b.asset_id, b.quantity - COALESCE(s.sold_qty, 0) AS qty
-			FROM dates d
-			JOIN buy b ON b.date <= d.date
-			LEFT JOIN (
-				SELECT asset_id, date, SUM(quantity) AS sold_qty
-				FROM sell GROUP BY asset_id, date
-			) s ON s.asset_id = b.asset_id AND s.date <= d.date
-		)
-		SELECT d.date,
-			COALESCE(SUM(
-				h.qty * p.close *
-				CASE
-					WHEN a.currency = $2 THEN 1
-					WHEN a.currency = 'USD' THEN COALESCE(f_p.rate, 0)
-					WHEN $2 = 'USD' THEN 1.0 / NULLIF(f_a.rate, 0)
-					ELSE COALESCE(f_p.rate, 0) / NULLIF(f_a.rate, 0)
-				END
-			), 0) AS value
-		FROM dates d
-		LEFT JOIN holdings_at_date h ON h.date = d.date
-		LEFT JOIN prices p ON p.asset_id = h.asset_id AND p.date = d.date
-		LEFT JOIN assets a ON a.id = h.asset_id
-		LEFT JOIN fx_rates f_a ON f_a.base_currency = 'USD' AND f_a.quote_currency = a.currency
-		LEFT JOIN fx_rates f_p ON f_p.base_currency = 'USD' AND f_p.quote_currency = $2
-		GROUP BY d.date
-		ORDER BY d.date
-	`, portfolioID, portfolioCurrency)
+	txs, err := r.transactions.FindByPortfoliosAsc(ctx, portfolioIDs)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	var perf []*model.PortfolioPerformance
-	for rows.Next() {
-		p := &model.PortfolioPerformance{}
-		if err := rows.Scan(&p.Date, &p.Value); err != nil {
-			return nil, err
+	assetIDs := make([]uuid.UUID, 0, len(txs))
+	seen := map[uuid.UUID]bool{}
+	for _, tx := range txs {
+		if !seen[tx.AssetID] {
+			seen[tx.AssetID] = true
+			assetIDs = append(assetIDs, tx.AssetID)
 		}
-		perf = append(perf, p)
 	}
-	return perf, rows.Err()
+	splitRows, err := r.splits.FindByAssets(ctx, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	splitEvents := make([]position.SplitEvent, 0, len(splitRows))
+	for _, sp := range splitRows {
+		splitEvents = append(splitEvents, position.SplitEvent{
+			AssetID: sp.AssetID,
+			Date:    sp.Date,
+			Ratio:   sp.Numerator.Div(sp.Denominator),
+		})
+	}
+	states := position.Walk(txs, splitEvents)
+
+	for _, h := range base {
+		if st, ok := states[h.PortfolioID+"|"+h.AssetID]; ok {
+			h.Qty = st.Qty
+			h.Cost = st.Cost
+			h.CostCCY = st.CostCCY
+			h.Realized = st.Realized
+			h.RealizedCCY = st.RealizedCCY
+			h.AvgCost = st.Avg
+		}
+	}
+	return base, nil
 }
 
-// Ensure unused imports compile
-var _ = time.Now
+

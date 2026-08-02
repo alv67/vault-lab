@@ -34,6 +34,11 @@ export async function register(email: string, name: string, password: string): P
   await authApi.register(email, name, password)
 }
 
+export async function updateProfile(name: string, email: string): Promise<void> {
+  const user = await authApi.updateProfile({ name, email })
+  auth.user = user
+}
+
 export function logout(): void {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')

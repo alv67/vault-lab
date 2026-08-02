@@ -15,6 +15,7 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*model.User, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.User, error)
 	Update(ctx context.Context, user *model.User) error
+	UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string) error
 }
 
 type userRepo struct {
@@ -67,6 +68,14 @@ func (r *userRepo) Update(ctx context.Context, user *model.User) error {
 	_, err := r.db.Exec(ctx,
 		`UPDATE users SET name = $1, email = $2, updated_at = NOW() WHERE id = $3`,
 		user.Name, user.Email, user.ID,
+	)
+	return err
+}
+
+func (r *userRepo) UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+		passwordHash, id,
 	)
 	return err
 }

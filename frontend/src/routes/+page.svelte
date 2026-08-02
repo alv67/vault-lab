@@ -143,6 +143,7 @@
               <th class="pb-2">Assets</th>
               <th class="pb-2">Invested</th>
               <th class="pb-2">Value</th>
+              <th class="pb-2">Realized</th>
               <th class="pb-2">Gain/Loss</th>
               <th class="pb-2">Return</th>
             </tr>
@@ -155,6 +156,9 @@
                 <td class="py-2">{p.asset_count}</td>
                 <td class="py-2">{formatCurrency(p.invested, p.currency)}</td>
                 <td class="py-2">{formatCurrency(p.value, p.currency)}</td>
+                <td class="py-2 font-medium {glClass(p.realized_gl)}">
+                  {formatCurrency(p.realized_gl, p.currency)}
+                </td>
                 <td class="py-2 font-medium {glClass(p.gain_loss)}">
                   {formatCurrency(p.gain_loss, p.currency)}
                 </td>
@@ -200,6 +204,7 @@
                       <th class="pb-2 text-right">Invested</th>
                       <th class="pb-2 text-right">Value</th>
                       <th class="pb-2 text-right">Gain/Loss</th>
+                      <th class="pb-2 text-right">Realized</th>
                       <th class="pb-2 text-right">ROI</th>
                     </tr>
                   </thead>
@@ -224,6 +229,9 @@
                         <td class="py-2 text-right">{formatCurrency(a.value, a.currency)}</td>
                         <td class="py-2 text-right font-medium {glClass(a.gain_loss)}">
                           {formatCurrency(a.gain_loss, a.currency)}
+                        </td>
+                        <td class="py-2 text-right font-medium {glClass(a.realized_pf ?? a.realized)}">
+                          {formatCurrency(a.realized_pf ?? a.realized, pa.currency)}
                         </td>
                         <td class="py-2 text-right font-medium {glClass(a.roi)}">
                           {formatPercent(a.roi)}

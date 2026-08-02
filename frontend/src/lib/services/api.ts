@@ -45,6 +45,24 @@ export interface Transaction {
   notes: string
 }
 
+export interface AssetHolding {
+  asset_id: string
+  ticker: string
+  name: string
+  currency: string
+  qty: string
+  cost: string
+  cost_ccy: string
+  value: string
+  value_pf: string
+  realized: string
+  realized_ccy: string
+  unrealized: string
+  roi: string
+  fx_missing: boolean
+  closed: boolean
+}
+
 export interface PortfolioSummary {
   portfolio_id: string
   portfolio_name: string
@@ -55,6 +73,7 @@ export interface PortfolioSummary {
   realized_gl: string
   unrealized_gl: string
   asset_count: number
+  holdings: AssetHolding[]
 }
 
 export interface AssetAllocation {
@@ -85,6 +104,7 @@ export interface CurrencyPerformance {
   value: string
   gain_loss: string
   gain_loss_pct: string
+  realized: string
 }
 
 export interface PortfolioPerformanceSummary {
@@ -95,6 +115,7 @@ export interface PortfolioPerformanceSummary {
   value: string
   gain_loss: string
   gain_loss_pct: string
+  realized_gl: string
   asset_count: number
   fx_missing: number
 }
@@ -111,6 +132,8 @@ export interface AssetPerformance {
   roi: string
   fx_missing: boolean
   value_pf: string
+  realized: string
+  realized_pf: string
 }
 
 export interface PortfolioAssets {
@@ -120,18 +143,49 @@ export interface PortfolioAssets {
   assets: AssetPerformance[]
 }
 
-export interface PortfolioHistory {
+export interface DashboardHistory {
   portfolio_id: string
   portfolio_name: string
   currency: string
   series: PortfolioPerformance[]
 }
 
+export interface PositionPoint {
+  date: string
+  qty: string
+  cost_basis: string
+  market_value: string
+  realized: string
+}
+
+export interface SplitInfo {
+  date: string // ISO
+  ratio: string // es. "7:1", "4:1"
+}
+
+export interface AssetPositionSeries {
+  asset_id: string
+  ticker: string
+  name: string
+  currency: string
+  series: PositionPoint[]
+  splits: SplitInfo[]
+}
+
+export interface PortfolioHistory {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  series: PositionPoint[]
+  splits: SplitInfo[]
+  assets: AssetPositionSeries[]
+}
+
 export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
   assets: PortfolioAssets[]
-  history: PortfolioHistory[]
+  history: DashboardHistory[]
 }
 
 export interface AuthResponse {
@@ -232,6 +286,10 @@ export const authApi = {
   register: (email: string, name: string, password: string) =>
     request<User>('/auth/register', { method: 'POST', body: { email, name, password } }),
   me: () => request<User>('/users/me'),
+  updateProfile: (data: { name: string; email: string }) =>
+    request<User>('/users/me', { method: 'PATCH', body: data }),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    request<void>('/users/me/password', { method: 'POST', body: data }),
 }
 
 export const portfolioApi = {
@@ -246,6 +304,7 @@ export const portfolioApi = {
   allocation: (id: string) => request<AssetAllocation[]>(`/portfolios/${id}/allocation`),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
+  history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),
   dashboard: () => request<Dashboard>('/dashboard'),
 }
 
