@@ -1,0 +1,333 @@
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { page } from '$app/state'
+  import { toast } from '$lib/stores/toast.svelte'
+  import {
+    portfolioApi,
+    transactionApi,
+    assetApi,
+    pricesApi,
+    type Portfolio,
+    type PortfolioSummary,
+    type Transaction,
+    type Asset,
+  } from '$lib/services/api'
+  import { formatCurrency, formatPercent } from '$lib/format'
+  import { Plus, Pencil, Trash2 } from 'lucide-svelte'
+
+  const id = $derived(page.params.id as string | undefined)
+
+  type TxType = Transaction['type']
+  interface TxForm {
+    asset_id: string
+    type: TxType
+    quantity: string
+    price: string
+    date: string
+    fees: string
+    notes: string
+  }
+
+  const defaultForm = (): TxForm => ({
+    asset_id: '',
+    type: 'buy',
+    quantity: '',
+    price: '',
+    date: new Date().toISOString().split('T')[0],
+    fees: '0',
+    notes: '',
+  })
+
+  let portfolio = $state<Portfolio | null>(null)
+  let summary = $state<PortfolioSummary | null>(null)
+  let transactions = $state<Transaction[] | null>(null)
+  let assets = $state<Asset[] | null>(null)
+  let showTx = $state(false)
+  let editingTx = $state<Transaction | null>(null)
+  let txForm = $state<TxForm>(defaultForm())
+  let txSaving = $state(false)
+  let deleting = $state(false)
+  let refreshed = false
+
+  const currency = $derived(portfolio?.currency || 'USD')
+  const gainLossClass = $derived(
+    summary && Number(summary.gain_loss) >= 0 ? 'text-green-600' : 'text-red-600',
+  )
+
+  onMount(load)
+
+  async function load(): Promise<void> {
+    if (!id) return
+    try {
+      const [p, s, t, a] = await Promise.all([
+        portfolioApi.get(id),
+        portfolioApi.summary(id),
+        transactionApi.list(id),
+        assetApi.list(),
+      ])
+      portfolio = p
+      summary = s
+      transactions = t
+      assets = a
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load portfolio'
+      toast.error(message)
+    }
+
+    if (!refreshed) {
+      refreshed = true
+      try {
+        await pricesApi.refresh(id)
+        summary = await portfolioApi.summary(id)
+      } catch {
+        // keep current data
+      }
+    }
+  }
+
+  function closeTx(): void {
+    showTx = false
+    editingTx = null
+    txForm = defaultForm()
+  }
+
+  function openNewTx(): void {
+    editingTx = null
+    txForm = defaultForm()
+    showTx = true
+  }
+
+  function startEdit(tx: Transaction): void {
+    editingTx = tx
+    txForm = {
+      asset_id: tx.asset_id,
+      type: tx.type,
+      quantity: tx.quantity,
+      price: tx.price,
+      date: new Date(tx.date).toISOString().split('T')[0],
+      fees: tx.fees || '0',
+      notes: tx.notes || '',
+    }
+    showTx = true
+  }
+
+  async function saveTransaction(): Promise<void> {
+    if (!id) return
+    txSaving = true
+    const payload = {
+      asset_id: txForm.asset_id,
+      type: txForm.type,
+      quantity: txForm.quantity,
+      price: txForm.price,
+      date: new Date(txForm.date).toISOString(),
+      fees: txForm.fees,
+      notes: txForm.notes,
+    }
+    try {
+      if (editingTx) {
+        await transactionApi.update(editingTx.id, {
+          ...payload,
+          currency: editingTx.currency,
+          exchange_rate: editingTx.exchange_rate,
+        })
+      } else {
+        await transactionApi.create(id, payload)
+      }
+      transactions = await transactionApi.list(id)
+      summary = await portfolioApi.summary(id)
+      closeTx()
+      toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      txSaving = false
+    }
+  }
+
+  async function deleteTransaction(txId: string): Promise<void> {
+    if (!id) return
+    deleting = true
+    try {
+      await transactionApi.remove(txId)
+      transactions = await transactionApi.list(id)
+      summary = await portfolioApi.summary(id)
+      closeTx()
+      toast.success('Transaction deleted')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Delete failed'
+      toast.error(message)
+    } finally {
+      deleting = false
+    }
+  }
+
+  function handleDeleteEditing(): void {
+    if (!editingTx) return
+    if (confirm('Delete this transaction?')) {
+      deleteTransaction(editingTx.id)
+    }
+  }
+
+  function canSave(): boolean {
+    return Boolean(txForm.asset_id && txForm.quantity && txForm.price)
+  }
+</script>
+
+<div class="p-6">
+  <h1 class="mb-2 text-2xl font-bold">{portfolio?.name ?? 'Portfolio'}</h1>
+  <p class="mb-6 text-sm text-gray-500">{portfolio?.description}</p>
+
+  <div class="mb-6 grid grid-cols-3 gap-4">
+    <div class="rounded-xl bg-white p-4 shadow">
+      <p class="text-sm text-gray-500">Value</p>
+      <p class="text-xl font-bold">{formatCurrency(summary?.total_value || 0, currency)}</p>
+    </div>
+    <div class="rounded-xl bg-white p-4 shadow">
+      <p class="text-sm text-gray-500">Gain/Loss</p>
+      <p class="text-xl font-bold {gainLossClass}">
+        {formatCurrency(summary?.gain_loss || 0, currency)} ({formatPercent(summary?.gain_loss_pct || 0)})
+      </p>
+    </div>
+    <div class="rounded-xl bg-white p-4 shadow">
+      <p class="text-sm text-gray-500">Assets</p>
+      <p class="text-xl font-bold">{summary?.asset_count || 0}</p>
+    </div>
+  </div>
+
+  <button
+    onclick={() => (showTx ? closeTx() : openNewTx())}
+    class="mb-4 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+  >
+    <Plus class="h-4 w-4" />
+    Add Transaction
+  </button>
+
+  {#if showTx}
+    <div class="mb-6 rounded-xl border bg-white p-4">
+      <h3 class="mb-3 font-semibold">{editingTx ? 'Edit Transaction' : 'New Transaction'}</h3>
+      <div class="grid grid-cols-2 gap-3">
+        <select
+          bind:value={txForm.asset_id}
+          class="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="">Select asset</option>
+          {#each assets ?? [] as a (a.id)}
+            <option value={a.id}>{a.ticker} - {a.name}</option>
+          {/each}
+        </select>
+        <select
+          bind:value={txForm.type}
+          class="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+          <option value="dividend">Dividend</option>
+        </select>
+        <input
+          type="number"
+          placeholder="Quantity"
+          bind:value={txForm.quantity}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Price"
+          bind:value={txForm.price}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
+        <input
+          type="date"
+          bind:value={txForm.date}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Fees"
+          bind:value={txForm.fees}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
+      </div>
+      <div class="mt-3 flex items-center gap-3">
+        <button
+          onclick={saveTransaction}
+          disabled={!canSave() || txSaving}
+          class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          {txSaving ? 'Saving...' : editingTx ? 'Save Changes' : 'Save'}
+        </button>
+        {#if editingTx}
+          <button
+            onclick={handleDeleteEditing}
+            disabled={deleting}
+            class="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            <Trash2 class="h-4 w-4" />
+            Delete
+          </button>
+        {/if}
+        <button
+          onclick={closeTx}
+          class="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  {/if}
+
+  <div class="rounded-xl bg-white p-4 shadow">
+    <h2 class="mb-4 font-semibold">Transactions</h2>
+    <table class="w-full text-left text-sm">
+      <thead>
+        <tr class="border-b text-gray-500">
+          <th class="pb-2">Date</th>
+          <th class="pb-2">Asset</th>
+          <th class="pb-2">Type</th>
+          <th class="pb-2">Quantity</th>
+          <th class="pb-2">Price</th>
+          <th class="pb-2">Total</th>
+          <th class="pb-2 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each transactions ?? [] as tx (tx.id)}
+          <tr class="border-b last:border-0">
+            <td class="py-2">{new Date(tx.date).toLocaleDateString()}</td>
+            <td class="py-2">
+              <span class="font-medium">{tx.asset_ticker}</span>
+              <span class="ml-1 text-xs text-gray-500">{tx.asset_name}</span>
+            </td>
+            <td class="py-2">
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-medium {tx.type === 'buy'
+                  ? 'bg-green-100 text-green-700'
+                  : tx.type === 'sell'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-blue-100 text-blue-700'}"
+              >
+                {tx.type}
+              </span>
+            </td>
+            <td class="py-2">{tx.quantity}</td>
+            <td class="py-2">{formatCurrency(tx.price, currency)}</td>
+            <td class="py-2">
+              {formatCurrency(Number(tx.quantity) * Number(tx.price), currency)}
+            </td>
+            <td class="py-2 text-right">
+              <button
+                onclick={() => startEdit(tx)}
+                class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                title="Edit transaction"
+              >
+                <Pencil class="h-4 w-4" />
+              </button>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+</div>

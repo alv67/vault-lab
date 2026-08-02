@@ -1,6 +1,9 @@
 # Dependencies
 frontend/node_modules/
-frontend/dist/
+
+# SvelteKit
+frontend/build/
+frontend/.svelte-kit/
 
 # Environment
 .env
