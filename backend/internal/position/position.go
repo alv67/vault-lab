@@ -24,7 +24,7 @@ type State struct {
 func Apply(s *State, tx model.TransactionWithAsset) {
 	switch tx.Type {
 	case model.TxBuy:
-		costPF := tx.Quantity.Mul(tx.Price).Mul(tx.ExchangeRate).Add(tx.Fees)
+		costPF := tx.Quantity.Mul(tx.Price).Add(tx.Fees)
 		costCCY := tx.Quantity.Mul(tx.Price)
 		newQty := s.Qty.Add(tx.Quantity)
 		if newQty.IsPositive() {
@@ -37,7 +37,7 @@ func Apply(s *State, tx model.TransactionWithAsset) {
 	case model.TxSell:
 		costSold := s.Avg.Mul(tx.Quantity)
 		costSoldCCY := s.AvgCCY.Mul(tx.Quantity)
-		proceedsPF := tx.Quantity.Mul(tx.Price).Mul(tx.ExchangeRate).Sub(tx.Fees)
+		proceedsPF := tx.Quantity.Mul(tx.Price).Sub(tx.Fees)
 		proceedsCCY := tx.Quantity.Mul(tx.Price)
 		s.Realized = s.Realized.Add(proceedsPF.Sub(costSold))
 		s.RealizedCCY = s.RealizedCCY.Add(proceedsCCY.Sub(costSoldCCY))
@@ -53,10 +53,10 @@ func Apply(s *State, tx model.TransactionWithAsset) {
 	case model.TxFee:
 		var feePF, feeCCY decimal.Decimal
 		if tx.Quantity.IsPositive() {
-			feePF = tx.Price.Mul(tx.Quantity).Mul(tx.ExchangeRate)
+			feePF = tx.Price.Mul(tx.Quantity)
 			feeCCY = tx.Price.Mul(tx.Quantity)
 		} else {
-			feePF = tx.Price.Mul(tx.ExchangeRate)
+			feePF = tx.Price
 			feeCCY = tx.Price
 		}
 		s.Cost = s.Cost.Add(feePF)
@@ -66,6 +66,16 @@ func Apply(s *State, tx model.TransactionWithAsset) {
 			s.AvgCCY = s.CostCCY.Div(s.Qty)
 		}
 	case model.TxDividend:
+		var divPF, divCCY decimal.Decimal
+		if tx.Quantity.IsPositive() {
+			divPF = tx.Price.Mul(tx.Quantity)
+			divCCY = tx.Price.Mul(tx.Quantity)
+		} else {
+			divPF = tx.Price
+			divCCY = tx.Price
+		}
+		s.Realized = s.Realized.Add(divPF)
+		s.RealizedCCY = s.RealizedCCY.Add(divCCY)
 	}
 }
 

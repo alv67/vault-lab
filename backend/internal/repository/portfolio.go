@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 
 	"github.com/amelamela/vault-lab/internal/model"
@@ -26,7 +25,7 @@ type PortfolioRepository interface {
 }
 
 type portfolioRepo struct {
-	db           *pgxpool.Pool
+	db           DBTX
 	transactions TransactionRepository
 	splits       SplitRepository
 }
@@ -101,7 +100,7 @@ func (r *portfolioRepo) GetSummary(ctx context.Context, portfolioID uuid.UUID) (
 		WITH
 		buy AS (
 			SELECT asset_id,
-				SUM(quantity * price * exchange_rate + fees) AS total_cost,
+				SUM(quantity * price + fees) AS total_cost,
 				SUM(quantity) AS total_qty
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'buy'
@@ -110,7 +109,7 @@ func (r *portfolioRepo) GetSummary(ctx context.Context, portfolioID uuid.UUID) (
 		sell AS (
 			SELECT asset_id,
 				SUM(quantity) AS sold_qty,
-				SUM(quantity * price * exchange_rate - fees) AS total_proceeds
+				SUM(quantity * price - fees) AS total_proceeds
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'sell'
 			GROUP BY asset_id
@@ -152,7 +151,7 @@ func (r *portfolioRepo) GetAllocation(ctx context.Context, portfolioID uuid.UUID
 		WITH
 		buy AS (
 			SELECT asset_id,
-				SUM(quantity * price * exchange_rate + fees) AS total_cost,
+				SUM(quantity * price + fees) AS total_cost,
 				SUM(quantity) AS total_qty
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'buy'
@@ -161,7 +160,7 @@ func (r *portfolioRepo) GetAllocation(ctx context.Context, portfolioID uuid.UUID
 		sell AS (
 			SELECT asset_id,
 				SUM(quantity) AS sold_qty,
-				SUM(quantity * price * exchange_rate - fees) AS total_proceeds
+				SUM(quantity * price - fees) AS total_proceeds
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'sell'
 			GROUP BY asset_id
@@ -210,7 +209,7 @@ func (r *portfolioRepo) GetPerformance(ctx context.Context, portfolioID uuid.UUI
 	rows, err := r.db.Query(ctx, `
 		WITH
 		buy AS (
-			SELECT asset_id, date, quantity, price, exchange_rate
+			SELECT asset_id, date, quantity, price
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'buy'
 		),
@@ -264,7 +263,7 @@ func (r *portfolioRepo) GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*m
 		WITH
 		buy AS (
 			SELECT asset_id,
-				SUM(quantity * price * exchange_rate + fees) AS total_cost,
+				SUM(quantity * price + fees) AS total_cost,
 				SUM(quantity) AS total_qty
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'buy'
@@ -273,7 +272,7 @@ func (r *portfolioRepo) GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*m
 		sell AS (
 			SELECT asset_id,
 				SUM(quantity) AS sold_qty,
-				SUM(quantity * price * exchange_rate - fees) AS total_proceeds
+				SUM(quantity * price - fees) AS total_proceeds
 			FROM transactions
 			WHERE portfolio_id = $1 AND type = 'sell'
 			GROUP BY asset_id

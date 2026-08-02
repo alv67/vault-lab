@@ -155,7 +155,12 @@ func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, currentP
 }
 
 func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
-	return s.repos.Asset.Create(ctx, asset)
+	created, err := s.repos.Asset.Create(ctx, asset)
+	if err != nil {
+		return nil, err
+	}
+	s.syncAssetBackground(created.ID)
+	return created, nil
 }
 
 func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
@@ -313,9 +318,6 @@ func (s *Service) UpdateTransaction(ctx context.Context, userID uuid.UUID, tx *m
 		return ErrForbidden
 	}
 	tx.PortfolioID = existing.PortfolioID
-	if tx.ExchangeRate.IsZero() {
-		tx.ExchangeRate = decimal.NewFromInt(1)
-	}
 	return s.repos.Transaction.Update(ctx, tx)
 }
 
@@ -566,6 +568,255 @@ func (s *Service) GetPortfolioHistory(ctx context.Context, portfolioID uuid.UUID
 		Assets:        assets,
 		Splits:        aggSplits,
 	}, nil
+}
+
+// ExportPortfolio builds the JSON document for a portfolio: portfolio
+// metadata, the assets referenced by its transactions and the full transaction
+// history. Assets are referenced by ticker so the file is human-readable and
+// editable. Historical prices and split events are asset-level market data and
+// are not exported (they are re-synced from the data provider).
+func (s *Service) ExportPortfolio(ctx context.Context, portfolioID uuid.UUID, userID uuid.UUID) (*model.PortfolioExport, error) {
+	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	if !s.canAccessPortfolio(ctx, p, userID) {
+		return nil, ErrForbidden
+	}
+	txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, []uuid.UUID{portfolioID})
+	if err != nil {
+		return nil, err
+	}
+
+	assetIDs := make([]uuid.UUID, 0, len(txs))
+	seen := map[uuid.UUID]bool{}
+	for _, tx := range txs {
+		if !seen[tx.AssetID] {
+			seen[tx.AssetID] = true
+			assetIDs = append(assetIDs, tx.AssetID)
+		}
+	}
+	assets, err := s.repos.Asset.FindByIDs(ctx, assetIDs)
+	if err != nil {
+		return nil, err
+	}
+	assetByID := map[uuid.UUID]*model.Asset{}
+	for _, a := range assets {
+		assetByID[a.ID] = a
+	}
+
+	doc := &model.PortfolioExport{
+		Version:    1,
+		ExportedAt: time.Now().UTC(),
+		Portfolio: model.ExportPortfolio{
+			Name:        p.Name,
+			Description: p.Description,
+			Currency:    p.Currency,
+		},
+		Assets:       make([]model.ExportAsset, 0, len(assets)),
+		Transactions: make([]model.ExportTransaction, 0, len(txs)),
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Ticker < assets[j].Ticker })
+	for _, a := range assets {
+		doc.Assets = append(doc.Assets, model.ExportAsset{
+			Ticker:   a.Ticker,
+			Name:     a.Name,
+			Type:     a.Type,
+			Currency: a.Currency,
+			ISIN:     a.ISIN,
+		})
+	}
+	for _, tx := range txs {
+		a := assetByID[tx.AssetID]
+		if a == nil {
+			continue
+		}
+		doc.Transactions = append(doc.Transactions, model.ExportTransaction{
+			Date:        tx.Date,
+			Type:        tx.Type,
+			AssetTicker: a.Ticker,
+			Quantity:    tx.Quantity,
+			Price:       tx.Price,
+			Fees:        tx.Fees,
+			Notes:       tx.Notes,
+		})
+	}
+	return doc, nil
+}
+
+// ImportPortfolio restores a portfolio from an exported document. Assets are
+// matched by ticker and created if missing. In "new" mode a fresh portfolio is
+// created with the given name (falling back to the document's). In "overwrite"
+// mode the target portfolio is deleted and recreated from the document. Both
+// paths run atomically.
+func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *model.PortfolioExport, mode, name string, targetID *uuid.UUID) (*model.Portfolio, error) {
+	if doc == nil || doc.Version != 1 {
+		return nil, ErrInvalidInput
+	}
+	if strings.TrimSpace(doc.Portfolio.Name) == "" {
+		return nil, ErrInvalidInput
+	}
+	if mode == "" {
+		mode = "new"
+	}
+	if mode != "new" && mode != "overwrite" {
+		return nil, ErrInvalidInput
+	}
+	if mode == "overwrite" && targetID == nil {
+		return nil, ErrInvalidInput
+	}
+
+	var created *model.Portfolio
+	err := s.repos.WithTx(ctx, func(rx *repository.Repository) error {
+		if mode == "overwrite" {
+			target, err := rx.Portfolio.FindByID(ctx, *targetID)
+			if err != nil {
+				return err
+			}
+			if !s.canAccessPortfolio(ctx, target, userID) {
+				return ErrForbidden
+			}
+			if err := rx.Portfolio.Delete(ctx, *targetID); err != nil {
+				return err
+			}
+		}
+
+		assetByTicker := map[string]*model.Asset{}
+		createAsset := func(ticker string) (*model.Asset, error) {
+			if a, ok := assetByTicker[ticker]; ok {
+				return a, nil
+			}
+			a, err := rx.Asset.FindByTicker(ctx, ticker)
+			if err != nil {
+				return nil, err
+			}
+			if a == nil {
+				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD"}
+				for i := range doc.Assets {
+					if strings.EqualFold(doc.Assets[i].Ticker, ticker) {
+						if doc.Assets[i].Name != "" {
+							a.Name = doc.Assets[i].Name
+						}
+						a.ISIN = doc.Assets[i].ISIN
+						if doc.Assets[i].Type != "" {
+							a.Type = doc.Assets[i].Type
+						}
+						if doc.Assets[i].Currency != "" {
+							a.Currency = doc.Assets[i].Currency
+						}
+						break
+					}
+				}
+				a, err = rx.Asset.Create(ctx, a)
+				if err != nil {
+					return nil, err
+				}
+			}
+			assetByTicker[ticker] = a
+			return a, nil
+		}
+		for _, ea := range doc.Assets {
+			if _, err := createAsset(strings.TrimSpace(ea.Ticker)); err != nil {
+				return err
+			}
+		}
+
+		pname := strings.TrimSpace(name)
+		if pname == "" {
+			pname = doc.Portfolio.Name
+		}
+		p, err := rx.Portfolio.Create(ctx, &model.Portfolio{
+			UserID:      userID,
+			Name:        pname,
+			Description: doc.Portfolio.Description,
+			Currency:    doc.Portfolio.Currency,
+		})
+		if err != nil {
+			return err
+		}
+		created = p
+
+		for _, et := range doc.Transactions {
+			if strings.TrimSpace(et.AssetTicker) == "" {
+				return fmt.Errorf("%w: transaction without asset_ticker", ErrInvalidInput)
+			}
+			if et.Type != model.TxBuy && et.Type != model.TxSell && et.Type != model.TxDividend && et.Type != model.TxSplit && et.Type != model.TxFee {
+				return fmt.Errorf("%w: invalid transaction type %q", ErrInvalidInput, et.Type)
+			}
+			a, err := createAsset(strings.TrimSpace(et.AssetTicker))
+			if err != nil {
+				return err
+			}
+			if _, err := rx.Transaction.Create(ctx, &model.Transaction{
+				PortfolioID: p.ID,
+				AssetID:     a.ID,
+				Type:        et.Type,
+				Quantity:    et.Quantity,
+				Price:       et.Price,
+				Fees:        et.Fees,
+				Date:        et.Date,
+				Notes:       et.Notes,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
+// SyncAssetData refreshes asset-level market data for every asset
+// independently of any portfolio: split events are re-checked and the price
+// history is brought up to date. It is meant to run once per app load.
+func (s *Service) SyncAssetData(ctx context.Context) error {
+	assets, err := s.repos.Asset.List(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]uuid.UUID, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID)
+	}
+	return s.syncAssets(ctx, ids)
+}
+
+func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	assets, err := s.repos.Asset.FindByIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
+	firstDates, err := s.repos.Transaction.MinDateByAsset(ctx, ids)
+	if err != nil {
+		return err
+	}
+	historyAssets := make([]price.HistoryAsset, 0, len(assets))
+	for _, a := range assets {
+		from := dayOf(time.Now())
+		if fd, ok := firstDates[a.ID]; ok {
+			from = dayOf(fd)
+		}
+		historyAssets = append(historyAssets, price.HistoryAsset{ID: a.ID, Ticker: a.Ticker, From: from})
+	}
+	if err := s.fetcher.EnsureSplits(ctx, assets); err != nil {
+		return err
+	}
+	return s.fetcher.EnsureHistory(ctx, historyAssets)
+}
+
+func (s *Service) syncAssetBackground(assetID uuid.UUID) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := s.syncAssets(ctx, []uuid.UUID{assetID}); err != nil {
+			log.Warn().Err(err).Str("asset_id", assetID.String()).Msg("asset background sync failed")
+		}
+	}()
 }
 
 // portfolioSeries builds the daily position series for a portfolio using the

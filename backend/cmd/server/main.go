@@ -145,11 +145,14 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/assets/meta", h.GetAssetMeta)
 			r.Get("/assets/{id}", h.GetAsset)
 			r.Post("/assets", h.CreateAsset)
+			r.Post("/assets/sync", h.SyncAssets)
 			r.Delete("/assets/{id}", h.DeleteAsset)
 
 			r.Get("/portfolios", h.ListPortfolios)
 			r.Post("/portfolios", h.CreatePortfolio)
+			r.Post("/portfolios/import", h.ImportPortfolio)
 			r.Get("/portfolios/{id}", h.GetPortfolio)
+			r.Get("/portfolios/{id}/export", h.ExportPortfolio)
 			r.Patch("/portfolios/{id}", h.UpdatePortfolio)
 			r.Delete("/portfolios/{id}", h.DeletePortfolio)
 

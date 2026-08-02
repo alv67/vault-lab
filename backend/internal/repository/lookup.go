@@ -3,8 +3,6 @@ package repository
 import (
 	"context"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type LookupRepository interface {
@@ -13,7 +11,7 @@ type LookupRepository interface {
 }
 
 type lookupRepo struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
 func (r *lookupRepo) Get(ctx context.Context, query string, maxAge time.Duration) ([]byte, error) {

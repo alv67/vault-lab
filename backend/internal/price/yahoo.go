@@ -360,8 +360,9 @@ func (f *YahooFetcher) fetchSplits(ctx context.Context, ticker string) ([]model.
 	return splits, nil
 }
 
-// EnsureSplits fetches stock split events for assets without stored splits and
-// persists them, respecting a per-asset cooldown.
+// EnsureSplits fetches the stock split events for each asset and upserts them,
+// re-checking the list on every call outside the per-asset cooldown. Upsert is
+// idempotent on (asset_id, date) so re-fetching is safe.
 func (f *YahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -369,16 +370,6 @@ func (f *YahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) 
 	now := time.Now().UTC()
 	for _, a := range assets {
 		if last, ok := f.splitCooldown[a.ID]; ok && last.Add(f.refreshInterval).After(now) {
-			continue
-		}
-		existing, err := f.repos.Split.FindByAssets(ctx, []uuid.UUID{a.ID})
-		if err != nil {
-			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("split lookup failed")
-			f.splitCooldown[a.ID] = now
-			continue
-		}
-		if len(existing) > 0 {
-			f.splitCooldown[a.ID] = now
 			continue
 		}
 		splits, err := f.fetchSplits(ctx, a.Ticker)

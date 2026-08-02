@@ -1,0 +1,2 @@
+ALTER TABLE transactions ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD';
+ALTER TABLE transactions ADD COLUMN exchange_rate NUMERIC(18,8) NOT NULL DEFAULT 1;

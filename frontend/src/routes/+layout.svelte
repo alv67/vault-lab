@@ -5,13 +5,25 @@
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { auth, initAuth } from '$lib/stores/auth.svelte'
+  import { assetApi } from '$lib/services/api'
   import Layout from '$lib/components/Layout.svelte'
   import Toaster from '$lib/components/Toaster.svelte'
 
   let { children } = $props()
 
+  let synced = $state(false)
+
   onMount(() => {
     initAuth()
+  })
+
+  $effect(() => {
+    if (auth.user && !synced) {
+      synced = true
+      assetApi.sync().catch(() => {
+        // keep going; individual pages backfill what they need
+      })
+    }
   })
 
   $effect(() => {

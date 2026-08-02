@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/amelamela/vault-lab/internal/model"
@@ -19,7 +18,7 @@ type UserRepository interface {
 }
 
 type userRepo struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
 func (r *userRepo) Create(ctx context.Context, email, name, password string) (*model.User, error) {

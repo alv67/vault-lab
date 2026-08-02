@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/amelamela/vault-lab/internal/model"
 )
@@ -15,7 +14,7 @@ type SplitRepository interface {
 }
 
 type splitRepo struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
 func (r *splitRepo) Upsert(ctx context.Context, s *model.Split) error {

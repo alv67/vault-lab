@@ -15,7 +15,7 @@
   } from '$lib/services/api'
   import { formatCurrency, formatPercent } from '$lib/format'
   import PositionChart from '$lib/components/PositionChart.svelte'
-  import { Plus, Pencil, Trash2 } from 'lucide-svelte'
+  import { Plus, Pencil, Trash2, Download } from 'lucide-svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -49,6 +49,7 @@
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
   let txForm = $state<TxForm>(defaultForm())
+  let txDividendAmount = $state('')
   let txSaving = $state(false)
   let deleting = $state(false)
   let refreshed = false
@@ -107,11 +108,13 @@
     showTx = false
     editingTx = null
     txForm = defaultForm()
+    txDividendAmount = ''
   }
 
   function openNewTx(): void {
     editingTx = null
     txForm = defaultForm()
+    txDividendAmount = ''
     showTx = true
   }
 
@@ -126,6 +129,8 @@
       fees: tx.fees || '0',
       notes: tx.notes || '',
     }
+    txDividendAmount =
+      tx.type === 'dividend' ? String(Number(tx.price) * Number(tx.quantity)) : ''
     showTx = true
   }
 
@@ -135,8 +140,8 @@
     const payload = {
       asset_id: txForm.asset_id,
       type: txForm.type,
-      quantity: txForm.quantity,
-      price: txForm.price,
+      quantity: txForm.type === 'dividend' ? '1' : txForm.quantity,
+      price: txForm.type === 'dividend' ? txDividendAmount : txForm.price,
       date: new Date(txForm.date).toISOString(),
       fees: txForm.fees,
       notes: txForm.notes,
@@ -145,8 +150,6 @@
       if (editingTx) {
         await transactionApi.update(editingTx.id, {
           ...payload,
-          currency: editingTx.currency,
-          exchange_rate: editingTx.exchange_rate,
         })
       } else {
         await transactionApi.create(id, payload)
@@ -190,7 +193,27 @@
   }
 
   function canSave(): boolean {
+    if (txForm.type === 'dividend') {
+      return Boolean(txForm.asset_id && txDividendAmount && Number(txDividendAmount) > 0)
+    }
     return Boolean(txForm.asset_id && txForm.quantity && txForm.price)
+  }
+
+  async function exportPortfolio(): Promise<void> {
+    if (!id) return
+    try {
+      const doc = await portfolioApi.exportDoc(id)
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `vault-lab-${doc.portfolio.name.toLowerCase().replace(/\s+/g, '-') || 'portfolio'}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Export failed'
+      toast.error(message)
+    }
   }
 </script>
 
@@ -301,13 +324,22 @@
     {/if}
   </div>
 
-  <button
-    onclick={() => (showTx ? closeTx() : openNewTx())}
-    class="mb-4 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
-  >
-    <Plus class="h-4 w-4" />
-    Add Transaction
-  </button>
+  <div class="mb-4 flex items-center gap-2">
+    <button
+      onclick={() => (showTx ? closeTx() : openNewTx())}
+      class="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+    >
+      <Plus class="h-4 w-4" />
+      Add Transaction
+    </button>
+    <button
+      onclick={exportPortfolio}
+      class="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+    >
+      <Download class="h-4 w-4" />
+      Export
+    </button>
+  </div>
 
   {#if showTx}
     <div class="mb-6 rounded-xl border bg-white p-4">
@@ -330,19 +362,30 @@
           <option value="sell">Sell</option>
           <option value="dividend">Dividend</option>
         </select>
-        <input
-          type="number"
-          placeholder="Quantity"
-          bind:value={txForm.quantity}
-          class="rounded-lg border px-3 py-2 text-sm"
-        />
-        <input
-          type="number"
-          step="0.01"
-          placeholder="Price"
-          bind:value={txForm.price}
-          class="rounded-lg border px-3 py-2 text-sm"
-        />
+        {#if txForm.type === 'dividend'}
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="Amount"
+            bind:value={txDividendAmount}
+            class="rounded-lg border px-3 py-2 text-sm"
+          />
+        {:else}
+          <input
+            type="number"
+            placeholder="Quantity"
+            bind:value={txForm.quantity}
+            class="rounded-lg border px-3 py-2 text-sm"
+          />
+          <input
+            type="number"
+            step="0.01"
+            placeholder="Price"
+            bind:value={txForm.price}
+            class="rounded-lg border px-3 py-2 text-sm"
+          />
+        {/if}
         <input
           type="date"
           bind:value={txForm.date}

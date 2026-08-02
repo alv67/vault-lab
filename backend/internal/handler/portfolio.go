@@ -147,10 +147,6 @@ func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 	tx.PortfolioID = portfolioID
 
-	if tx.ExchangeRate.IsZero() {
-		tx.ExchangeRate = mustDecimal("1")
-	}
-
 	created, err := h.svc.AddTransaction(r.Context(), &tx)
 	if err != nil {
 		log.Error().Err(err).Msg("create transaction failed")

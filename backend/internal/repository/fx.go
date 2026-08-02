@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/shopspring/decimal"
 )
 
@@ -15,7 +14,7 @@ type FXRepository interface {
 }
 
 type fxRepo struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
 func (r *fxRepo) Upsert(ctx context.Context, base, quote string, rate decimal.Decimal) error {

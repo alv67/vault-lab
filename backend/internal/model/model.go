@@ -78,35 +78,31 @@ const (
 )
 
 type Transaction struct {
-	ID           uuid.UUID       `json:"id"`
-	PortfolioID  uuid.UUID       `json:"portfolio_id"`
-	AssetID      uuid.UUID       `json:"asset_id"`
-	Type         TransactionType `json:"type"`
-	Quantity     decimal.Decimal `json:"quantity"`
-	Price        decimal.Decimal `json:"price"`
-	Currency     string          `json:"currency"`
-	ExchangeRate decimal.Decimal `json:"exchange_rate,omitempty"`
-	Fees         decimal.Decimal `json:"fees,omitempty"`
-	Date         time.Time       `json:"date"`
-	Notes        string          `json:"notes,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID          uuid.UUID       `json:"id"`
+	PortfolioID uuid.UUID       `json:"portfolio_id"`
+	AssetID     uuid.UUID       `json:"asset_id"`
+	Type        TransactionType `json:"type"`
+	Quantity    decimal.Decimal `json:"quantity"`
+	Price       decimal.Decimal `json:"price"`
+	Fees        decimal.Decimal `json:"fees,omitempty"`
+	Date        time.Time       `json:"date"`
+	Notes       string          `json:"notes,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 type TransactionWithAsset struct {
-	ID           uuid.UUID       `json:"id"`
-	PortfolioID  uuid.UUID       `json:"portfolio_id"`
-	AssetID      uuid.UUID       `json:"asset_id"`
-	AssetTicker  string          `json:"asset_ticker"`
-	AssetName    string          `json:"asset_name"`
-	Type         TransactionType `json:"type"`
-	Quantity     decimal.Decimal `json:"quantity"`
-	Price        decimal.Decimal `json:"price"`
-	Currency     string          `json:"currency"`
-	ExchangeRate decimal.Decimal `json:"exchange_rate,omitempty"`
-	Fees         decimal.Decimal `json:"fees,omitempty"`
-	Date         time.Time       `json:"date"`
-	Notes        string          `json:"notes,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID          uuid.UUID       `json:"id"`
+	PortfolioID uuid.UUID       `json:"portfolio_id"`
+	AssetID     uuid.UUID       `json:"asset_id"`
+	AssetTicker string          `json:"asset_ticker"`
+	AssetName   string          `json:"asset_name"`
+	Type        TransactionType `json:"type"`
+	Quantity    decimal.Decimal `json:"quantity"`
+	Price       decimal.Decimal `json:"price"`
+	Fees        decimal.Decimal `json:"fees,omitempty"`
+	Date        time.Time       `json:"date"`
+	Notes       string          `json:"notes,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
 }
 
 type Price struct {
@@ -134,4 +130,39 @@ type Split struct {
 	Date        time.Time       `json:"date"`
 	Numerator   decimal.Decimal `json:"numerator"`
 	Denominator decimal.Decimal `json:"denominator"`
+}
+
+// PortfolioExport is the JSON document produced by portfolio export and
+// consumed by portfolio import. It is designed to be human-readable and
+// editable: assets and transactions are referenced by ticker.
+type PortfolioExport struct {
+	Version      int                 `json:"version"`
+	ExportedAt   time.Time           `json:"exported_at"`
+	Portfolio    ExportPortfolio     `json:"portfolio"`
+	Assets       []ExportAsset       `json:"assets"`
+	Transactions []ExportTransaction `json:"transactions"`
+}
+
+type ExportPortfolio struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Currency    string `json:"currency"`
+}
+
+type ExportAsset struct {
+	Ticker   string    `json:"ticker"`
+	Name     string    `json:"name"`
+	Type     AssetType `json:"type"`
+	Currency string    `json:"currency"`
+	ISIN     string    `json:"isin,omitempty"`
+}
+
+type ExportTransaction struct {
+	Date        time.Time       `json:"date"`
+	Type        TransactionType `json:"type"`
+	AssetTicker string          `json:"asset_ticker"`
+	Quantity    decimal.Decimal `json:"quantity"`
+	Price       decimal.Decimal `json:"price"`
+	Fees        decimal.Decimal `json:"fees,omitempty"`
+	Notes       string          `json:"notes,omitempty"`
 }

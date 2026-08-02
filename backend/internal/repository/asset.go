@@ -2,10 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/amelamela/vault-lab/internal/model"
 )
@@ -13,6 +14,8 @@ import (
 type AssetRepository interface {
 	Create(ctx context.Context, asset *model.Asset) (*model.Asset, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, error)
+	FindByTicker(ctx context.Context, ticker string) (*model.Asset, error)
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error)
 	Search(ctx context.Context, query string) ([]*model.Asset, error)
 	List(ctx context.Context) ([]*model.Asset, error)
 	MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error
@@ -21,7 +24,7 @@ type AssetRepository interface {
 }
 
 type assetRepo struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
 func (r *assetRepo) Create(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
@@ -48,6 +51,47 @@ func (r *assetRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, e
 		return nil, err
 	}
 	return a, nil
+}
+
+func (r *assetRepo) FindByTicker(ctx context.Context, ticker string) (*model.Asset, error) {
+	a := &model.Asset{}
+	err := r.db.QueryRow(ctx,
+		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at
+		 FROM assets WHERE ticker = $1`,
+		ticker,
+	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return a, nil
+}
+
+func (r *assetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at
+		 FROM assets WHERE id = ANY($1::uuid[])`,
+		ids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var assets []*model.Asset
+	for rows.Next() {
+		a := &model.Asset{}
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
+			return nil, err
+		}
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
 }
 
 func (r *assetRepo) Search(ctx context.Context, query string) ([]*model.Asset, error) {

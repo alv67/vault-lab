@@ -38,8 +38,6 @@ export interface Transaction {
   type: 'buy' | 'sell' | 'dividend' | 'split' | 'fee'
   quantity: string
   price: string
-  currency: string
-  exchange_rate: string
   fees: string
   date: string
   notes: string
@@ -181,6 +179,32 @@ export interface PortfolioHistory {
   assets: AssetPositionSeries[]
 }
 
+export interface PortfolioExportDocument {
+  version: number
+  exported_at: string
+  portfolio: {
+    name: string
+    description: string
+    currency: string
+  }
+  assets: {
+    ticker: string
+    name: string
+    type: string
+    currency: string
+    isin?: string
+  }[]
+  transactions: {
+    date: string
+    type: string
+    asset_ticker: string
+    quantity: string
+    price: string
+    fees?: string
+    notes?: string
+  }[]
+}
+
 export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
@@ -306,6 +330,13 @@ export const portfolioApi = {
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),
   dashboard: () => request<Dashboard>('/dashboard'),
+  exportDoc: (id: string) => request<PortfolioExportDocument>(`/portfolios/${id}/export`),
+  importDoc: (data: {
+    document: PortfolioExportDocument
+    mode: 'new' | 'overwrite'
+    name?: string
+    target_portfolio_id?: string
+  }) => request<Portfolio>('/portfolios/import', { method: 'POST', body: data }),
 }
 
 export const assetApi = {
@@ -316,6 +347,7 @@ export const assetApi = {
   get: (id: string) => request<Asset>(`/assets/${id}`),
   create: (data: Partial<Asset>) => request<Asset>('/assets', { method: 'POST', body: data }),
   remove: (id: string) => request<void>(`/assets/${id}`, { method: 'DELETE' }),
+  sync: () => request<{ status: string }>('/assets/sync', { method: 'POST' }),
 }
 
 export const transactionApi = {

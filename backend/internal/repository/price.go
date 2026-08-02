@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/amelamela/vault-lab/internal/model"
 )
@@ -22,7 +21,7 @@ type PriceRepository interface {
 }
 
 type priceRepo struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
 func (r *priceRepo) Create(ctx context.Context, price *model.Price) (*model.Price, error) {
