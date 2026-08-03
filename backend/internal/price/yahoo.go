@@ -116,10 +116,10 @@ func (f *YahooFetcher) FetchAll(ctx context.Context) error {
 	return nil
 }
 
-// RefreshFX keeps USD->X rates for every currency used by assets up to date,
-// using the same staleness/throttle logic as asset prices.
+// RefreshFX keeps USD->X rates for every enabled whitelisted currency up to
+// date, using the same staleness/throttle logic as asset prices.
 func (f *YahooFetcher) RefreshFX(ctx context.Context) error {
-	currencies, err := f.repos.Asset.Currencies(ctx)
+	currencies, err := f.repos.Currency.ListEnabled(ctx)
 	if err != nil {
 		return fmt.Errorf("list currencies: %w", err)
 	}
@@ -128,7 +128,8 @@ func (f *YahooFetcher) RefreshFX(ctx context.Context) error {
 	defer f.mu.Unlock()
 
 	now := time.Now().UTC()
-	for _, quote := range currencies {
+	for _, cur := range currencies {
+		quote := cur.Code
 		if quote == "USD" || quote == "" {
 			continue
 		}
@@ -172,6 +173,12 @@ func (f *YahooFetcher) fetchFX(ctx context.Context, quote string) (decimal.Decim
 		return decimal.Zero, fmt.Errorf("no fx rate available")
 	}
 	return decimal.NewFromFloat(*quoteData.Close[idx]), nil
+}
+
+// FetchFXRate returns the latest USD->quote close from Yahoo. It is used to
+// validate that a currency can be managed before adding it to the whitelist.
+func (f *YahooFetcher) FetchFXRate(ctx context.Context, quote string) (decimal.Decimal, error) {
+	return f.fetchFX(ctx, quote)
 }
 
 // fetchChart performs one Yahoo chart request and returns the parsed result.

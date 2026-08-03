@@ -61,6 +61,15 @@ type Asset struct {
 	PriceFetchedAt *time.Time `json:"price_fetched_at,omitempty"`
 }
 
+type Currency struct {
+	Code      string    `json:"code"`
+	Name      string    `json:"name"`
+	Symbol    string    `json:"symbol"`
+	Enabled   bool      `json:"enabled"`
+	Sort      int       `json:"sort"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Category struct {
 	ID     uuid.UUID `json:"id"`
 	Name   string    `json:"name"`

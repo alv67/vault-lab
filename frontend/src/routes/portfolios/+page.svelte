@@ -4,7 +4,9 @@
   import { toast } from '$lib/stores/toast.svelte'
   import {
     portfolioApi,
+    settingsApi,
     type Portfolio,
+    type Currency,
     type PortfolioExportDocument,
   } from '$lib/services/api'
   import { Plus, ExternalLink, Upload, X } from 'lucide-svelte'
@@ -13,6 +15,7 @@
   let name = $state('')
   let description = $state('')
   let currency = $state('USD')
+  let currencies = $state<Currency[]>([])
   let portfolios = $state<Portfolio[] | null>(null)
   let loading = $state(true)
   let creating = $state(false)
@@ -25,9 +28,15 @@
   let importError = $state('')
   let importing = $state(false)
 
-  onMount(async () => {
+onMount(async () => {
     try {
-      portfolios = await portfolioApi.list()
+      const [portfolioList, curList] = await Promise.all([portfolioApi.list(), settingsApi.listCurrencies()])
+      portfolios = portfolioList
+      currencies = curList.currencies
+      if (curList.currencies.length > 0) {
+        const preferred = curList.currencies.find((c) => c.code === 'USD') ?? curList.currencies[0]
+        currency = preferred.code
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load portfolios'
       toast.error(message)
@@ -248,10 +257,9 @@
           bind:value={currency}
           class="w-full rounded-lg border px-3 py-2 text-sm"
         >
-          <option value="USD">USD</option>
-          <option value="EUR">EUR</option>
-          <option value="GBP">GBP</option>
-          <option value="CHF">CHF</option>
+          {#each currencies as c (c.code)}
+            <option value={c.code}>{c.code}</option>
+          {/each}
         </select>
         <button
           onclick={createPortfolio}

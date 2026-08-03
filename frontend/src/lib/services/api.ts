@@ -29,6 +29,19 @@ export interface Asset {
   currency: string
 }
 
+export interface Currency {
+  code: string
+  name: string
+  symbol?: string
+  enabled?: boolean
+  sort?: number
+  created_at?: string
+}
+
+export interface CurrencyList {
+  currencies: Currency[]
+}
+
 export interface Transaction {
   id: string
   portfolio_id: string
@@ -365,4 +378,12 @@ export const pricesApi = {
       method: 'POST',
       params: portfolioId ? { portfolio_id: portfolioId } : {},
     }),
+}
+
+export const settingsApi = {
+  listCurrencies: () => request<CurrencyList>('/settings/currencies'),
+  addCurrency: (code: string, name?: string) =>
+    request<Currency>('/settings/currencies', { method: 'POST', body: { code, name } }),
+  deleteCurrency: (code: string) =>
+    request<void>(`/settings/currencies/${encodeURIComponent(code)}`, { method: 'DELETE' }),
 }

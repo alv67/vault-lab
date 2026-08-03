@@ -7,6 +7,20 @@ const currencySymbols: Record<string, string> = {
   CAD: 'C$',
   AUD: 'A$',
   CNY: '¥',
+  SEK: 'kr',
+  NOK: 'kr',
+  DKK: 'kr',
+  PLN: 'zł',
+  KRW: '₩',
+  INR: '₹',
+  BRL: 'R$',
+  MXN: 'MX$',
+  SGD: 'S$',
+  NZD: 'NZ$',
+  HKD: 'HK$',
+  TRY: '₺',
+  RUB: '₽',
+  ZAR: 'R',
 }
 
 export function currencySymbol(code: string): string {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { toast } from '$lib/stores/toast.svelte'
-  import { assetApi, type Asset, type AssetLookupResult } from '$lib/services/api'
+  import { assetApi, settingsApi, type Asset, type AssetLookupResult, type Currency } from '$lib/services/api'
   import { Plus, Loader2, Search, Trash2 } from 'lucide-svelte'
 
   const defaultForm = () => ({
@@ -17,6 +17,7 @@
   let assets = $state<Asset[] | null>(null)
   let loading = $state(true)
   let creating = $state(false)
+  let currencies = $state<Currency[]>([])
 
   let lookupResults = $state<AssetLookupResult[] | null>(null)
   let lookupLoading = $state(false)
@@ -26,7 +27,13 @@
 
   onMount(async () => {
     try {
-      assets = await assetApi.list()
+      const [assetList, curList] = await Promise.all([assetApi.list(), settingsApi.listCurrencies()])
+      assets = assetList
+      currencies = curList.currencies
+      if (curList.currencies.length > 0) {
+        const preferred = curList.currencies.find((c) => c.code === 'USD') ?? curList.currencies[0]
+        form.currency = preferred.code
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load assets'
       toast.error(message)
@@ -206,10 +213,9 @@
           bind:value={form.currency}
           class="rounded-lg border px-3 py-2 text-sm"
         >
-          <option value="USD">USD</option>
-          <option value="EUR">EUR</option>
-          <option value="GBP">GBP</option>
-          <option value="CHF">CHF</option>
+          {#each currencies as c (c.code)}
+            <option value={c.code}>{c.code}</option>
+          {/each}
         </select>
       </div>
       <button

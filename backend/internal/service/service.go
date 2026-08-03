@@ -29,6 +29,10 @@ var (
 	ErrAssetInUse         = errors.New("asset is used in transactions")
 	ErrWeakPassword       = errors.New("password must be at least 8 characters")
 	ErrInvalidInput       = errors.New("invalid input")
+	ErrCurrencyExists     = errors.New("currency already in whitelist")
+	ErrCurrencyInUse      = errors.New("currency is used by assets or portfolios")
+	ErrCurrencyProtected  = errors.New("currency cannot be removed")
+	ErrCurrencyNotManaged = errors.New("currency conversion not available")
 )
 
 type Service struct {
@@ -260,6 +264,110 @@ func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) ([]
 
 func (s *Service) ListAssets(ctx context.Context) ([]*model.Asset, error) {
 	return s.repos.Asset.List(ctx)
+}
+
+// ListCurrencies returns the enabled whitelisted currencies, ordered.
+func (s *Service) ListCurrencies(ctx context.Context) ([]model.Currency, error) {
+	return s.repos.Currency.ListEnabled(ctx)
+}
+
+// AddCurrency validates that a USD->code conversion is available on Yahoo and
+// adds the currency to the enabled whitelist.
+func (s *Service) AddCurrency(ctx context.Context, code, name string) (*model.Currency, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return nil, fmt.Errorf("%w: empty currency code", ErrInvalidInput)
+	}
+	if err := s.ValidateCurrency(ctx, code); err != nil {
+		return nil, err
+	}
+
+	existing, err := s.repos.Currency.Get(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrCurrencyExists
+	}
+
+	if name == "" {
+		name = defaultCurrencyName(code)
+	}
+
+	currencies, err := s.repos.Currency.ListAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	c := &model.Currency{
+		Code:    code,
+		Name:    name,
+		Enabled: true,
+		Sort:    nextSort(currencies),
+	}
+	if err := s.repos.Currency.Create(ctx, c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// DeleteCurrency removes a currency from the whitelist. Removal is blocked for
+// the default USD base and for any currency still referenced by assets or
+// portfolios.
+func (s *Service) DeleteCurrency(ctx context.Context, code string) error {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return fmt.Errorf("%w: empty currency code", ErrInvalidInput)
+	}
+	if code == "USD" {
+		return ErrCurrencyProtected
+	}
+
+	existing, err := s.repos.Currency.Get(ctx, code)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return ErrNotFound
+	}
+
+	inUse, err := s.repos.Currency.CountInUse(ctx, code)
+	if err != nil {
+		return err
+	}
+	if inUse > 0 {
+		return ErrCurrencyInUse
+	}
+	return s.repos.Currency.Delete(ctx, code)
+}
+
+// ValidateCurrency ensures a USD->code FX conversion is available on Yahoo, so
+// the currency can actually be managed.
+func (s *Service) ValidateCurrency(ctx context.Context, code string) error {
+	if _, err := s.fetcher.FetchFXRate(ctx, code); err != nil {
+		return fmt.Errorf("%w: USD->%s conversion unavailable", ErrCurrencyNotManaged, code)
+	}
+	return nil
+}
+
+func defaultCurrencyName(code string) string {
+	if code == "USD" {
+		return "US Dollar"
+	}
+	if code == "EUR" {
+		return "Euro"
+	}
+	return code
+}
+
+func nextSort(currencies []model.Currency) int {
+	max := 0
+	for _, c := range currencies {
+		if c.Sort > max {
+			max = c.Sort
+		}
+	}
+	return max + 1
 }
 
 func (s *Service) CreatePortfolio(ctx context.Context, userID uuid.UUID, name, description, currency string) (*model.Portfolio, error) {

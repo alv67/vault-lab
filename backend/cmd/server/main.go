@@ -169,6 +169,10 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 
 			r.Get("/dashboard", h.GetDashboard)
 
+			r.Get("/settings/currencies", h.ListCurrencies)
+			r.Post("/settings/currencies", h.CreateCurrency)
+			r.Delete("/settings/currencies/{code}", h.DeleteCurrency)
+
 			r.Get("/prices/{assetID}", h.GetPrices)
 			r.Post("/prices/refresh", h.RefreshPrices)
 		})
