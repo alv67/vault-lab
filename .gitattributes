@@ -1,0 +1,2 @@
+# Testo: normalizza sempre a LF indipendentemente dal sistema operativo.
+* text=auto eol=lf
