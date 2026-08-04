@@ -21,6 +21,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/amelamela/vault-lab/internal/auth"
+	"github.com/amelamela/vault-lab/internal/cache"
 	"github.com/amelamela/vault-lab/internal/config"
 	"github.com/amelamela/vault-lab/internal/handler"
 	"github.com/amelamela/vault-lab/internal/price"
@@ -56,20 +57,23 @@ func main() {
 		DB:       0,
 	})
 	var budget price.RateBudget = price.NoopBudget{}
+	var cacheClient *redis.Client
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Warn().Err(err).Msg("redis not available, continuing without cache")
 	} else {
 		budget = price.NewRedisBudget(rdb, int64(cfg.YahooGlobalRate), cfg.YahooGlobalWindow)
+		cacheClient = rdb
 	}
 
 	jwtAuth := auth.NewJWTAuth(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
-	repos := repository.New(dbPool)
+	repos := repository.New(dbPool, repository.NewLookupCache(cacheClient))
+	c := cache.New(cacheClient)
 	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval,
 		price.WithMinInterval(cfg.YahooMinInterval),
 		price.WithRateBudget(budget),
 	)
-	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL)
+	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints)
 
 	h := handler.New(svc, jwtAuth)
 
