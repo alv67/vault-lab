@@ -1,3 +1,7 @@
+<script module lang="ts">
+  let sessionRefreshed = false
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte'
   import { page } from '$app/state'
@@ -52,7 +56,6 @@
   let txDividendAmount = $state('')
   let txSaving = $state(false)
   let deleting = $state(false)
-  let refreshed = false
 
   const currency = $derived(portfolio?.currency || 'USD')
   const gainLossClass = $derived(
@@ -93,14 +96,19 @@
       toast.error(message)
     }
 
-    if (!refreshed) {
-      refreshed = true
-      try {
-        await pricesApi.refresh(id)
-        summary = await portfolioApi.summary(id)
-      } catch {
-        // keep current data
-      }
+    if (!sessionRefreshed) {
+      sessionRefreshed = true
+      pricesApi.refresh(id)
+        .then((report) => {
+          if (report.rate_limited) {
+            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
+          } else if (report.issues.length > 0) {
+            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
+          }
+          return portfolioApi.summary(id)
+        })
+        .then((fresh) => { summary = fresh })
+        .catch(() => { /* keep current data */ })
     }
   }
 

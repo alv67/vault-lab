@@ -25,6 +25,7 @@ import (
 	"github.com/amelamela/vault-lab/internal/handler"
 	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
+	"github.com/amelamela/vault-lab/internal/series"
 	"github.com/amelamela/vault-lab/internal/service"
 )
 
@@ -54,14 +55,20 @@ func main() {
 		Password: cfg.RedisPassword,
 		DB:       0,
 	})
+	var budget price.RateBudget = price.NoopBudget{}
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Warn().Err(err).Msg("redis not available, continuing without cache")
+	} else {
+		budget = price.NewRedisBudget(rdb, int64(cfg.YahooGlobalRate), cfg.YahooGlobalWindow)
 	}
 
 	jwtAuth := auth.NewJWTAuth(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
 
 	repos := repository.New(dbPool)
-	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval)
+	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval,
+		price.WithMinInterval(cfg.YahooMinInterval),
+		price.WithRateBudget(budget),
+	)
 	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL)
 
 	h := handler.New(svc, jwtAuth)
@@ -95,6 +102,16 @@ func main() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("server error")
 		}
+	}()
+
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		if err := series.RecomputeAll(bgCtx, repos); err != nil {
+			log.Warn().Err(err).Msg("series backfill failed")
+			return
+		}
+		log.Info().Msg("series backfill complete")
 	}()
 
 	quit := make(chan os.Signal, 1)

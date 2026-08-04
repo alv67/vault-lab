@@ -3,6 +3,7 @@ package price
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,21 +22,77 @@ type YahooFetcher struct {
 	repos           *repository.Repository
 	client          *http.Client
 	refreshInterval time.Duration
+	minInterval     time.Duration
+	budget          RateBudget
 	historyCooldown map[uuid.UUID]time.Time
 	splitCooldown   map[uuid.UUID]time.Time
+	throttle        *throttler
 	mu              sync.Mutex
 }
 
-func NewYahooFetcher(repos *repository.Repository, refreshInterval time.Duration) *YahooFetcher {
-	return &YahooFetcher{
+type YahooFetcherOption func(*YahooFetcher)
+
+// WithMinInterval sets the minimum gap between consecutive Yahoo HTTP calls.
+func WithMinInterval(d time.Duration) YahooFetcherOption {
+	return func(f *YahooFetcher) { f.minInterval = d }
+}
+
+// WithRateBudget sets the global rate budget shared across all fetchers.
+func WithRateBudget(b RateBudget) YahooFetcherOption {
+	return func(f *YahooFetcher) { f.budget = b }
+}
+
+// NewYahooFetcher builds a fetcher that paces every Yahoo HTTP call through a
+// shared throttler (400ms minimum gap, no global budget by default).
+func NewYahooFetcher(repos *repository.Repository, refreshInterval time.Duration, opts ...YahooFetcherOption) *YahooFetcher {
+	f := &YahooFetcher{
 		repos:           repos,
 		refreshInterval: refreshInterval,
 		historyCooldown: map[uuid.UUID]time.Time{},
 		splitCooldown:   map[uuid.UUID]time.Time{},
+		minInterval:     400 * time.Millisecond,
+		budget:          NoopBudget{},
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
 	}
+	for _, opt := range opts {
+		opt(f)
+	}
+	f.throttle = newThrottler(f.minInterval, f.budget)
+	return f
+}
+
+// doRequest runs the HTTP call through the shared throttler so that every
+// Yahoo request respects the pacing and the global rate budget.
+func (f *YahooFetcher) doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	err := f.throttle.Do(ctx, func(ctx context.Context) error {
+		var err error
+		resp, err = f.client.Do(req.WithContext(ctx))
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+type fetchStatusError struct {
+	status  int
+	message string
+}
+
+func (e *fetchStatusError) Error() string { return e.message }
+
+// statusOf returns the HTTP status wrapped in err, or 0 if err is not a
+// fetchStatusError.
+func statusOf(err error) int {
+	var fse *fetchStatusError
+	if errors.As(err, &fse) {
+		return fse.status
+	}
+	return 0
 }
 
 type yahooChartQuote struct {
@@ -100,33 +157,42 @@ func (f *YahooFetcher) FetchAll(ctx context.Context) error {
 		return fmt.Errorf("list assets: %w", err)
 	}
 
-	refreshed, err := f.RefreshStale(ctx, assets)
+	report, err := f.RefreshStale(ctx, assets)
 	if err != nil {
 		return err
 	}
-	if len(refreshed) > 0 {
-		log.Info().Strs("symbols", refreshed).Msg("prices refreshed")
+	if len(report.Refreshed) > 0 {
+		log.Info().Strs("symbols", report.Refreshed).Msg("prices refreshed")
 	} else {
 		log.Info().Msg("no stale prices to refresh")
 	}
+	for _, iss := range report.Issues {
+		log.Warn().Str("symbol", iss.Symbol).Str("code", iss.Code).Msg(iss.Message)
+	}
 
-	if err := f.RefreshFX(ctx); err != nil {
+	issues, err := f.RefreshFX(ctx)
+	if err != nil {
 		log.Warn().Err(err).Msg("fx refresh failed")
+		return nil
+	}
+	for _, iss := range issues {
+		log.Warn().Str("symbol", iss.Symbol).Str("code", iss.Code).Msg(iss.Message)
 	}
 	return nil
 }
 
 // RefreshFX keeps USD->X rates for every enabled whitelisted currency up to
 // date, using the same staleness/throttle logic as asset prices.
-func (f *YahooFetcher) RefreshFX(ctx context.Context) error {
+func (f *YahooFetcher) RefreshFX(ctx context.Context) ([]FetchIssue, error) {
 	currencies, err := f.repos.Currency.ListEnabled(ctx)
 	if err != nil {
-		return fmt.Errorf("list currencies: %w", err)
+		return nil, fmt.Errorf("list currencies: %w", err)
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	issues := make([]FetchIssue, 0)
 	now := time.Now().UTC()
 	for _, cur := range currencies {
 		quote := cur.Code
@@ -140,16 +206,18 @@ func (f *YahooFetcher) RefreshFX(ctx context.Context) error {
 
 		rate, err := f.fetchFX(ctx, quote)
 		if err != nil {
+			issues = append(issues, FetchIssue{Symbol: quote, Code: issueCode(err), Message: err.Error()})
 			log.Warn().Err(err).Str("currency", quote).Msg("fx fetch failed")
 			continue
 		}
 		if err := f.repos.FX.Upsert(ctx, "USD", quote, rate); err != nil {
+			issues = append(issues, FetchIssue{Symbol: quote, Code: "error", Message: fmt.Sprintf("fx save failed: %v", err)})
 			log.Warn().Err(err).Str("currency", quote).Msg("fx save failed")
 			continue
 		}
 		log.Info().Str("currency", quote).Str("rate", rate.String()).Msg("fx rate updated")
 	}
-	return nil
+	return issues, nil
 }
 
 func (f *YahooFetcher) fetchFX(ctx context.Context, quote string) (decimal.Decimal, error) {
@@ -191,7 +259,7 @@ func (f *YahooFetcher) fetchChart(ctx context.Context, ticker string) (*yahooCha
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
 
-	resp, err := f.client.Do(req)
+	resp, err := f.doRequest(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("yahoo request: %w", err)
 	}
@@ -199,7 +267,7 @@ func (f *YahooFetcher) fetchChart(ctx context.Context, ticker string) (*yahooCha
 
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("yahoo returned status %d", resp.StatusCode)
+		return nil, &fetchStatusError{status: resp.StatusCode, message: fmt.Sprintf("yahoo returned status %d", resp.StatusCode)}
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -231,7 +299,7 @@ func (f *YahooFetcher) fetchChartRange(ctx context.Context, ticker string, from,
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
 
-	resp, err := f.client.Do(req)
+	resp, err := f.doRequest(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("yahoo request: %w", err)
 	}
@@ -239,7 +307,7 @@ func (f *YahooFetcher) fetchChartRange(ctx context.Context, ticker string, from,
 
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("yahoo returned status %d", resp.StatusCode)
+		return nil, &fetchStatusError{status: resp.StatusCode, message: fmt.Sprintf("yahoo returned status %d", resp.StatusCode)}
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -326,7 +394,7 @@ func (f *YahooFetcher) fetchSplits(ctx context.Context, ticker string) ([]model.
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
 
-	resp, err := f.client.Do(req)
+	resp, err := f.doRequest(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("yahoo request: %w", err)
 	}
@@ -334,7 +402,7 @@ func (f *YahooFetcher) fetchSplits(ctx context.Context, ticker string) ([]model.
 
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil, fmt.Errorf("yahoo returned status %d", resp.StatusCode)
+		return nil, &fetchStatusError{status: resp.StatusCode, message: fmt.Sprintf("yahoo returned status %d", resp.StatusCode)}
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -397,10 +465,10 @@ func (f *YahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) 
 
 // RefreshStaleForPortfolio refreshes prices for assets currently held in a
 // portfolio. Used by POST /prices/refresh on page open.
-func (f *YahooFetcher) RefreshStaleForPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]string, error) {
+func (f *YahooFetcher) RefreshStaleForPortfolio(ctx context.Context, portfolioID uuid.UUID) (RefreshReport, error) {
 	assets, err := f.repos.Portfolio.HeldAssets(ctx, portfolioID)
 	if err != nil {
-		return nil, fmt.Errorf("list held assets: %w", err)
+		return RefreshReport{}, fmt.Errorf("list held assets: %w", err)
 	}
 	return f.RefreshStale(ctx, assets)
 }
@@ -408,12 +476,13 @@ func (f *YahooFetcher) RefreshStaleForPortfolio(ctx context.Context, portfolioID
 // RefreshStale fetches quotes from Yahoo only for assets whose stored close is
 // stale (old close date) and that haven't been fetched recently. This keeps the
 // number of calls to Yahoo Finance as low as possible.
-func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) ([]string, error) {
+func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) (RefreshReport, error) {
+	report := RefreshReport{Refreshed: []string{}, Issues: []FetchIssue{}}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	if len(assets) == 0 {
-		return nil, nil
+		return report, nil
 	}
 
 	ids := make([]uuid.UUID, 0, len(assets))
@@ -423,7 +492,7 @@ func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) 
 
 	latest, err := f.repos.Price.FindLatestForAssets(ctx, ids)
 	if err != nil {
-		return nil, fmt.Errorf("find latest prices: %w", err)
+		return report, fmt.Errorf("find latest prices: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -448,7 +517,7 @@ func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) 
 	}
 
 	if len(stale) == 0 {
-		return nil, nil
+		return report, nil
 	}
 
 	log.Info().
@@ -456,34 +525,21 @@ func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) 
 		Str("expected_close", expected.Format("2006-01-02")).
 		Msg("refreshing stale prices")
 
-	refreshed := f.fetchQuotes(ctx, stale)
-	if len(refreshed) == 0 {
-		return nil, nil
+	report.Refreshed, report.Issues = f.fetchQuotesBatch(ctx, stale)
+	for _, iss := range report.Issues {
+		if iss.Code == "rate_limited" {
+			report.RateLimited = true
+			break
+		}
+	}
+	if len(report.Refreshed) == 0 {
+		return report, nil
 	}
 
 	if err := f.repos.Asset.MarkPricesFetched(ctx, assetIDs(stale), now); err != nil {
 		log.Warn().Err(err).Msg("failed to mark prices as fetched")
 	}
-	return refreshed, nil
-}
-
-// fetchQuotes fetches the latest OHLCV close for every asset, one Yahoo chart
-// request per symbol, and persists them. Returns the symbols that were updated.
-func (f *YahooFetcher) fetchQuotes(ctx context.Context, assets []*model.Asset) []string {
-	var refreshed []string
-	for i, a := range assets {
-		if err := f.fetchQuote(ctx, a); err != nil {
-			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("quote fetch failed")
-		} else {
-			refreshed = append(refreshed, a.Ticker)
-		}
-
-		if i < len(assets)-1 {
-			// Rate limiting between requests.
-			time.Sleep(500 * time.Millisecond)
-		}
-	}
-	return refreshed
+	return report, nil
 }
 
 func (f *YahooFetcher) fetchQuote(ctx context.Context, asset *model.Asset) error {

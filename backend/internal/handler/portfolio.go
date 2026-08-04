@@ -405,12 +405,12 @@ func (h *Handler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 		portfolioID = &uid
 	}
 
-	refreshed, err := h.svc.RefreshPrices(r.Context(), portfolioID)
+	report, err := h.svc.RefreshPrices(r.Context(), portfolioID)
 	if err != nil {
 		log.Error().Err(err).Msg("refresh prices failed")
 		respondError(w, http.StatusInternalServerError, "refresh failed")
 		return
 	}
 
-	respond(w, http.StatusOK, map[string]interface{}{"refreshed": refreshed})
+	respond(w, http.StatusOK, report)
 }

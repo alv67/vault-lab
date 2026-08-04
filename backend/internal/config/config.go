@@ -29,6 +29,9 @@ type Config struct {
 	YahooFinanceEnabled bool
 	PriceFetchInterval  time.Duration
 	LookupCacheTTL      time.Duration
+	YahooMinInterval    time.Duration
+	YahooGlobalRate     int
+	YahooGlobalWindow   time.Duration
 }
 
 func Load() *Config {
@@ -55,6 +58,9 @@ func Load() *Config {
 		YahooFinanceEnabled: getEnvBool("VAULT_YAHOO_FINANCE_ENABLED", true),
 		PriceFetchInterval:  getEnvDuration("VAULT_PRICE_FETCH_INTERVAL", 1*time.Hour),
 		LookupCacheTTL:      getEnvDuration("VAULT_LOOKUP_CACHE_TTL", 7*24*time.Hour),
+		YahooMinInterval:    getEnvDuration("VAULT_YAHOO_MIN_INTERVAL", 400*time.Millisecond),
+		YahooGlobalRate:     getEnvInt("VAULT_YAHOO_GLOBAL_RATE", 8),
+		YahooGlobalWindow:   getEnvDuration("VAULT_YAHOO_GLOBAL_WINDOW", 1*time.Second),
 	}
 }
 

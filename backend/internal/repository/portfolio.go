@@ -22,6 +22,7 @@ type PortfolioRepository interface {
 	GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetROI, error)
 	HeldAssets(ctx context.Context, portfolioID uuid.UUID) ([]*model.Asset, error)
 	HoldingsDetailed(ctx context.Context, portfolioIDs []uuid.UUID) ([]*model.Holding, error)
+	FindAll(ctx context.Context) ([]uuid.UUID, error)
 }
 
 type portfolioRepo struct {
@@ -79,6 +80,25 @@ func (r *portfolioRepo) FindByUser(ctx context.Context, userID uuid.UUID) ([]*mo
 		portfolios = append(portfolios, p)
 	}
 	return portfolios, nil
+}
+
+// FindAll returns the ids of every portfolio in the system.
+func (r *portfolioRepo) FindAll(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `SELECT id FROM portfolios`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *portfolioRepo) Update(ctx context.Context, p *model.Portfolio) error {
@@ -425,5 +445,3 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 	}
 	return base, nil
 }
-
-

@@ -27,6 +27,7 @@ type Repository struct {
 	FX          FXRepository
 	Split       SplitRepository
 	Currency    CurrencyRepository
+	Series      SeriesRepository
 }
 
 func New(db *pgxpool.Pool) *Repository {
@@ -41,6 +42,7 @@ func New(db *pgxpool.Pool) *Repository {
 		FX:          &fxRepo{db},
 		Split:       &splitRepo{db},
 		Currency:    &currencyRepo{db},
+		Series:      &seriesRepo{db},
 	}
 }
 
@@ -69,6 +71,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(*Repository) error) err
 		FX:          &fxRepo{db: tx},
 		Split:       &splitRepo{db: tx},
 		Currency:    &currencyRepo{db: tx},
+		Series:      &seriesRepo{db: tx},
 	}
 
 	if err := fn(rr); err != nil {

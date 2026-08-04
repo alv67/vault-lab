@@ -225,6 +225,18 @@ export interface Dashboard {
   history: DashboardHistory[]
 }
 
+export interface FetchIssue {
+  symbol: string
+  code: string
+  message: string
+}
+
+export interface RefreshReport {
+  refreshed: string[]
+  issues: FetchIssue[]
+  rate_limited: boolean
+}
+
 export interface AuthResponse {
   user: User
   access_token: string
@@ -374,7 +386,7 @@ export const transactionApi = {
 
 export const pricesApi = {
   refresh: (portfolioId?: string) =>
-    request<{ refreshed: string[] }>('/prices/refresh', {
+    request<RefreshReport>('/prices/refresh', {
       method: 'POST',
       params: portfolioId ? { portfolio_id: portfolioId } : {},
     }),

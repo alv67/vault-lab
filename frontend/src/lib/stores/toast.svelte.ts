@@ -1,4 +1,4 @@
-export type ToastType = 'success' | 'error'
+export type ToastType = 'success' | 'error' | 'warning'
 
 interface ToastItem {
   id: number
@@ -10,10 +10,10 @@ const items = $state<ToastItem[]>([])
 
 let nextId = 1
 
-function show(type: ToastType, message: string): void {
+function show(type: ToastType, message: string, duration = 3500): void {
   const id = nextId++
   items.push({ id, type, message })
-  setTimeout(() => dismiss(id), 3500)
+  setTimeout(() => dismiss(id), duration)
 }
 
 function dismiss(id: number): void {
@@ -26,4 +26,5 @@ export const toasts = items
 export const toast = {
   success: (message: string) => show('success', message),
   error: (message: string) => show('error', message),
+  warning: (message: string) => show('warning', message, 4500),
 }

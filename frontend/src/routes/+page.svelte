@@ -1,8 +1,13 @@
+<script module lang="ts">
+  let sessionRefreshed = false
+</script>
+
 <script lang="ts">
   import { onMount } from 'svelte'
   import { SvelteSet } from 'svelte/reactivity'
   import { resolve } from '$app/paths'
   import { portfolioApi, pricesApi, type Dashboard } from '$lib/services/api'
+  import { toast } from '$lib/stores/toast.svelte'
   import PortfolioLineChart from '$lib/components/PortfolioLineChart.svelte'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { ChevronDown, ChevronRight } from 'lucide-svelte'
@@ -15,7 +20,6 @@
   let dash = $state<Dashboard | null>(null)
   let loading = $state(true)
   let expanded = new SvelteSet<string>()
-  let refreshed = false
   let initialized = false
 
   function glClass(value?: string | number): string {
@@ -31,14 +35,19 @@
       loading = false
     }
 
-    if (!refreshed) {
-      refreshed = true
-      try {
-        await pricesApi.refresh()
-        dash = await portfolioApi.dashboard()
-      } catch {
-        // keep current data
-      }
+    if (!sessionRefreshed) {
+      sessionRefreshed = true
+      pricesApi.refresh()
+        .then((report) => {
+          if (report.rate_limited) {
+            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
+          } else if (report.issues.length > 0) {
+            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
+          }
+          return portfolioApi.dashboard()
+        })
+        .then((fresh) => { dash = fresh })
+        .catch(() => { /* keep current data */ })
     }
 
     const firstPortfolioId = dash?.assets?.[0]?.portfolio_id

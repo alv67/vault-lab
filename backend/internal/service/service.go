@@ -14,9 +14,9 @@ import (
 
 	"github.com/amelamela/vault-lab/internal/auth"
 	"github.com/amelamela/vault-lab/internal/model"
-	"github.com/amelamela/vault-lab/internal/position"
 	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
+	"github.com/amelamela/vault-lab/internal/series"
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 )
@@ -240,26 +240,38 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 // RefreshPrices refreshes stale stored closes for the given portfolio (or all
 // assets when portfolioID is nil) plus the USD->X FX rates, hitting Yahoo
 // Finance only when needed.
-func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) ([]string, error) {
-	var refreshed []string
+func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) (price.RefreshReport, error) {
+	report := price.RefreshReport{Refreshed: []string{}, Issues: []price.FetchIssue{}}
 	var err error
 	if portfolioID != nil {
-		refreshed, err = s.fetcher.RefreshStaleForPortfolio(ctx, *portfolioID)
+		report, err = s.fetcher.RefreshStaleForPortfolio(ctx, *portfolioID)
 	} else {
 		var assets []*model.Asset
 		assets, err = s.repos.Asset.List(ctx)
 		if err != nil {
-			return nil, err
+			return report, err
 		}
-		refreshed, err = s.fetcher.RefreshStale(ctx, assets)
+		report, err = s.fetcher.RefreshStale(ctx, assets)
 	}
 	if err != nil {
-		return refreshed, err
+		return report, err
 	}
-	if err := s.fetcher.RefreshFX(ctx); err != nil {
-		return refreshed, err
+	fxIssues, err := s.fetcher.RefreshFX(ctx)
+	if err != nil {
+		return report, err
 	}
-	return refreshed, nil
+	report.Issues = append(report.Issues, fxIssues...)
+	report.RateLimited = false
+	for _, iss := range report.Issues {
+		if iss.Code == "rate_limited" {
+			report.RateLimited = true
+			break
+		}
+	}
+	if err := series.RecomputeAll(ctx, s.repos); err != nil {
+		log.Warn().Err(err).Msg("series recompute all failed")
+	}
+	return report, nil
 }
 
 func (s *Service) ListAssets(ctx context.Context) ([]*model.Asset, error) {
@@ -396,7 +408,13 @@ func (s *Service) GetPortfolio(ctx context.Context, id uuid.UUID, userID uuid.UU
 }
 
 func (s *Service) UpdatePortfolio(ctx context.Context, p *model.Portfolio) error {
-	return s.repos.Portfolio.Update(ctx, p)
+	if err := s.repos.Portfolio.Update(ctx, p); err != nil {
+		return err
+	}
+	if err := series.Recompute(ctx, s.repos, p.ID); err != nil {
+		log.Warn().Err(err).Str("portfolio_id", p.ID.String()).Msg("series recompute failed")
+	}
+	return nil
 }
 
 func (s *Service) DeletePortfolio(ctx context.Context, id uuid.UUID) error {
@@ -404,7 +422,14 @@ func (s *Service) DeletePortfolio(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *Service) AddTransaction(ctx context.Context, tx *model.Transaction) (*model.Transaction, error) {
-	return s.repos.Transaction.Create(ctx, tx)
+	tx, err := s.repos.Transaction.Create(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if err := series.Recompute(ctx, s.repos, tx.PortfolioID); err != nil {
+		log.Warn().Err(err).Str("portfolio_id", tx.PortfolioID.String()).Msg("series recompute failed")
+	}
+	return tx, nil
 }
 
 func (s *Service) ListTransactions(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error) {
@@ -426,7 +451,13 @@ func (s *Service) UpdateTransaction(ctx context.Context, userID uuid.UUID, tx *m
 		return ErrForbidden
 	}
 	tx.PortfolioID = existing.PortfolioID
-	return s.repos.Transaction.Update(ctx, tx)
+	if err := s.repos.Transaction.Update(ctx, tx); err != nil {
+		return err
+	}
+	if err := series.Recompute(ctx, s.repos, existing.PortfolioID); err != nil {
+		log.Warn().Err(err).Str("portfolio_id", existing.PortfolioID.String()).Msg("series recompute failed")
+	}
+	return nil
 }
 
 // DeleteTransaction removes a transaction after verifying the caller owns the
@@ -443,7 +474,13 @@ func (s *Service) DeleteTransaction(ctx context.Context, userID uuid.UUID, id uu
 	if !s.canAccessPortfolio(ctx, p, userID) {
 		return ErrForbidden
 	}
-	return s.repos.Transaction.Delete(ctx, id)
+	if err := s.repos.Transaction.Delete(ctx, id); err != nil {
+		return err
+	}
+	if err := series.Recompute(ctx, s.repos, existing.PortfolioID); err != nil {
+		log.Warn().Err(err).Str("portfolio_id", existing.PortfolioID.String()).Msg("series recompute failed")
+	}
+	return nil
 }
 
 func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioSummary, error) {
@@ -455,7 +492,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 	if err != nil {
 		return nil, err
 	}
-	rates, err := s.loadRates(ctx, holdings)
+	rates, err := series.LoadRates(ctx, s.repos, holdings)
 	if err != nil {
 		return nil, err
 	}
@@ -476,7 +513,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 		}
 		totalCost = totalCost.Add(h.Cost)
 		value := h.Qty.Mul(h.LastClose)
-		if factor, ok := fxFactor(rates, h.Currency, p.Currency); ok {
+		if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
 			totalValue = totalValue.Add(value.Mul(factor))
 		}
 	}
@@ -505,7 +542,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 		if h.HasPrice && h.Qty.IsPositive() {
 			value := h.Qty.Mul(h.LastClose)
 			ah.Value = value
-			if factor, ok := fxFactor(rates, h.Currency, p.Currency); ok {
+			if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
 				ah.ValuePF = value.Mul(factor)
 			} else {
 				ah.FXMissing = true
@@ -529,7 +566,7 @@ func (s *Service) GetPortfolioAllocation(ctx context.Context, portfolioID uuid.U
 	if err != nil {
 		return nil, err
 	}
-	rates, err := s.loadRates(ctx, holdings)
+	rates, err := series.LoadRates(ctx, s.repos, holdings)
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +581,7 @@ func (s *Service) GetPortfolioAllocation(ctx context.Context, portfolioID uuid.U
 			continue
 		}
 		value := h.Qty.Mul(h.LastClose)
-		factor, ok := fxFactor(rates, h.Currency, p.Currency)
+		factor, ok := series.FxFactor(rates, h.Currency, p.Currency)
 		if !ok {
 			continue
 		}
@@ -570,7 +607,7 @@ func (s *Service) GetPortfolioPerformance(ctx context.Context, portfolioID uuid.
 	if err != nil {
 		return nil, err
 	}
-	agg, _, err := s.portfolioSeries(ctx, p.ID)
+	agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +627,7 @@ func (s *Service) GetPortfolioROI(ctx context.Context, portfolioID uuid.UUID) ([
 	if err != nil {
 		return nil, err
 	}
-	rates, err := s.loadRates(ctx, holdings)
+	rates, err := series.LoadRates(ctx, s.repos, holdings)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +643,7 @@ func (s *Service) GetPortfolioROI(ctx context.Context, portfolioID uuid.UUID) ([
 		}
 		if h.HasPrice {
 			value := h.Qty.Mul(h.LastClose)
-			if factor, ok := fxFactor(rates, h.Currency, p.Currency); ok {
+			if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
 				roi.CurrentValue = value.Mul(factor)
 			} else {
 				roi.FXMissing = true
@@ -642,7 +679,7 @@ func (s *Service) GetPortfolioHistory(ctx context.Context, portfolioID uuid.UUID
 		historyAssets = append(historyAssets, price.HistoryAsset{
 			ID:     aid,
 			Ticker: assetTxs[0].AssetTicker,
-			From:   dayOf(assetTxs[0].Date),
+			From:   series.DayOf(assetTxs[0].Date),
 		})
 		assetPtrs = append(assetPtrs, &model.Asset{ID: aid, Ticker: assetTxs[0].AssetTicker})
 	}
@@ -652,19 +689,45 @@ func (s *Service) GetPortfolioHistory(ctx context.Context, portfolioID uuid.UUID
 	if err := s.fetcher.EnsureSplits(ctx, assetPtrs); err != nil {
 		log.Warn().Err(err).Msg("splits ensure failed")
 	}
+	if err := series.Recompute(ctx, s.repos, portfolioID); err != nil {
+		log.Warn().Err(err).Str("portfolio_id", portfolioID.String()).Msg("series recompute failed")
+	}
 
-	agg, assets, err := s.portfolioSeries(ctx, portfolioID)
+	agg, err := s.repos.Series.FindPortfolioAgg(ctx, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	assets, err := s.repos.Series.FindPortfolio(ctx, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	firstTxByAsset := map[uuid.UUID]time.Time{}
+	for aid, assetTxs := range txByAsset {
+		firstTxByAsset[aid] = series.DayOf(assetTxs[0].Date)
+	}
+	assetIDs := make([]uuid.UUID, 0, len(assets))
+	for _, a := range assets {
+		if id, err := uuid.Parse(a.AssetID); err == nil {
+			assetIDs = append(assetIDs, id)
+		}
+	}
+	splitRows, err := s.repos.Split.FindByAssets(ctx, assetIDs)
 	if err != nil {
 		return nil, err
 	}
 	splitSeen := map[time.Time]bool{}
 	aggSplits := []model.SplitInfo{}
-	for _, a := range assets {
-		for _, sp := range a.Splits {
-			if !splitSeen[sp.Date] {
-				splitSeen[sp.Date] = true
-				aggSplits = append(aggSplits, sp)
-			}
+	for _, sp := range splitRows {
+		d := series.DayOf(sp.Date)
+		if firstTx, ok := firstTxByAsset[sp.AssetID]; ok && !d.After(firstTx) {
+			continue
+		}
+		if !splitSeen[d] {
+			splitSeen[d] = true
+			aggSplits = append(aggSplits, model.SplitInfo{
+				Date:  d,
+				Ratio: fmt.Sprintf("%s:%s", sp.Numerator.String(), sp.Denominator.String()),
+			})
 		}
 	}
 	sort.Slice(aggSplits, func(i, j int) bool { return aggSplits[i].Date.Before(aggSplits[j].Date) })
@@ -873,6 +936,9 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 	if err != nil {
 		return nil, err
 	}
+	if err := series.Recompute(ctx, s.repos, created.ID); err != nil {
+		log.Warn().Err(err).Str("portfolio_id", created.ID.String()).Msg("series recompute failed")
+	}
 	return created, nil
 }
 
@@ -905,9 +971,9 @@ func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {
 	}
 	historyAssets := make([]price.HistoryAsset, 0, len(assets))
 	for _, a := range assets {
-		from := dayOf(time.Now())
+		from := series.DayOf(time.Now())
 		if fd, ok := firstDates[a.ID]; ok {
-			from = dayOf(fd)
+			from = series.DayOf(fd)
 		}
 		historyAssets = append(historyAssets, price.HistoryAsset{ID: a.ID, Ticker: a.Ticker, From: from})
 	}
@@ -925,172 +991,6 @@ func (s *Service) syncAssetBackground(assetID uuid.UUID) {
 			log.Warn().Err(err).Str("asset_id", assetID.String()).Msg("asset background sync failed")
 		}
 	}()
-}
-
-// portfolioSeries builds the daily position series for a portfolio using the
-// running AVCO engine, split adjustments and split-adjusted prices. It does
-// not trigger any Yahoo fetches.
-func (s *Service) portfolioSeries(ctx context.Context, portfolioID uuid.UUID) ([]model.PositionPoint, []model.AssetPositionSeries, error) {
-	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
-	if err != nil {
-		return nil, nil, err
-	}
-	txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, []uuid.UUID{portfolioID})
-	if err != nil {
-		return nil, nil, err
-	}
-	holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
-	if err != nil {
-		return nil, nil, err
-	}
-	rates, err := s.loadRates(ctx, holdings)
-	if err != nil {
-		return nil, nil, err
-	}
-	prices, err := s.repos.Price.FindForPortfolio(ctx, portfolioID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	txByAsset := map[uuid.UUID][]model.TransactionWithAsset{}
-	for _, tx := range txs {
-		txByAsset[tx.AssetID] = append(txByAsset[tx.AssetID], tx)
-	}
-
-	assetIDs := make([]uuid.UUID, 0, len(txByAsset))
-	for id := range txByAsset {
-		assetIDs = append(assetIDs, id)
-	}
-
-	splitRows, err := s.repos.Split.FindByAssets(ctx, assetIDs)
-	if err != nil {
-		return nil, nil, err
-	}
-	splitsByAsset := map[uuid.UUID][]model.Split{}
-	for _, sp := range splitRows {
-		splitsByAsset[sp.AssetID] = append(splitsByAsset[sp.AssetID], *sp)
-	}
-	for _, list := range splitsByAsset {
-		sort.Slice(list, func(i, j int) bool { return list[i].Date.Before(list[j].Date) })
-	}
-
-	assetCurrencies := map[uuid.UUID]string{}
-	for _, h := range holdings {
-		if h.PortfolioID == portfolioID.String() {
-			assetCurrencies[mustUUID(h.AssetID)] = h.Currency
-		}
-	}
-
-	priceByAsset := map[uuid.UUID]map[time.Time]decimal.Decimal{}
-	priceDatesByAsset := map[uuid.UUID][]time.Time{}
-	for _, pr := range prices {
-		d := dayOf(pr.Date)
-		if priceByAsset[pr.AssetID] == nil {
-			priceByAsset[pr.AssetID] = map[time.Time]decimal.Decimal{}
-		}
-		priceByAsset[pr.AssetID][d] = pr.Close
-		priceDatesByAsset[pr.AssetID] = append(priceDatesByAsset[pr.AssetID], d)
-	}
-	for _, ds := range priceDatesByAsset {
-		sort.Slice(ds, func(i, j int) bool { return ds[i].Before(ds[j]) })
-	}
-
-	var dates []time.Time
-	if len(txs) > 0 {
-		firstDate := dayOf(txs[0].Date)
-		lastDate := dayOf(time.Now())
-		dates = make([]time.Time, 0, int(lastDate.Sub(firstDate)/(24*time.Hour))+1)
-		for d := firstDate; !d.After(lastDate); d = d.Add(24 * time.Hour) {
-			dates = append(dates, d)
-		}
-	}
-
-	agg := make([]model.PositionPoint, len(dates))
-	assets := []model.AssetPositionSeries{}
-
-	sort.Slice(assetIDs, func(i, j int) bool {
-		return txByAsset[assetIDs[i]][0].AssetTicker < txByAsset[assetIDs[j]][0].AssetTicker
-	})
-
-	for _, aid := range assetIDs {
-		assetTxs := txByAsset[aid]
-		currency := assetCurrencies[aid]
-		factor, hasFX := fxFactor(rates, currency, p.Currency)
-		st := &position.State{}
-		pos := 0
-		series := make([]model.PositionPoint, 0, len(dates))
-
-		priceDates := priceDatesByAsset[aid]
-		pricePos := 0
-
-		splits := splitsByAsset[aid]
-		firstTx := dayOf(assetTxs[0].Date)
-		splitPos := 0
-		for splitPos < len(splits) && !dayOf(splits[splitPos].Date).After(firstTx) {
-			splitPos++
-		}
-		rawFactor := decimal.NewFromInt(1)
-		for _, sp := range splits[splitPos:] {
-			rawFactor = rawFactor.Mul(sp.Numerator.Div(sp.Denominator))
-		}
-		splitInfo := make([]model.SplitInfo, 0, len(splits)-splitPos)
-		for _, sp := range splits[splitPos:] {
-			splitInfo = append(splitInfo, model.SplitInfo{
-				Date:  dayOf(sp.Date),
-				Ratio: fmt.Sprintf("%s:%s", sp.Numerator.String(), sp.Denominator.String()),
-			})
-		}
-		for i, d := range dates {
-			for pos < len(assetTxs) && !dayOf(assetTxs[pos].Date).After(d) {
-				position.Apply(st, assetTxs[pos])
-				pos++
-			}
-			for splitPos < len(splits) && !dayOf(splits[splitPos].Date).After(d) {
-				ratio := splits[splitPos].Numerator.Div(splits[splitPos].Denominator)
-				position.Apply(st, model.TransactionWithAsset{
-					PortfolioID: portfolioID,
-					AssetID:     aid,
-					Type:        model.TxSplit,
-					Quantity:    ratio,
-					Date:        splits[splitPos].Date,
-					CreatedAt:   splits[splitPos].Date,
-				})
-				rawFactor = rawFactor.Div(ratio)
-				splitPos++
-			}
-			for pricePos < len(priceDates) && !priceDates[pricePos].After(d) {
-				pricePos++
-			}
-			mv := decimal.Zero
-			if hasFX && st.Qty.IsPositive() && pricePos > 0 {
-				mv = st.Qty.Mul(priceByAsset[aid][priceDates[pricePos-1]]).Mul(rawFactor).Mul(factor)
-			}
-			pt := model.PositionPoint{
-				Date:        d,
-				Qty:         st.Qty,
-				CostBasis:   st.Cost,
-				MarketValue: mv,
-				Realized:    st.Realized,
-			}
-			if !d.Before(firstTx) {
-				series = append(series, pt)
-			}
-			agg[i].Date = d
-			agg[i].CostBasis = agg[i].CostBasis.Add(pt.CostBasis)
-			agg[i].MarketValue = agg[i].MarketValue.Add(pt.MarketValue)
-			agg[i].Realized = agg[i].Realized.Add(pt.Realized)
-		}
-		assets = append(assets, model.AssetPositionSeries{
-			AssetID:  aid.String(),
-			Ticker:   assetTxs[0].AssetTicker,
-			Name:     assetTxs[0].AssetName,
-			Currency: currency,
-			Series:   series,
-			Splits:   splitInfo,
-		})
-	}
-
-	return agg, assets, nil
 }
 
 // GetDashboard returns the consolidated dashboard for a user: performance
@@ -1119,7 +1019,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 	if err != nil {
 		return nil, err
 	}
-	rates, err := s.loadRates(ctx, holdings)
+	rates, err := series.LoadRates(ctx, s.repos, holdings)
 	if err != nil {
 		return nil, err
 	}
@@ -1176,7 +1076,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				ap.ROI = ap.GainLoss.Div(h.CostCCY).Mul(decimal.NewFromInt(100))
 			}
 			if p != nil {
-				if factor, ok := fxFactor(rates, h.Currency, p.Currency); ok {
+				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
 					ap.ValuePF = value.Mul(factor)
 				} else {
 					ap.FXMissing = true
@@ -1213,7 +1113,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			Assets:        assetsByPF[p.ID],
 		})
 
-		agg, _, err := s.portfolioSeries(ctx, p.ID)
+		agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -1232,61 +1132,9 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 	return dash, nil
 }
 
-// loadRates loads USD->X rates for every currency appearing in the holdings
-// plus the portfolios' reference currencies.
-func (s *Service) loadRates(ctx context.Context, holdings []*model.Holding) (map[string]decimal.Decimal, error) {
-	quotes := map[string]bool{}
-	for _, h := range holdings {
-		quotes[h.Currency] = true
-	}
-	// Portfolio currencies are not directly in holdings; fetch all needed from
-	// the portfolios involved via the caller. For simplicity include USD.
-	quotes["USD"] = true
-	list := make([]string, 0, len(quotes))
-	for c := range quotes {
-		if c != "" {
-			list = append(list, c)
-		}
-	}
-	return s.repos.FX.LatestByQuotes(ctx, list)
-}
-
-// fxFactor returns the factor to convert an amount from currency `from` to
-// currency `to`, computed via USD cross rates. Returns ok=false when a needed
-// rate is missing.
-func fxFactor(rates map[string]decimal.Decimal, from, to string) (decimal.Decimal, bool) {
-	if from == to {
-		return decimal.NewFromInt(1), true
-	}
-	usdToFrom, okFrom := usdRate(rates, from)
-	if !okFrom {
-		return decimal.Zero, false
-	}
-	usdToTo, okTo := usdRate(rates, to)
-	if !okTo {
-		return decimal.Zero, false
-	}
-	if usdToFrom.IsZero() {
-		return decimal.Zero, false
-	}
-	return usdToTo.Div(usdToFrom), true
-}
-
-func usdRate(rates map[string]decimal.Decimal, currency string) (decimal.Decimal, bool) {
-	if currency == "USD" {
-		return decimal.NewFromInt(1), true
-	}
-	rate, ok := rates[currency]
-	return rate, ok
-}
-
 func mustUUID(s string) uuid.UUID {
 	id, _ := uuid.Parse(s)
 	return id
-}
-
-func dayOf(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func (s *Service) GetPrices(ctx context.Context, assetID uuid.UUID) ([]*model.Price, error) {
