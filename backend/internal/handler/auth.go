@@ -15,10 +15,15 @@ import (
 type Handler struct {
 	svc     *service.Service
 	jwtAuth *auth.JWTAuth
+	health  *HealthHandler
 }
 
 func New(svc *service.Service, jwtAuth *auth.JWTAuth) *Handler {
-	return &Handler{svc: svc, jwtAuth: jwtAuth}
+	return &Handler{
+		svc: svc,
+		jwtAuth: jwtAuth,
+		health: NewHealthHandler(svc.Health),
+	}
 }
 
 func respond(w http.ResponseWriter, status int, data interface{}) {
@@ -307,4 +312,7 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, http.StatusCreated, created)
+}
+func (h *Handler) GetPriceHealth(w http.ResponseWriter, r *http.Request) {
+	h.health.GetPriceHealth(w, r)
 }

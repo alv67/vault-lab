@@ -5,6 +5,7 @@
   import {
     portfolioApi,
     settingsApi,
+    assetApi,
     type Portfolio,
     type Currency,
     type PortfolioExportDocument,
@@ -120,6 +121,9 @@ onMount(async () => {
       })
       portfolios = await portfolioApi.list()
       importDoc = null
+      // Imported assets have no market data yet: trigger the backfill
+      // (history + splits) right away instead of waiting for next app load.
+      assetApi.sync().catch(() => {})
       toast.success('Portfolio imported')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Import failed'

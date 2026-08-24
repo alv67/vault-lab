@@ -16,6 +16,7 @@ import (
 	"github.com/amelamela/vault-lab/internal/config"
 	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
+	"github.com/amelamela/vault-lab/internal/service"
 	"github.com/amelamela/vault-lab/internal/series"
 )
 
@@ -50,10 +51,12 @@ func main() {
 
 	repos := repository.New(dbPool, repository.NewLookupCache(cacheClient))
 	c := cache.New(cacheClient)
+	healthSvc := service.NewHealthService(repos, rdb)
 
 	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval,
 		price.WithMinInterval(cfg.YahooMinInterval),
 		price.WithRateBudget(budget),
+		price.WithHealthRecorder(healthSvc),
 	)
 
 	log.Info().Dur("interval", cfg.PriceFetchInterval).Msg("price worker started")

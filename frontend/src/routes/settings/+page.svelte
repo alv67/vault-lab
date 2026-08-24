@@ -4,21 +4,24 @@
   import { auth, updateProfile } from '$lib/stores/auth.svelte'
   import { authApi, settingsApi, type Currency } from '$lib/services/api'
   import { currencySymbol } from '$lib/format'
-  import { Trash2 } from 'lucide-svelte'
-
+  import { Trash2, Activity } from 'lucide-svelte'
+  import { page } from '$app/stores'
+  import { goto } from '$app/navigation'
+  
   let name = $state(auth.user?.name ?? '')
   let email = $state(auth.user?.email ?? '')
   let savingProfile = $state(false)
-
+  
   let currentPassword = $state('')
   let newPassword = $state('')
   let confirmPassword = $state('')
   let savingPassword = $state(false)
-
+  
   let currencies = $state<Currency[]>([])
   let currenciesLoading = $state(true)
   let newCode = $state('')
   let newName = $state('')
+
   let addingCurrency = $state(false)
   let removingCode = $state('')
 
@@ -199,6 +202,19 @@
       >
         {savingPassword ? 'Saving...' : 'Change password'}
       </button>
+    </div>
+  </div>
+
+  <div class="mt-6 max-w-lg rounded-xl border bg-white p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold">Infrastruttura</h2>
+      <a
+        href="/settings/health"
+        class="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200"
+      >
+        <Activity class="h-4 w-4" />
+        Health Dashboard
+      </a>
     </div>
   </div>
 

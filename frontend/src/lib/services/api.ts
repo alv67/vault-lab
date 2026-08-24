@@ -388,6 +388,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return cloneCached<T>(data)
 }
 
+export const api = {
+  get: (url: string, init: RequestInit = {}) => request(url, { ...init, method: 'GET' }),
+  post: (url: string, body: any, init: RequestInit = {}) => request(url, { ...init, method: 'POST', body }),
+  put: (url: string, body: any, init: RequestInit = {}) => request(url, { ...init, method: 'PUT', body }),
+  patch: (url: string, body: any, init: RequestInit = {}) => request(url, { ...init, method: 'PATCH', body }),
+  delete: (url: string, init: RequestInit = {}) => request(url, { ...init, method: 'DELETE' }),
+};
+
 export const authApi = {
   login: (email: string, password: string) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: { email, password } }),

@@ -48,13 +48,14 @@ type Service struct {
 	lookupCacheTTL  time.Duration
 	cache           *cache.Cache
 	seriesMaxPoints int
+	Health          *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, Health: health}
 }
 
 // cached implements the read-through cache pattern: it reads the current data
@@ -1046,7 +1047,13 @@ func (s *Service) SyncAssetData(ctx context.Context) error {
 	for _, a := range assets {
 		ids = append(ids, a.ID)
 	}
-	return s.syncAssets(ctx, ids)
+	if err := s.syncAssets(ctx, ids); err != nil {
+		return err
+	}
+	// Newly fetched prices change every series; recompute so charts and the
+	// dashboard reflect the fresh data immediately instead of waiting for the
+	// next worker tick.
+	return series.RecomputeAll(ctx, s.repos)
 }
 
 func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {

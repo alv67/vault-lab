@@ -28,6 +28,7 @@ type Repository struct {
 	Split       SplitRepository
 	Currency    CurrencyRepository
 	Series      SeriesRepository
+	Health      HealthRepository
 }
 
 func New(db *pgxpool.Pool, lookup LookupRepository) *Repository {
@@ -43,6 +44,7 @@ func New(db *pgxpool.Pool, lookup LookupRepository) *Repository {
 		Split:       &splitRepo{db},
 		Currency:    &currencyRepo{db},
 		Series:      &seriesRepo{db},
+		Health:      &healthRepo{db},
 	}
 }
 

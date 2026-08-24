@@ -18,6 +18,11 @@ import (
 	"github.com/amelamela/vault-lab/internal/repository"
 )
 
+// HealthRecorder defines the interface for logging price fetch events.
+type HealthRecorder interface {
+	RecordEvent(ctx context.Context, event *model.HealthEvent) error
+}
+
 type YahooFetcher struct {
 	repos           *repository.Repository
 	client          *http.Client
@@ -28,6 +33,7 @@ type YahooFetcher struct {
 	splitCooldown   map[uuid.UUID]time.Time
 	throttle        *throttler
 	mu              sync.Mutex
+	health          HealthRecorder
 }
 
 type YahooFetcherOption func(*YahooFetcher)
@@ -40,6 +46,32 @@ func WithMinInterval(d time.Duration) YahooFetcherOption {
 // WithRateBudget sets the global rate budget shared across all fetchers.
 func WithRateBudget(b RateBudget) YahooFetcherOption {
 	return func(f *YahooFetcher) { f.budget = b }
+}
+
+// WithHealthRecorder sets the service used to record fetch health events.
+func WithHealthRecorder(hr HealthRecorder) YahooFetcherOption {
+	return func(f *YahooFetcher) { f.health = hr }
+}
+
+// recordHealth records a fetch outcome in the health log. It is a no-op when
+// no recorder is configured and never fails the caller: health tracking must
+// not break price fetching.
+func (f *YahooFetcher) recordHealth(ctx context.Context, eventType, status, code, message string, durationMs int) {
+	if f.health == nil {
+		return
+	}
+	ev := &model.HealthEvent{
+		ID:         uuid.New(),
+		EventType:  eventType,
+		Status:     status,
+		Code:       code,
+		Message:    message,
+		DurationMs: durationMs,
+		CreatedAt:  time.Now().UTC(),
+	}
+	if err := f.health.RecordEvent(ctx, ev); err != nil {
+		log.Warn().Err(err).Str("event_type", eventType).Msg("failed to record health event")
+	}
 }
 
 // NewYahooFetcher builds a fetcher that paces every Yahoo HTTP call through a
@@ -208,13 +240,16 @@ func (f *YahooFetcher) RefreshFX(ctx context.Context) ([]FetchIssue, error) {
 		if err != nil {
 			issues = append(issues, FetchIssue{Symbol: quote, Code: issueCode(err), Message: err.Error()})
 			log.Warn().Err(err).Str("currency", quote).Msg("fx fetch failed")
+			f.recordHealth(ctx, "fx_fetch", "failure", issueCode(err), quote+": "+err.Error(), 0)
 			continue
 		}
 		if err := f.repos.FX.Upsert(ctx, "USD", quote, rate); err != nil {
 			issues = append(issues, FetchIssue{Symbol: quote, Code: "error", Message: fmt.Sprintf("fx save failed: %v", err)})
 			log.Warn().Err(err).Str("currency", quote).Msg("fx save failed")
+			f.recordHealth(ctx, "fx_fetch", "failure", "error", quote+": fx save failed: "+err.Error(), 0)
 			continue
 		}
+		f.recordHealth(ctx, "fx_fetch", "success", "", quote+" rate updated", 0)
 		log.Info().Str("currency", quote).Str("rate", rate.String()).Msg("fx rate updated")
 	}
 	return issues, nil
@@ -374,6 +409,7 @@ func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset)
 		}
 		if err != nil {
 			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("history fetch failed")
+			f.recordHealth(ctx, "history_fetch", "failure", issueCode(err), a.Ticker+": "+err.Error(), 0)
 			continue
 		}
 		for _, b := range bars {
@@ -451,6 +487,7 @@ func (f *YahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) 
 		f.splitCooldown[a.ID] = now
 		if err != nil {
 			log.Warn().Err(err).Str("symbol", a.Ticker).Msg("split fetch failed")
+			f.recordHealth(ctx, "split_fetch", "failure", issueCode(err), a.Ticker+": "+err.Error(), 0)
 			continue
 		}
 		for _, sp := range splits {
@@ -529,8 +566,17 @@ func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) 
 	for _, iss := range report.Issues {
 		if iss.Code == "rate_limited" {
 			report.RateLimited = true
+			log.Warn().Int("batch_size", len(stale)).Msg("yahoo rate limited during batch refresh")
 			break
 		}
+	}
+	// Health events: one success summary per batch plus a failure per issue.
+	if len(report.Refreshed) > 0 {
+		f.recordHealth(ctx, "price_refresh", "success", "",
+			fmt.Sprintf("refreshed %d/%d symbols", len(report.Refreshed), len(stale)), 0)
+	}
+	for _, iss := range report.Issues {
+		f.recordHealth(ctx, "price_refresh", "failure", iss.Code, iss.Symbol+": "+iss.Message, 0)
 	}
 	if len(report.Refreshed) == 0 {
 		return report, nil

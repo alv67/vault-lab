@@ -69,11 +69,13 @@ func main() {
 
 	repos := repository.New(dbPool, repository.NewLookupCache(cacheClient))
 	c := cache.New(cacheClient)
+	healthSvc := service.NewHealthService(repos, rdb)
 	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval,
 		price.WithMinInterval(cfg.YahooMinInterval),
 		price.WithRateBudget(budget),
+		price.WithHealthRecorder(healthSvc),
 	)
-	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints)
+	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints, healthSvc)
 
 	h := handler.New(svc, jwtAuth)
 
@@ -196,6 +198,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 
 			r.Get("/prices/{assetID}", h.GetPrices)
 			r.Post("/prices/refresh", h.RefreshPrices)
+			r.Get("/health/prices", h.GetPriceHealth)
 		})
 	})
 }

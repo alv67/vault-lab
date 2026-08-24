@@ -1,12 +1,15 @@
 COMPOSE ?= podman-compose
 
-.PHONY: dev build up down migrate frontend-dev
+.PHONY: dev build up down reset migrate migrate-down frontend-dev
 
 up: ## Start all services
 	$(COMPOSE) up --build -d
 
 down: ## Stop all services
 	$(COMPOSE) down
+
+reset: ## Stop all services and delete data volumes (fresh start)
+	$(COMPOSE) down -v
 
 logs: ## Follow logs
 	$(COMPOSE) logs -f
