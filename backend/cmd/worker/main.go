@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"github.com/amelamela/vault-lab/internal/cache"
 	"github.com/amelamela/vault-lab/internal/config"
 	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
@@ -33,19 +34,22 @@ func main() {
 	}
 	defer dbPool.Close()
 
-	repos := repository.New(dbPool)
-
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
 		DB:       0,
 	})
 	var budget price.RateBudget = price.NoopBudget{}
+	var cacheClient *redis.Client
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		log.Warn().Err(err).Msg("redis not available, continuing without rate budget")
 	} else {
 		budget = price.NewRedisBudget(rdb, int64(cfg.YahooGlobalRate), cfg.YahooGlobalWindow)
+		cacheClient = rdb
 	}
+
+	repos := repository.New(dbPool, repository.NewLookupCache(cacheClient))
+	c := cache.New(cacheClient)
 
 	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval,
 		price.WithMinInterval(cfg.YahooMinInterval),
@@ -70,6 +74,8 @@ func main() {
 		log.Warn().Err(err).Msg("initial price fetch failed")
 	} else if err := series.RecomputeAll(ctx, repos); err != nil {
 		log.Warn().Err(err).Msg("initial series recompute failed")
+	} else if _, err := c.Bump(ctx); err != nil {
+		log.Warn().Err(err).Msg("cache rev bump failed")
 	}
 
 	for {
@@ -80,6 +86,8 @@ func main() {
 				log.Warn().Err(err).Msg("price fetch failed")
 			} else if err := series.RecomputeAll(ctx, repos); err != nil {
 				log.Warn().Err(err).Msg("series recompute failed")
+			} else if _, err := c.Bump(ctx); err != nil {
+				log.Warn().Err(err).Msg("cache rev bump failed")
 			}
 		case <-ctx.Done():
 			log.Info().Msg("worker shutting down")

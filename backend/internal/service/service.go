@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/amelamela/vault-lab/internal/auth"
+	"github.com/amelamela/vault-lab/internal/cache"
 	"github.com/amelamela/vault-lab/internal/model"
 	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
@@ -35,15 +36,66 @@ var (
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
 )
 
+const (
+	cacheTTLStats  = 5 * time.Minute
+	cacheTTLPrices = time.Hour
+)
+
 type Service struct {
-	repos          *repository.Repository
-	jwtAuth        *auth.JWTAuth
-	fetcher        *price.YahooFetcher
-	lookupCacheTTL time.Duration
+	repos           *repository.Repository
+	jwtAuth         *auth.JWTAuth
+	fetcher         *price.YahooFetcher
+	lookupCacheTTL  time.Duration
+	cache           *cache.Cache
+	seriesMaxPoints int
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration) *Service {
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL}
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int) *Service {
+	if seriesMaxPoints <= 0 {
+		seriesMaxPoints = 500
+	}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints}
+}
+
+// cached implements the read-through cache pattern: it reads the current data
+// revision, returns the payload from Redis on a hit and otherwise computes and
+// stores it. When bump is set the revision is advanced after compute so writes
+// performed during the computation invalidate previously cached entries.
+func cached[T any](c *cache.Cache, ctx context.Context, kind string, id string, ttl time.Duration, bump bool, compute func() (T, error)) (T, error) {
+	rev, err := c.Rev(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("cache rev read failed")
+	}
+	key := fmt.Sprintf("vl:%s:%s:%d", kind, id, rev)
+	var v T
+	if hit, err := c.GetJSON(ctx, key, &v); err != nil {
+		log.Warn().Err(err).Msg("cache read failed")
+	} else if hit {
+		return v, nil
+	}
+	result, err := compute()
+	if err != nil {
+		return result, err
+	}
+	if bump {
+		rev, err = c.Bump(ctx)
+		if err != nil {
+			log.Warn().Err(err).Msg("cache rev bump failed")
+		}
+		key = fmt.Sprintf("vl:%s:%s:%d", kind, id, rev)
+	}
+	if err := c.SetJSON(ctx, key, result, ttl); err != nil {
+		log.Warn().Err(err).Msg("cache write failed")
+	}
+	return result, nil
+}
+
+// bumpRev advances the global data revision after any write so cached reads
+// keyed on the previous revision are invalidated.
+func (s *Service) bumpRev(ctx context.Context) {
+	if _, err := s.cache.Bump(ctx); err != nil {
+		log.Warn().Err(err).Msg("cache rev bump failed")
+	}
 }
 
 func (s *Service) Register(ctx context.Context, email, name, password string) (*model.User, error) {
@@ -178,7 +230,7 @@ func (s *Service) SearchAssets(ctx context.Context, query string) ([]*model.Asse
 func (s *Service) GetAssetMeta(ctx context.Context, ticker string) (*price.AssetMeta, error) {
 	key := "meta:" + strings.ToUpper(strings.TrimSpace(ticker))
 
-	if cached, err := s.repos.Lookup.Get(ctx, key, s.lookupCacheTTL); err == nil {
+	if cached, err := s.repos.Lookup.Get(ctx, key); err == nil {
 		var m price.AssetMeta
 		if err := json.Unmarshal(cached, &m); err == nil {
 			return &m, nil
@@ -191,7 +243,7 @@ func (s *Service) GetAssetMeta(ctx context.Context, ticker string) (*price.Asset
 	}
 
 	if data, err := json.Marshal(meta); err == nil {
-		if err := s.repos.Lookup.Set(ctx, key, data); err != nil {
+		if err := s.repos.Lookup.Set(ctx, key, data, s.lookupCacheTTL); err != nil {
 			log.Warn().Err(err).Str("ticker", key).Msg("failed to cache asset meta")
 		}
 	}
@@ -216,7 +268,7 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 		return []price.AssetLookup{}, nil
 	}
 
-	if cached, err := s.repos.Lookup.Get(ctx, key, s.lookupCacheTTL); err == nil {
+	if cached, err := s.repos.Lookup.Get(ctx, key); err == nil {
 		var results []price.AssetLookup
 		if err := json.Unmarshal(cached, &results); err == nil {
 			return results, nil
@@ -229,7 +281,7 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 	}
 
 	if data, err := json.Marshal(results); err == nil {
-		if err := s.repos.Lookup.Set(ctx, key, data); err != nil {
+		if err := s.repos.Lookup.Set(ctx, key, data, s.lookupCacheTTL); err != nil {
 			log.Warn().Err(err).Str("query", key).Msg("failed to cache lookup results")
 		}
 	}
@@ -271,6 +323,7 @@ func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) (pr
 	if err := series.RecomputeAll(ctx, s.repos); err != nil {
 		log.Warn().Err(err).Msg("series recompute all failed")
 	}
+	s.bumpRev(ctx)
 	return report, nil
 }
 
@@ -389,7 +442,12 @@ func (s *Service) CreatePortfolio(ctx context.Context, userID uuid.UUID, name, d
 		Description: description,
 		Currency:    currency,
 	}
-	return s.repos.Portfolio.Create(ctx, p)
+	created, err := s.repos.Portfolio.Create(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	s.bumpRev(ctx)
+	return created, nil
 }
 
 func (s *Service) ListPortfolios(ctx context.Context, userID uuid.UUID) ([]*model.Portfolio, error) {
@@ -414,11 +472,16 @@ func (s *Service) UpdatePortfolio(ctx context.Context, p *model.Portfolio) error
 	if err := series.Recompute(ctx, s.repos, p.ID); err != nil {
 		log.Warn().Err(err).Str("portfolio_id", p.ID.String()).Msg("series recompute failed")
 	}
+	s.bumpRev(ctx)
 	return nil
 }
 
 func (s *Service) DeletePortfolio(ctx context.Context, id uuid.UUID) error {
-	return s.repos.Portfolio.Delete(ctx, id)
+	if err := s.repos.Portfolio.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.bumpRev(ctx)
+	return nil
 }
 
 func (s *Service) AddTransaction(ctx context.Context, tx *model.Transaction) (*model.Transaction, error) {
@@ -429,6 +492,7 @@ func (s *Service) AddTransaction(ctx context.Context, tx *model.Transaction) (*m
 	if err := series.Recompute(ctx, s.repos, tx.PortfolioID); err != nil {
 		log.Warn().Err(err).Str("portfolio_id", tx.PortfolioID.String()).Msg("series recompute failed")
 	}
+	s.bumpRev(ctx)
 	return tx, nil
 }
 
@@ -457,6 +521,7 @@ func (s *Service) UpdateTransaction(ctx context.Context, userID uuid.UUID, tx *m
 	if err := series.Recompute(ctx, s.repos, existing.PortfolioID); err != nil {
 		log.Warn().Err(err).Str("portfolio_id", existing.PortfolioID.String()).Msg("series recompute failed")
 	}
+	s.bumpRev(ctx)
 	return nil
 }
 
@@ -480,265 +545,291 @@ func (s *Service) DeleteTransaction(ctx context.Context, userID uuid.UUID, id uu
 	if err := series.Recompute(ctx, s.repos, existing.PortfolioID); err != nil {
 		log.Warn().Err(err).Str("portfolio_id", existing.PortfolioID.String()).Msg("series recompute failed")
 	}
+	s.bumpRev(ctx)
 	return nil
 }
 
 func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioSummary, error) {
-	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
-	if err != nil {
-		return nil, err
-	}
-	rates, err := series.LoadRates(ctx, s.repos, holdings)
-	if err != nil {
-		return nil, err
-	}
+	return cached(s.cache, ctx, "summary", portfolioID.String(), cacheTTLStats, false, func() (*model.PortfolioSummary, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		if err != nil {
+			return nil, err
+		}
 
-	summary := &model.PortfolioSummary{
-		PortfolioID:   portfolioID.String(),
-		PortfolioName: p.Name,
-		AssetCount:    len(holdings),
-	}
-	var totalValue, totalCost, totalRealized decimal.Decimal
-	for _, h := range holdings {
-		totalRealized = totalRealized.Add(h.Realized)
-		if !h.Qty.IsPositive() {
-			continue
+		summary := &model.PortfolioSummary{
+			PortfolioID:   portfolioID.String(),
+			PortfolioName: p.Name,
+			AssetCount:    len(holdings),
 		}
-		if !h.HasPrice {
-			continue
-		}
-		totalCost = totalCost.Add(h.Cost)
-		value := h.Qty.Mul(h.LastClose)
-		if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
-			totalValue = totalValue.Add(value.Mul(factor))
-		}
-	}
-	summary.TotalCost = totalCost
-	summary.TotalValue = totalValue
-	summary.GainLoss = totalValue.Sub(totalCost)
-	summary.RealizedGL = totalRealized
-	summary.UnrealizedGL = summary.GainLoss
-	if totalCost.IsPositive() {
-		summary.GainLossPct = summary.GainLoss.Div(totalCost).Mul(decimal.NewFromInt(100))
-	}
-	summary.Holdings = make([]model.AssetHolding, 0, len(holdings))
-	for _, h := range holdings {
-		ah := model.AssetHolding{
-			AssetID:     h.AssetID,
-			Ticker:      h.Ticker,
-			Name:        h.Name,
-			Currency:    h.Currency,
-			Qty:         h.Qty,
-			Cost:        h.Cost,
-			CostCCY:     h.CostCCY,
-			Realized:    h.Realized,
-			RealizedCCY: h.RealizedCCY,
-			Closed:      !h.Qty.IsPositive(),
-		}
-		if h.HasPrice && h.Qty.IsPositive() {
+		var totalValue, totalCost, totalRealized decimal.Decimal
+		for _, h := range holdings {
+			totalRealized = totalRealized.Add(h.Realized)
+			if !h.Qty.IsPositive() {
+				continue
+			}
+			if !h.HasPrice {
+				continue
+			}
+			totalCost = totalCost.Add(h.Cost)
 			value := h.Qty.Mul(h.LastClose)
-			ah.Value = value
 			if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
-				ah.ValuePF = value.Mul(factor)
-			} else {
-				ah.FXMissing = true
-			}
-			ah.Unrealized = ah.ValuePF.Sub(h.Cost)
-			if h.Cost.IsPositive() {
-				ah.ROI = ah.Unrealized.Div(h.Cost).Mul(decimal.NewFromInt(100))
+				totalValue = totalValue.Add(value.Mul(factor))
 			}
 		}
-		summary.Holdings = append(summary.Holdings, ah)
-	}
-	return summary, nil
+		summary.TotalCost = totalCost
+		summary.TotalValue = totalValue
+		summary.GainLoss = totalValue.Sub(totalCost)
+		summary.RealizedGL = totalRealized
+		summary.UnrealizedGL = summary.GainLoss
+		if totalCost.IsPositive() {
+			summary.GainLossPct = summary.GainLoss.Div(totalCost).Mul(decimal.NewFromInt(100))
+		}
+		summary.Holdings = make([]model.AssetHolding, 0, len(holdings))
+		for _, h := range holdings {
+			ah := model.AssetHolding{
+				AssetID:     h.AssetID,
+				Ticker:      h.Ticker,
+				Name:        h.Name,
+				Currency:    h.Currency,
+				Qty:         h.Qty,
+				Cost:        h.Cost,
+				CostCCY:     h.CostCCY,
+				Realized:    h.Realized,
+				RealizedCCY: h.RealizedCCY,
+				Closed:      !h.Qty.IsPositive(),
+			}
+			if h.HasPrice && h.Qty.IsPositive() {
+				value := h.Qty.Mul(h.LastClose)
+				ah.Value = value
+				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+					ah.ValuePF = value.Mul(factor)
+				} else {
+					ah.FXMissing = true
+				}
+				ah.Unrealized = ah.ValuePF.Sub(h.Cost)
+				if h.Cost.IsPositive() {
+					ah.ROI = ah.Unrealized.Div(h.Cost).Mul(decimal.NewFromInt(100))
+				}
+			}
+			summary.Holdings = append(summary.Holdings, ah)
+		}
+		return summary, nil
+	})
 }
 
 func (s *Service) GetPortfolioAllocation(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetAllocation, error) {
-	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
-	if err != nil {
-		return nil, err
-	}
-	rates, err := series.LoadRates(ctx, s.repos, holdings)
-	if err != nil {
-		return nil, err
-	}
+	return cached(s.cache, ctx, "allocation", portfolioID.String(), cacheTTLStats, false, func() ([]*model.AssetAllocation, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		if err != nil {
+			return nil, err
+		}
 
-	var allocs []*model.AssetAllocation
-	var total decimal.Decimal
-	for _, h := range holdings {
-		if !h.Qty.IsPositive() {
-			continue
+		var allocs []*model.AssetAllocation
+		var total decimal.Decimal
+		for _, h := range holdings {
+			if !h.Qty.IsPositive() {
+				continue
+			}
+			if !h.HasPrice {
+				continue
+			}
+			value := h.Qty.Mul(h.LastClose)
+			factor, ok := series.FxFactor(rates, h.Currency, p.Currency)
+			if !ok {
+				continue
+			}
+			value = value.Mul(factor)
+			total = total.Add(value)
+			allocs = append(allocs, &model.AssetAllocation{
+				AssetID: h.AssetID,
+				Ticker:  h.Ticker,
+				Name:    h.Name,
+				Value:   value,
+			})
 		}
-		if !h.HasPrice {
-			continue
+		for _, a := range allocs {
+			if total.IsPositive() {
+				a.AllocPct = a.Value.Div(total).Mul(decimal.NewFromInt(100))
+			}
 		}
-		value := h.Qty.Mul(h.LastClose)
-		factor, ok := series.FxFactor(rates, h.Currency, p.Currency)
-		if !ok {
-			continue
-		}
-		value = value.Mul(factor)
-		total = total.Add(value)
-		allocs = append(allocs, &model.AssetAllocation{
-			AssetID: h.AssetID,
-			Ticker:  h.Ticker,
-			Name:    h.Name,
-			Value:   value,
-		})
-	}
-	for _, a := range allocs {
-		if total.IsPositive() {
-			a.AllocPct = a.Value.Div(total).Mul(decimal.NewFromInt(100))
-		}
-	}
-	return allocs, nil
+		return allocs, nil
+	})
 }
 
 func (s *Service) GetPortfolioPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error) {
-	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
-	if err != nil {
-		return nil, err
-	}
-	perf := make([]*model.PortfolioPerformance, 0, len(agg))
-	for _, pt := range agg {
-		perf = append(perf, &model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
-	}
-	return perf, nil
+	return cached(s.cache, ctx, "performance", portfolioID.String(), cacheTTLStats, false, func() ([]*model.PortfolioPerformance, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
+		if err != nil {
+			return nil, err
+		}
+		perf := make([]*model.PortfolioPerformance, 0, len(agg))
+		for _, pt := range agg {
+			perf = append(perf, &model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
+		}
+		if len(perf) > s.seriesMaxPoints {
+			vals := make([]model.PortfolioPerformance, 0, len(perf))
+			for _, p := range perf {
+				vals = append(vals, *p)
+			}
+			vals = series.PortfolioPerformance(vals, s.seriesMaxPoints)
+			perf = make([]*model.PortfolioPerformance, 0, len(vals))
+			for i := range vals {
+				perf = append(perf, &vals[i])
+			}
+		}
+		return perf, nil
+	})
 }
 
 func (s *Service) GetPortfolioROI(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetROI, error) {
-	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
-	if err != nil {
-		return nil, err
-	}
-	rates, err := series.LoadRates(ctx, s.repos, holdings)
-	if err != nil {
-		return nil, err
-	}
+	return cached(s.cache, ctx, "roi", portfolioID.String(), cacheTTLStats, false, func() ([]*model.AssetROI, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		if err != nil {
+			return nil, err
+		}
 
-	var rois []*model.AssetROI
-	for _, h := range holdings {
-		roi := &model.AssetROI{
-			AssetID:       h.AssetID,
-			Ticker:        h.Ticker,
-			Name:          h.Name,
-			TotalInvested: h.Cost,
-			Realized:      h.Realized,
-		}
-		if h.HasPrice {
-			value := h.Qty.Mul(h.LastClose)
-			if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
-				roi.CurrentValue = value.Mul(factor)
-			} else {
-				roi.FXMissing = true
+		var rois []*model.AssetROI
+		for _, h := range holdings {
+			roi := &model.AssetROI{
+				AssetID:       h.AssetID,
+				Ticker:        h.Ticker,
+				Name:          h.Name,
+				TotalInvested: h.Cost,
+				Realized:      h.Realized,
 			}
+			if h.HasPrice {
+				value := h.Qty.Mul(h.LastClose)
+				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+					roi.CurrentValue = value.Mul(factor)
+				} else {
+					roi.FXMissing = true
+				}
+			}
+			if roi.TotalInvested.IsPositive() {
+				roi.ROI = roi.CurrentValue.Sub(roi.TotalInvested).Div(roi.TotalInvested).Mul(decimal.NewFromInt(100))
+			}
+			rois = append(rois, roi)
 		}
-		if roi.TotalInvested.IsPositive() {
-			roi.ROI = roi.CurrentValue.Sub(roi.TotalInvested).Div(roi.TotalInvested).Mul(decimal.NewFromInt(100))
-		}
-		rois = append(rois, roi)
-	}
-	return rois, nil
+		return rois, nil
+	})
 }
 
 // GetPortfolioHistory returns the running AVCO cost basis, market value and
 // realized P&L per date for a portfolio and for each asset in it.
 func (s *Service) GetPortfolioHistory(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioPositionHistory, error) {
-	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, []uuid.UUID{portfolioID})
-	if err != nil {
-		return nil, err
-	}
-
-	txByAsset := map[uuid.UUID][]model.TransactionWithAsset{}
-	for _, tx := range txs {
-		txByAsset[tx.AssetID] = append(txByAsset[tx.AssetID], tx)
-	}
-	historyAssets := make([]price.HistoryAsset, 0, len(txByAsset))
-	assetPtrs := make([]*model.Asset, 0, len(txByAsset))
-	for aid, assetTxs := range txByAsset {
-		historyAssets = append(historyAssets, price.HistoryAsset{
-			ID:     aid,
-			Ticker: assetTxs[0].AssetTicker,
-			From:   series.DayOf(assetTxs[0].Date),
-		})
-		assetPtrs = append(assetPtrs, &model.Asset{ID: aid, Ticker: assetTxs[0].AssetTicker})
-	}
-	if err := s.fetcher.EnsureHistory(ctx, historyAssets); err != nil {
-		log.Warn().Err(err).Msg("history ensure failed")
-	}
-	if err := s.fetcher.EnsureSplits(ctx, assetPtrs); err != nil {
-		log.Warn().Err(err).Msg("splits ensure failed")
-	}
-	if err := series.Recompute(ctx, s.repos, portfolioID); err != nil {
-		log.Warn().Err(err).Str("portfolio_id", portfolioID.String()).Msg("series recompute failed")
-	}
-
-	agg, err := s.repos.Series.FindPortfolioAgg(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	assets, err := s.repos.Series.FindPortfolio(ctx, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	firstTxByAsset := map[uuid.UUID]time.Time{}
-	for aid, assetTxs := range txByAsset {
-		firstTxByAsset[aid] = series.DayOf(assetTxs[0].Date)
-	}
-	assetIDs := make([]uuid.UUID, 0, len(assets))
-	for _, a := range assets {
-		if id, err := uuid.Parse(a.AssetID); err == nil {
-			assetIDs = append(assetIDs, id)
+	return cached(s.cache, ctx, "history", portfolioID.String(), cacheTTLStats, true, func() (*model.PortfolioPositionHistory, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
 		}
-	}
-	splitRows, err := s.repos.Split.FindByAssets(ctx, assetIDs)
-	if err != nil {
-		return nil, err
-	}
-	splitSeen := map[time.Time]bool{}
-	aggSplits := []model.SplitInfo{}
-	for _, sp := range splitRows {
-		d := series.DayOf(sp.Date)
-		if firstTx, ok := firstTxByAsset[sp.AssetID]; ok && !d.After(firstTx) {
-			continue
+		txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
 		}
-		if !splitSeen[d] {
-			splitSeen[d] = true
-			aggSplits = append(aggSplits, model.SplitInfo{
-				Date:  d,
-				Ratio: fmt.Sprintf("%s:%s", sp.Numerator.String(), sp.Denominator.String()),
+
+		txByAsset := map[uuid.UUID][]model.TransactionWithAsset{}
+		for _, tx := range txs {
+			txByAsset[tx.AssetID] = append(txByAsset[tx.AssetID], tx)
+		}
+		historyAssets := make([]price.HistoryAsset, 0, len(txByAsset))
+		assetPtrs := make([]*model.Asset, 0, len(txByAsset))
+		for aid, assetTxs := range txByAsset {
+			historyAssets = append(historyAssets, price.HistoryAsset{
+				ID:     aid,
+				Ticker: assetTxs[0].AssetTicker,
+				From:   series.DayOf(assetTxs[0].Date),
 			})
+			assetPtrs = append(assetPtrs, &model.Asset{ID: aid, Ticker: assetTxs[0].AssetTicker})
 		}
-	}
-	sort.Slice(aggSplits, func(i, j int) bool { return aggSplits[i].Date.Before(aggSplits[j].Date) })
-	return &model.PortfolioPositionHistory{
-		PortfolioID:   portfolioID.String(),
-		PortfolioName: p.Name,
-		Currency:      p.Currency,
-		Series:        agg,
-		Assets:        assets,
-		Splits:        aggSplits,
-	}, nil
+		if err := s.fetcher.EnsureHistory(ctx, historyAssets); err != nil {
+			log.Warn().Err(err).Msg("history ensure failed")
+		}
+		if err := s.fetcher.EnsureSplits(ctx, assetPtrs); err != nil {
+			log.Warn().Err(err).Msg("splits ensure failed")
+		}
+		if err := series.Recompute(ctx, s.repos, portfolioID); err != nil {
+			log.Warn().Err(err).Str("portfolio_id", portfolioID.String()).Msg("series recompute failed")
+		}
+
+		agg, err := s.repos.Series.FindPortfolioAgg(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		assets, err := s.repos.Series.FindPortfolio(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		agg = series.PositionPoints(agg, s.seriesMaxPoints)
+		for i := range assets {
+			assets[i].Series = series.PositionPoints(assets[i].Series, s.seriesMaxPoints)
+		}
+		firstTxByAsset := map[uuid.UUID]time.Time{}
+		for aid, assetTxs := range txByAsset {
+			firstTxByAsset[aid] = series.DayOf(assetTxs[0].Date)
+		}
+		assetIDs := make([]uuid.UUID, 0, len(assets))
+		for _, a := range assets {
+			if id, err := uuid.Parse(a.AssetID); err == nil {
+				assetIDs = append(assetIDs, id)
+			}
+		}
+		splitRows, err := s.repos.Split.FindByAssets(ctx, assetIDs)
+		if err != nil {
+			return nil, err
+		}
+		splitSeen := map[time.Time]bool{}
+		aggSplits := []model.SplitInfo{}
+		for _, sp := range splitRows {
+			d := series.DayOf(sp.Date)
+			if firstTx, ok := firstTxByAsset[sp.AssetID]; ok && !d.After(firstTx) {
+				continue
+			}
+			if !splitSeen[d] {
+				splitSeen[d] = true
+				aggSplits = append(aggSplits, model.SplitInfo{
+					Date:  d,
+					Ratio: fmt.Sprintf("%s:%s", sp.Numerator.String(), sp.Denominator.String()),
+				})
+			}
+		}
+		sort.Slice(aggSplits, func(i, j int) bool { return aggSplits[i].Date.Before(aggSplits[j].Date) })
+		return &model.PortfolioPositionHistory{
+			PortfolioID:   portfolioID.String(),
+			PortfolioName: p.Name,
+			Currency:      p.Currency,
+			Series:        agg,
+			Assets:        assets,
+			Splits:        aggSplits,
+		}, nil
+	})
 }
 
 // ExportPortfolio builds the JSON document for a portfolio: portfolio
@@ -939,6 +1030,7 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 	if err := series.Recompute(ctx, s.repos, created.ID); err != nil {
 		log.Warn().Err(err).Str("portfolio_id", created.ID.String()).Msg("series recompute failed")
 	}
+	s.bumpRev(ctx)
 	return created, nil
 }
 
@@ -997,139 +1089,142 @@ func (s *Service) syncAssetBackground(assetID uuid.UUID) {
 // grouped by currency, per-portfolio summaries, assets grouped per portfolio
 // and per-portfolio historical series.
 func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Dashboard, error) {
-	portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	dash := &model.Dashboard{
-		ByCurrency: []model.CurrencyPerformance{},
-		Portfolios: []model.PortfolioPerformanceSummary{},
-		Assets:     []model.PortfolioAssets{},
-		History:    []model.PortfolioHistory{},
-	}
-	if len(portfolios) == 0 {
-		return dash, nil
-	}
-
-	ids := make([]uuid.UUID, 0, len(portfolios))
-	for _, p := range portfolios {
-		ids = append(ids, p.ID)
-	}
-	holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	rates, err := series.LoadRates(ctx, s.repos, holdings)
-	if err != nil {
-		return nil, err
-	}
-
-	byID := make(map[uuid.UUID]*model.Portfolio, len(portfolios))
-	for _, p := range portfolios {
-		byID[p.ID] = p
-	}
-
-	byCurrency := map[string]*model.CurrencyPerformance{}
-	for _, h := range holdings {
-		p := byID[mustUUID(h.PortfolioID)]
-		if p == nil {
-			continue
-		}
-		cp := byCurrency[h.Currency]
-		if cp == nil {
-			cp = &model.CurrencyPerformance{Currency: h.Currency}
-			byCurrency[h.Currency] = cp
-		}
-		cp.Invested = cp.Invested.Add(h.CostCCY)
-		cp.Realized = cp.Realized.Add(h.RealizedCCY)
-		if h.HasPrice {
-			cp.Value = cp.Value.Add(h.Qty.Mul(h.LastClose))
-		}
-	}
-	for _, cp := range byCurrency {
-		cp.GainLoss = cp.Value.Sub(cp.Invested)
-		if cp.Invested.IsPositive() {
-			cp.GainLossPct = cp.GainLoss.Div(cp.Invested).Mul(decimal.NewFromInt(100))
-		}
-		dash.ByCurrency = append(dash.ByCurrency, *cp)
-	}
-
-	assetsByPF := map[uuid.UUID][]model.AssetPerformance{}
-	for _, h := range holdings {
-		pfID := mustUUID(h.PortfolioID)
-		p := byID[pfID]
-		ap := model.AssetPerformance{
-			AssetID:    h.AssetID,
-			Ticker:     h.Ticker,
-			Name:       h.Name,
-			Currency:   h.Currency,
-			Qty:        h.Qty,
-			Invested:   h.CostCCY,
-			Realized:   h.RealizedCCY,
-			RealizedPF: h.Realized,
-		}
-		if h.HasPrice && h.Qty.IsPositive() {
-			value := h.Qty.Mul(h.LastClose)
-			ap.Value = value
-			ap.GainLoss = value.Sub(h.CostCCY)
-			if h.CostCCY.IsPositive() {
-				ap.ROI = ap.GainLoss.Div(h.CostCCY).Mul(decimal.NewFromInt(100))
-			}
-			if p != nil {
-				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
-					ap.ValuePF = value.Mul(factor)
-				} else {
-					ap.FXMissing = true
-				}
-			}
-		}
-		assetsByPF[pfID] = append(assetsByPF[pfID], ap)
-	}
-
-	for _, p := range portfolios {
-		ps := &model.PortfolioPerformanceSummary{
-			PortfolioID:   p.ID.String(),
-			PortfolioName: p.Name,
-			Currency:      p.Currency,
-			AssetCount:    len(assetsByPF[p.ID]),
-		}
-		for _, ap := range assetsByPF[p.ID] {
-			ps.Invested = ps.Invested.Add(ap.Invested)
-			ps.Value = ps.Value.Add(ap.ValuePF)
-			ps.RealizedGL = ps.RealizedGL.Add(ap.RealizedPF)
-			if ap.FXMissing {
-				ps.FXMissing++
-			}
-		}
-		ps.GainLoss = ps.Value.Sub(ps.Invested)
-		if ps.Invested.IsPositive() {
-			ps.GainLossPct = ps.GainLoss.Div(ps.Invested).Mul(decimal.NewFromInt(100))
-		}
-		dash.Portfolios = append(dash.Portfolios, *ps)
-		dash.Assets = append(dash.Assets, model.PortfolioAssets{
-			PortfolioID:   p.ID.String(),
-			PortfolioName: p.Name,
-			Currency:      p.Currency,
-			Assets:        assetsByPF[p.ID],
-		})
-
-		agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
+	return cached(s.cache, ctx, "dash", userID.String(), cacheTTLStats, false, func() (*model.Dashboard, error) {
+		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		seriesVals := make([]model.PortfolioPerformance, 0, len(agg))
-		for _, pt := range agg {
-			seriesVals = append(seriesVals, model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
+		dash := &model.Dashboard{
+			ByCurrency: []model.CurrencyPerformance{},
+			Portfolios: []model.PortfolioPerformanceSummary{},
+			Assets:     []model.PortfolioAssets{},
+			History:    []model.PortfolioHistory{},
 		}
-		dash.History = append(dash.History, model.PortfolioHistory{
-			PortfolioID:   p.ID.String(),
-			PortfolioName: p.Name,
-			Currency:      p.Currency,
-			Series:        seriesVals,
-		})
-	}
+		if len(portfolios) == 0 {
+			return dash, nil
+		}
 
-	return dash, nil
+		ids := make([]uuid.UUID, 0, len(portfolios))
+		for _, p := range portfolios {
+			ids = append(ids, p.ID)
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		if err != nil {
+			return nil, err
+		}
+
+		byID := make(map[uuid.UUID]*model.Portfolio, len(portfolios))
+		for _, p := range portfolios {
+			byID[p.ID] = p
+		}
+
+		byCurrency := map[string]*model.CurrencyPerformance{}
+		for _, h := range holdings {
+			p := byID[mustUUID(h.PortfolioID)]
+			if p == nil {
+				continue
+			}
+			cp := byCurrency[h.Currency]
+			if cp == nil {
+				cp = &model.CurrencyPerformance{Currency: h.Currency}
+				byCurrency[h.Currency] = cp
+			}
+			cp.Invested = cp.Invested.Add(h.CostCCY)
+			cp.Realized = cp.Realized.Add(h.RealizedCCY)
+			if h.HasPrice {
+				cp.Value = cp.Value.Add(h.Qty.Mul(h.LastClose))
+			}
+		}
+		for _, cp := range byCurrency {
+			cp.GainLoss = cp.Value.Sub(cp.Invested)
+			if cp.Invested.IsPositive() {
+				cp.GainLossPct = cp.GainLoss.Div(cp.Invested).Mul(decimal.NewFromInt(100))
+			}
+			dash.ByCurrency = append(dash.ByCurrency, *cp)
+		}
+
+		assetsByPF := map[uuid.UUID][]model.AssetPerformance{}
+		for _, h := range holdings {
+			pfID := mustUUID(h.PortfolioID)
+			p := byID[pfID]
+			ap := model.AssetPerformance{
+				AssetID:    h.AssetID,
+				Ticker:     h.Ticker,
+				Name:       h.Name,
+				Currency:   h.Currency,
+				Qty:        h.Qty,
+				Invested:   h.CostCCY,
+				Realized:   h.RealizedCCY,
+				RealizedPF: h.Realized,
+			}
+			if h.HasPrice && h.Qty.IsPositive() {
+				value := h.Qty.Mul(h.LastClose)
+				ap.Value = value
+				ap.GainLoss = value.Sub(h.CostCCY)
+				if h.CostCCY.IsPositive() {
+					ap.ROI = ap.GainLoss.Div(h.CostCCY).Mul(decimal.NewFromInt(100))
+				}
+				if p != nil {
+					if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+						ap.ValuePF = value.Mul(factor)
+					} else {
+						ap.FXMissing = true
+					}
+				}
+			}
+			assetsByPF[pfID] = append(assetsByPF[pfID], ap)
+		}
+
+		for _, p := range portfolios {
+			ps := &model.PortfolioPerformanceSummary{
+				PortfolioID:   p.ID.String(),
+				PortfolioName: p.Name,
+				Currency:      p.Currency,
+				AssetCount:    len(assetsByPF[p.ID]),
+			}
+			for _, ap := range assetsByPF[p.ID] {
+				ps.Invested = ps.Invested.Add(ap.Invested)
+				ps.Value = ps.Value.Add(ap.ValuePF)
+				ps.RealizedGL = ps.RealizedGL.Add(ap.RealizedPF)
+				if ap.FXMissing {
+					ps.FXMissing++
+				}
+			}
+			ps.GainLoss = ps.Value.Sub(ps.Invested)
+			if ps.Invested.IsPositive() {
+				ps.GainLossPct = ps.GainLoss.Div(ps.Invested).Mul(decimal.NewFromInt(100))
+			}
+			dash.Portfolios = append(dash.Portfolios, *ps)
+			dash.Assets = append(dash.Assets, model.PortfolioAssets{
+				PortfolioID:   p.ID.String(),
+				PortfolioName: p.Name,
+				Currency:      p.Currency,
+				Assets:        assetsByPF[p.ID],
+			})
+
+			agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
+			if err != nil {
+				return nil, err
+			}
+			seriesVals := make([]model.PortfolioPerformance, 0, len(agg))
+			for _, pt := range agg {
+				seriesVals = append(seriesVals, model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
+			}
+			seriesVals = series.PortfolioPerformance(seriesVals, s.seriesMaxPoints)
+			dash.History = append(dash.History, model.PortfolioHistory{
+				PortfolioID:   p.ID.String(),
+				PortfolioName: p.Name,
+				Currency:      p.Currency,
+				Series:        seriesVals,
+			})
+		}
+
+		return dash, nil
+	})
 }
 
 func mustUUID(s string) uuid.UUID {
@@ -1138,7 +1233,22 @@ func mustUUID(s string) uuid.UUID {
 }
 
 func (s *Service) GetPrices(ctx context.Context, assetID uuid.UUID) ([]*model.Price, error) {
-	return s.repos.Price.FindByAsset(ctx, assetID)
+	return cached(s.cache, ctx, "prices", assetID.String(), cacheTTLPrices, false, func() ([]*model.Price, error) {
+		prices, err := s.repos.Price.FindByAsset(ctx, assetID)
+		if err != nil {
+			return nil, err
+		}
+		vals := make([]model.Price, 0, len(prices))
+		for i := len(prices) - 1; i >= 0; i-- {
+			vals = append(vals, *prices[i])
+		}
+		vals = series.Prices(vals, s.seriesMaxPoints)
+		out := make([]*model.Price, 0, len(vals))
+		for i := len(vals) - 1; i >= 0; i-- {
+			out = append(out, &vals[i])
+		}
+		return out, nil
+	})
 }
 
 func (s *Service) canAccessPortfolio(ctx context.Context, portfolio *model.Portfolio, userID uuid.UUID) bool {

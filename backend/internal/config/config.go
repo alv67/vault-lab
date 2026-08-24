@@ -24,6 +24,8 @@ type Config struct {
 	ServerPort int
 	ServerHost string
 
+	SeriesMaxPoints int
+
 	LogLevel string
 
 	YahooFinanceEnabled bool
@@ -52,6 +54,8 @@ func Load() *Config {
 
 		ServerPort: getEnvInt("VAULT_SERVER_PORT", 8080),
 		ServerHost: getEnv("VAULT_SERVER_HOST", "0.0.0.0"),
+
+		SeriesMaxPoints: getEnvInt("VAULT_SERIES_MAX_POINTS", 500),
 
 		LogLevel: getEnv("VAULT_LOG_LEVEL", "debug"),
 

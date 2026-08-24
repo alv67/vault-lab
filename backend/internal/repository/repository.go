@@ -30,7 +30,7 @@ type Repository struct {
 	Series      SeriesRepository
 }
 
-func New(db *pgxpool.Pool) *Repository {
+func New(db *pgxpool.Pool, lookup LookupRepository) *Repository {
 	return &Repository{
 		DB:          db,
 		User:        &userRepo{db},
@@ -38,7 +38,7 @@ func New(db *pgxpool.Pool) *Repository {
 		Portfolio:   &portfolioRepo{db: db, transactions: &transactionRepo{db}, splits: &splitRepo{db}},
 		Transaction: &transactionRepo{db},
 		Price:       &priceRepo{db},
-		Lookup:      &lookupRepo{db},
+		Lookup:      lookup,
 		FX:          &fxRepo{db},
 		Split:       &splitRepo{db},
 		Currency:    &currencyRepo{db},
@@ -67,7 +67,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(*Repository) error) err
 		Portfolio:   &portfolioRepo{db: tx, transactions: &transactionRepo{db: tx}, splits: &splitRepo{db: tx}},
 		Transaction: &transactionRepo{db: tx},
 		Price:       &priceRepo{db: tx},
-		Lookup:      &lookupRepo{db: tx},
+		Lookup:      r.Lookup,
 		FX:          &fxRepo{db: tx},
 		Split:       &splitRepo{db: tx},
 		Currency:    &currencyRepo{db: tx},

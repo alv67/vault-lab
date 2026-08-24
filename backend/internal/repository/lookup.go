@@ -3,34 +3,35 @@ package repository
 import (
 	"context"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type LookupRepository interface {
-	Get(ctx context.Context, query string, maxAge time.Duration) ([]byte, error)
-	Set(ctx context.Context, query string, results []byte) error
+	Get(ctx context.Context, query string) ([]byte, error)
+	Set(ctx context.Context, query string, results []byte, ttl time.Duration) error
 }
 
 type lookupRepo struct {
-	db DBTX
+	rdb *redis.Client
 }
 
-func (r *lookupRepo) Get(ctx context.Context, query string, maxAge time.Duration) ([]byte, error) {
-	var results []byte
-	err := r.db.QueryRow(ctx,
-		`SELECT results FROM lookup_cache WHERE query = $1 AND created_at >= $2`,
-		query, time.Now().Add(-maxAge),
-	).Scan(&results)
-	if err != nil {
-		return nil, err
+// NewLookupCache returns a LookupRepository backed by Redis. With a nil client
+// reads degrade to a miss and writes are noops.
+func NewLookupCache(rdb *redis.Client) LookupRepository {
+	return &lookupRepo{rdb: rdb}
+}
+
+func (r *lookupRepo) Get(ctx context.Context, query string) ([]byte, error) {
+	if r.rdb == nil {
+		return nil, redis.Nil
 	}
-	return results, nil
+	return r.rdb.Get(ctx, "vl:lookup:"+query).Bytes()
 }
 
-func (r *lookupRepo) Set(ctx context.Context, query string, results []byte) error {
-	_, err := r.db.Exec(ctx,
-		`INSERT INTO lookup_cache (query, results) VALUES ($1, $2)
-		 ON CONFLICT (query) DO UPDATE SET results = EXCLUDED.results, created_at = NOW()`,
-		query, results,
-	)
-	return err
+func (r *lookupRepo) Set(ctx context.Context, query string, results []byte, ttl time.Duration) error {
+	if r.rdb == nil {
+		return nil
+	}
+	return r.rdb.Set(ctx, "vl:lookup:"+query, results, ttl).Err()
 }

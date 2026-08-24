@@ -1,5 +1,37 @@
 const BASE_URL = '/api/v1'
 
+// In-memory GET cache with TTL (~60s). Module-level so it survives component
+// mounts/unmounts and page navigations within the SPA, avoiding refetching
+// heavy endpoints (dashboard, summaries, history) on every mount.
+const CACHE_TTL_MS = 60_000
+
+interface CacheEntry {
+  data: unknown
+  expiresAt: number
+}
+
+const getCache = new Map<string, CacheEntry>()
+
+// Deep-copy cached data so callers never share mutable references with the
+// cache entry (a caller mutating a response would otherwise poison it).
+// Falls back to JSON round-trip, then to the raw reference: it must never
+// break the request.
+function cloneCached<T>(data: unknown): T {
+  try {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(data) as T
+    }
+  } catch {
+    // structuredClone unavailable/failed — fall through to JSON copy
+  }
+  try {
+    return JSON.parse(JSON.stringify(data)) as T
+  } catch {
+    // Last resort: return the reference rather than failing the request.
+    return data as T
+  }
+}
+
 export interface User {
   id: string
   email: string
@@ -275,13 +307,34 @@ function buildUrl(path: string, params?: Record<string, string>): string {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method ?? 'GET'
   const url = buildUrl(path, options.params)
+  const cacheKey = `${method} ${url}`
+
+  // Any non-GET invalidates the whole cache. This is intentionally coarse:
+  // dashboard/statistics endpoints aggregate across all portfolios/assets, so
+  // a single mutation (transaction, portfolio edit, or /prices/refresh) can
+  // change any cached GET. Clearing everything is simpler and safer than
+  // tracking fine-grained dependencies, at the cost of a refetch after each
+  // mutation.
+  if (method !== 'GET') {
+    getCache.clear()
+  } else {
+    const cached = getCache.get(cacheKey)
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return cloneCached<T>(cached.data)
+      }
+      getCache.delete(cacheKey)
+    }
+  }
+
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const token = localStorage.getItem('access_token')
   if (token) headers.Authorization = `Bearer ${token}`
 
   const init = (): RequestInit => ({
-    method: options.method ?? 'GET',
+    method,
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
@@ -315,6 +368,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (!res.ok) {
+    // Do not cache failures (4xx/5xx): the normal throw/retry flow applies.
     let message = 'Something went wrong'
     try {
       const data = await res.json()
@@ -326,7 +380,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 
   if (res.status === 204) return undefined as T
-  return res.json() as Promise<T>
+
+  const data: T = await res.json()
+  if (method === 'GET') {
+    getCache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS })
+  }
+  return cloneCached<T>(data)
 }
 
 export const authApi = {
