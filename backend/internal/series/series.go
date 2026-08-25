@@ -34,7 +34,7 @@ func Recompute(ctx context.Context, repos *repository.Repository, portfolioID uu
 	if err != nil {
 		return err
 	}
-	rates, err := LoadRates(ctx, repos, holdings)
+	rates, err := LoadRates(ctx, repos, holdings, p.Currency)
 	if err != nil {
 		return err
 	}
@@ -131,6 +131,7 @@ func Recompute(ctx context.Context, repos *repository.Repository, portfolioID uu
 				Ratio: fmt.Sprintf("%s:%s", sp.Numerator.String(), sp.Denominator.String()),
 			})
 		}
+		var lastMV decimal.Decimal
 		for i, d := range dates {
 			for pos < len(assetTxs) && !DayOf(assetTxs[pos].Date).After(d) {
 				position.Apply(st, assetTxs[pos])
@@ -153,8 +154,15 @@ func Recompute(ctx context.Context, repos *repository.Repository, portfolioID uu
 				pricePos++
 			}
 			mv := decimal.Zero
-			if hasFX && st.Qty.IsPositive() && pricePos > 0 {
-				mv = st.Qty.Mul(priceByAsset[aid][priceDates[pricePos-1]]).Mul(rawFactor).Mul(factor)
+			if st.Qty.IsPositive() && pricePos > 0 {
+				if hasFX {
+					mv = st.Qty.Mul(priceByAsset[aid][priceDates[pricePos-1]]).Mul(rawFactor).Mul(factor)
+				} else {
+					mv = lastMV // FX missing: forward-fill last known value to avoid spurious gaps
+				}
+			}
+			if mv.IsPositive() {
+				lastMV = mv
 			}
 			pt := model.PositionPoint{
 				Date:        d,
@@ -216,14 +224,16 @@ func RecomputeAll(ctx context.Context, repos *repository.Repository) error {
 	return nil
 }
 
-// LoadRates loads USD->X rates for every currency appearing in the holdings.
-func LoadRates(ctx context.Context, repos *repository.Repository, holdings []*model.Holding) (map[string]decimal.Decimal, error) {
+// LoadRates loads USD->X rates for every currency appearing in the holdings,
+// plus the given baseCurrency and USD.
+func LoadRates(ctx context.Context, repos *repository.Repository, holdings []*model.Holding, baseCurrency string) (map[string]decimal.Decimal, error) {
 	quotes := map[string]bool{}
 	for _, h := range holdings {
 		quotes[h.Currency] = true
 	}
-	// Portfolio currencies are not directly in holdings; fetch all needed from
-	// the portfolios involved via the caller. For simplicity include USD.
+	if baseCurrency != "" {
+		quotes[baseCurrency] = true
+	}
 	quotes["USD"] = true
 	list := make([]string, 0, len(quotes))
 	for c := range quotes {
