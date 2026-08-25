@@ -245,10 +245,25 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetPortfolioSummary(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
 		return
 	}
 
@@ -263,10 +278,25 @@ func (h *Handler) GetPortfolioSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetPortfolioAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
 		return
 	}
 
@@ -281,10 +311,25 @@ func (h *Handler) GetPortfolioAllocation(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
 		return
 	}
 
@@ -299,10 +344,25 @@ func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) GetPortfolioROI(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
 		return
 	}
 
