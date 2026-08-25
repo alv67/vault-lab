@@ -16,6 +16,8 @@ type PortfolioSummary struct {
 	RealizedGL    decimal.Decimal `json:"realized_gl"`
 	UnrealizedGL  decimal.Decimal `json:"unrealized_gl"`
 	AssetCount    int             `json:"asset_count"`
+	FXMissingCount int            `json:"fx_missing_count"`
+	FXMissingValue decimal.Decimal `json:"fx_missing_value"`
 	Holdings      []AssetHolding  `json:"holdings"`
 }
 
@@ -25,6 +27,7 @@ type AssetAllocation struct {
 	Name     string          `json:"name"`
 	Value    decimal.Decimal `json:"value"`
 	AllocPct decimal.Decimal `json:"alloc_pct"`
+	FXMissing bool           `json:"fx_missing"`
 }
 
 type PortfolioPerformance struct {
