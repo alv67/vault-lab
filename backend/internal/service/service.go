@@ -48,14 +48,18 @@ type Service struct {
 	lookupCacheTTL  time.Duration
 	cache           *cache.Cache
 	seriesMaxPoints int
+	stalePriceDays  int
 	Health          *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, health *HealthService) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, Health: health}
+	if stalePriceDays <= 0 {
+		stalePriceDays = 7
+	}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
 }
 
 // cached implements the read-through cache pattern: it reads the current data
@@ -572,8 +576,19 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 		}
 		var totalValue, totalCost, totalRealized decimal.Decimal
 		summary.Holdings = make([]model.AssetHolding, 0, len(holdings))
+		staleThreshold := time.Duration(s.stalePriceDays) * 24 * time.Hour
 		for _, h := range holdings {
 			totalRealized = totalRealized.Add(h.Realized)
+			if h.Country == "" {
+				summary.MissingCountry++
+			}
+			if h.CategoryID == nil {
+				summary.MissingCategory++
+			}
+			stale := h.PriceFetchedAt == nil || time.Since(*h.PriceFetchedAt) > staleThreshold
+			if stale {
+				summary.StaleCount++
+			}
 			ah := model.AssetHolding{
 				AssetID:     h.AssetID,
 				Ticker:      h.Ticker,
@@ -584,6 +599,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				CostCCY:     h.CostCCY,
 				Realized:    h.Realized,
 				RealizedCCY: h.RealizedCCY,
+				Stale:       stale,
 				Closed:      !h.Qty.IsPositive(),
 			}
 			if h.HasPrice && h.Qty.IsPositive() {

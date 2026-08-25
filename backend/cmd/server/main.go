@@ -75,7 +75,7 @@ func main() {
 		price.WithRateBudget(budget),
 		price.WithHealthRecorder(healthSvc),
 	)
-	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints, healthSvc)
+	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints, cfg.StalePriceDays, healthSvc)
 
 	h := handler.New(svc, jwtAuth)
 

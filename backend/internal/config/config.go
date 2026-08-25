@@ -34,6 +34,8 @@ type Config struct {
 	YahooMinInterval    time.Duration
 	YahooGlobalRate     int
 	YahooGlobalWindow   time.Duration
+
+	StalePriceDays int
 }
 
 func Load() *Config {
@@ -65,6 +67,8 @@ func Load() *Config {
 		YahooMinInterval:    getEnvDuration("VAULT_YAHOO_MIN_INTERVAL", 400*time.Millisecond),
 		YahooGlobalRate:     getEnvInt("VAULT_YAHOO_GLOBAL_RATE", 8),
 		YahooGlobalWindow:   getEnvDuration("VAULT_YAHOO_GLOBAL_WINDOW", 1*time.Second),
+
+		StalePriceDays: getEnvInt("VAULT_STALE_PRICE_DAYS", 7),
 	}
 }
 
