@@ -32,6 +32,13 @@ build: ## Build all binaries (inside container)
 test: ## Run tests
 	cd backend && go test ./... 2>/dev/null || echo "Go not installed locally, use: $(COMPOSE) exec backend go test ./..."
 
+test-e2e: ## Run end-to-end API tests on an isolated stack (EPIC A)
+	$(COMPOSE) -p vaultlab-test -f docker-compose.test.yml up -d --build
+	@echo "Attendo il backend su http://localhost:8081..."
+	@until curl -s -o /dev/null http://localhost:8081/api/v1/health/prices; do sleep 1; done
+	./scripts/test-epic-a.sh http://localhost:8081
+	$(COMPOSE) -p vaultlab-test -f docker-compose.test.yml down -v
+
 db-shell: ## Connect to postgres
 	$(COMPOSE) exec postgres psql -U vaultlab vaultlab
 
