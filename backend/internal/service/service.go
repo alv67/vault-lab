@@ -48,14 +48,18 @@ type Service struct {
 	lookupCacheTTL  time.Duration
 	cache           *cache.Cache
 	seriesMaxPoints int
+	stalePriceDays  int
 	Health          *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, health *HealthService) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, Health: health}
+	if stalePriceDays <= 0 {
+		stalePriceDays = 7
+	}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
 }
 
 // cached implements the read-through cache pattern: it reads the current data
@@ -560,7 +564,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		rates, err := series.LoadRates(ctx, s.repos, holdings, p.Currency)
 		if err != nil {
 			return nil, err
 		}
@@ -571,30 +575,20 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 			AssetCount:    len(holdings),
 		}
 		var totalValue, totalCost, totalRealized decimal.Decimal
+		summary.Holdings = make([]model.AssetHolding, 0, len(holdings))
+		staleThreshold := time.Duration(s.stalePriceDays) * 24 * time.Hour
 		for _, h := range holdings {
 			totalRealized = totalRealized.Add(h.Realized)
-			if !h.Qty.IsPositive() {
-				continue
+			if h.Country == "" {
+				summary.MissingCountry++
 			}
-			if !h.HasPrice {
-				continue
+			if h.CategoryID == nil {
+				summary.MissingCategory++
 			}
-			totalCost = totalCost.Add(h.Cost)
-			value := h.Qty.Mul(h.LastClose)
-			if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
-				totalValue = totalValue.Add(value.Mul(factor))
+			stale := h.PriceFetchedAt == nil || time.Since(*h.PriceFetchedAt) > staleThreshold
+			if stale {
+				summary.StaleCount++
 			}
-		}
-		summary.TotalCost = totalCost
-		summary.TotalValue = totalValue
-		summary.GainLoss = totalValue.Sub(totalCost)
-		summary.RealizedGL = totalRealized
-		summary.UnrealizedGL = summary.GainLoss
-		if totalCost.IsPositive() {
-			summary.GainLossPct = summary.GainLoss.Div(totalCost).Mul(decimal.NewFromInt(100))
-		}
-		summary.Holdings = make([]model.AssetHolding, 0, len(holdings))
-		for _, h := range holdings {
 			ah := model.AssetHolding{
 				AssetID:     h.AssetID,
 				Ticker:      h.Ticker,
@@ -605,6 +599,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				CostCCY:     h.CostCCY,
 				Realized:    h.Realized,
 				RealizedCCY: h.RealizedCCY,
+				Stale:       stale,
 				Closed:      !h.Qty.IsPositive(),
 			}
 			if h.HasPrice && h.Qty.IsPositive() {
@@ -612,8 +607,12 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				ah.Value = value
 				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
 					ah.ValuePF = value.Mul(factor)
+					totalCost = totalCost.Add(h.Cost)
+					totalValue = totalValue.Add(value.Mul(factor))
 				} else {
 					ah.FXMissing = true
+					summary.FXMissingCount++
+					summary.FXMissingValue = summary.FXMissingValue.Add(value)
 				}
 				ah.Unrealized = ah.ValuePF.Sub(h.Cost)
 				if h.Cost.IsPositive() {
@@ -621,6 +620,14 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				}
 			}
 			summary.Holdings = append(summary.Holdings, ah)
+		}
+		summary.TotalCost = totalCost
+		summary.TotalValue = totalValue
+		summary.GainLoss = totalValue.Sub(totalCost)
+		summary.RealizedGL = totalRealized
+		summary.UnrealizedGL = summary.GainLoss
+		if totalCost.IsPositive() {
+			summary.GainLossPct = summary.GainLoss.Div(totalCost).Mul(decimal.NewFromInt(100))
 		}
 		return summary, nil
 	})
@@ -636,7 +643,7 @@ func (s *Service) GetPortfolioAllocation(ctx context.Context, portfolioID uuid.U
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		rates, err := series.LoadRates(ctx, s.repos, holdings, p.Currency)
 		if err != nil {
 			return nil, err
 		}
@@ -652,20 +659,20 @@ func (s *Service) GetPortfolioAllocation(ctx context.Context, portfolioID uuid.U
 			}
 			value := h.Qty.Mul(h.LastClose)
 			factor, ok := series.FxFactor(rates, h.Currency, p.Currency)
-			if !ok {
-				continue
+			if ok {
+				value = value.Mul(factor)
+				total = total.Add(value)
 			}
-			value = value.Mul(factor)
-			total = total.Add(value)
 			allocs = append(allocs, &model.AssetAllocation{
-				AssetID: h.AssetID,
-				Ticker:  h.Ticker,
-				Name:    h.Name,
-				Value:   value,
+				AssetID:   h.AssetID,
+				Ticker:    h.Ticker,
+				Name:      h.Name,
+				Value:     value,
+				FXMissing: !ok,
 			})
 		}
 		for _, a := range allocs {
-			if total.IsPositive() {
+			if total.IsPositive() && !a.FXMissing {
 				a.AllocPct = a.Value.Div(total).Mul(decimal.NewFromInt(100))
 			}
 		}
@@ -712,7 +719,7 @@ func (s *Service) GetPortfolioROI(ctx context.Context, portfolioID uuid.UUID) ([
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		rates, err := series.LoadRates(ctx, s.repos, holdings, p.Currency)
 		if err != nil {
 			return nil, err
 		}
@@ -1119,7 +1126,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings)
+		rates, err := series.LoadRates(ctx, s.repos, holdings, "")
 		if err != nil {
 			return nil, err
 		}

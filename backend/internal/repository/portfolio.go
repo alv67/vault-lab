@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
 
 	"github.com/amelamela/vault-lab/internal/model"
 	"github.com/amelamela/vault-lab/internal/position"
@@ -16,10 +15,6 @@ type PortfolioRepository interface {
 	FindByUser(ctx context.Context, userID uuid.UUID) ([]*model.Portfolio, error)
 	Update(ctx context.Context, p *model.Portfolio) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	GetSummary(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioSummary, error)
-	GetAllocation(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetAllocation, error)
-	GetPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error)
-	GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetROI, error)
 	HeldAssets(ctx context.Context, portfolioID uuid.UUID) ([]*model.Asset, error)
 	HoldingsDetailed(ctx context.Context, portfolioIDs []uuid.UUID) ([]*model.Holding, error)
 	FindAll(ctx context.Context) ([]uuid.UUID, error)
@@ -114,231 +109,6 @@ func (r *portfolioRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-func (r *portfolioRepo) GetSummary(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioSummary, error) {
-	s := &model.PortfolioSummary{}
-	err := r.db.QueryRow(ctx, `
-		WITH
-		buy AS (
-			SELECT asset_id,
-				SUM(quantity * price + fees) AS total_cost,
-				SUM(quantity) AS total_qty
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'buy'
-			GROUP BY asset_id
-		),
-		sell AS (
-			SELECT asset_id,
-				SUM(quantity) AS sold_qty,
-				SUM(quantity * price - fees) AS total_proceeds
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'sell'
-			GROUP BY asset_id
-		),
-		holdings AS (
-			SELECT b.asset_id,
-				(b.total_qty - COALESCE(s.sold_qty, 0)) AS qty,
-				b.total_cost - COALESCE(s.total_proceeds, 0) AS cost_basis
-			FROM buy b
-			LEFT JOIN sell s ON s.asset_id = b.asset_id
-		),
-		latest_prices AS (
-			SELECT DISTINCT ON (asset_id) asset_id, close
-			FROM prices
-			WHERE asset_id IN (SELECT asset_id FROM holdings WHERE qty > 0)
-			ORDER BY asset_id, date DESC
-		)
-		SELECT
-			COUNT(*) AS asset_count,
-			COALESCE(SUM(lp.close * h.qty), 0) AS total_value,
-			COALESCE(SUM(h.cost_basis), 0) AS total_cost
-		FROM holdings h
-		LEFT JOIN latest_prices lp ON lp.asset_id = h.asset_id
-		WHERE h.qty > 0
-	`, portfolioID).Scan(&s.AssetCount, &s.TotalValue, &s.TotalCost)
-
-	if err != nil {
-		return nil, err
-	}
-	s.GainLoss = s.TotalValue.Sub(s.TotalCost)
-	if s.TotalCost.IsPositive() {
-		s.GainLossPct = s.GainLoss.Div(s.TotalCost).Mul(decimal.NewFromInt(100))
-	}
-	return s, nil
-}
-
-func (r *portfolioRepo) GetAllocation(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetAllocation, error) {
-	rows, err := r.db.Query(ctx, `
-		WITH
-		buy AS (
-			SELECT asset_id,
-				SUM(quantity * price + fees) AS total_cost,
-				SUM(quantity) AS total_qty
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'buy'
-			GROUP BY asset_id
-		),
-		sell AS (
-			SELECT asset_id,
-				SUM(quantity) AS sold_qty,
-				SUM(quantity * price - fees) AS total_proceeds
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'sell'
-			GROUP BY asset_id
-		),
-		holdings AS (
-			SELECT b.asset_id,
-				(b.total_qty - COALESCE(s.sold_qty, 0)) AS qty
-			FROM buy b
-			LEFT JOIN sell s ON s.asset_id = b.asset_id
-		),
-		latest_prices AS (
-			SELECT DISTINCT ON (asset_id) asset_id, close
-			FROM prices
-			WHERE asset_id IN (SELECT asset_id FROM holdings WHERE qty > 0)
-			ORDER BY asset_id, date DESC
-		),
-		valuations AS (
-			SELECT h.asset_id, a.ticker, a.name, COALESCE(lp.close * h.qty, 0) AS value
-			FROM holdings h
-			LEFT JOIN latest_prices lp ON lp.asset_id = h.asset_id
-			JOIN assets a ON a.id = h.asset_id
-			WHERE h.qty > 0
-		)
-		SELECT asset_id, ticker, name, value,
-			value * 100.0 / SUM(value) OVER () AS alloc_pct
-		FROM valuations
-		ORDER BY value DESC
-	`, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var allocs []*model.AssetAllocation
-	for rows.Next() {
-		a := &model.AssetAllocation{}
-		if err := rows.Scan(&a.AssetID, &a.Ticker, &a.Name, &a.Value, &a.AllocPct); err != nil {
-			return nil, err
-		}
-		allocs = append(allocs, a)
-	}
-	return allocs, nil
-}
-
-func (r *portfolioRepo) GetPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error) {
-	rows, err := r.db.Query(ctx, `
-		WITH
-		buy AS (
-			SELECT asset_id, date, quantity, price
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'buy'
-		),
-		sell AS (
-			SELECT asset_id, date, quantity
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'sell'
-		),
-		dates AS (
-			SELECT DISTINCT p.date
-			FROM prices p
-			WHERE p.asset_id IN (SELECT asset_id FROM buy)
-			AND p.date >= (SELECT MIN(date) FROM buy)
-		),
-		holdings_at_date AS (
-			SELECT d.date, b.asset_id, b.quantity - COALESCE(s.sold_qty, 0) AS qty
-			FROM dates d
-			JOIN buy b ON b.date <= d.date
-			LEFT JOIN (
-				SELECT asset_id, date, SUM(quantity) AS sold_qty
-				FROM sell
-				GROUP BY asset_id, date
-			) s ON s.asset_id = b.asset_id AND s.date <= d.date
-		)
-		SELECT d.date,
-			COALESCE(SUM(h.qty * p.close), 0) AS value
-		FROM dates d
-		LEFT JOIN holdings_at_date h ON h.date = d.date
-		LEFT JOIN prices p ON p.asset_id = h.asset_id AND p.date = d.date
-		GROUP BY d.date
-		ORDER BY d.date
-	`, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var perf []*model.PortfolioPerformance
-	for rows.Next() {
-		p := &model.PortfolioPerformance{}
-		if err := rows.Scan(&p.Date, &p.Value); err != nil {
-			return nil, err
-		}
-		perf = append(perf, p)
-	}
-	return perf, nil
-}
-
-func (r *portfolioRepo) GetROI(ctx context.Context, portfolioID uuid.UUID) ([]*model.AssetROI, error) {
-	rows, err := r.db.Query(ctx, `
-		WITH
-		buy AS (
-			SELECT asset_id,
-				SUM(quantity * price + fees) AS total_cost,
-				SUM(quantity) AS total_qty
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'buy'
-			GROUP BY asset_id
-		),
-		sell AS (
-			SELECT asset_id,
-				SUM(quantity) AS sold_qty,
-				SUM(quantity * price - fees) AS total_proceeds
-			FROM transactions
-			WHERE portfolio_id = $1 AND type = 'sell'
-			GROUP BY asset_id
-		),
-		holdings AS (
-			SELECT b.asset_id,
-				(b.total_qty - COALESCE(s.sold_qty, 0)) AS qty,
-				b.total_cost - COALESCE(s.total_proceeds, 0) AS cost_basis,
-				b.total_cost
-			FROM buy b
-			LEFT JOIN sell s ON s.asset_id = b.asset_id
-		),
-		latest_prices AS (
-			SELECT DISTINCT ON (asset_id) asset_id, close
-			FROM prices
-			WHERE asset_id IN (SELECT asset_id FROM holdings WHERE qty > 0)
-			ORDER BY asset_id, date DESC
-		)
-		SELECT h.asset_id, a.ticker, a.name,
-			COALESCE(lp.close * h.qty, 0) AS current_value,
-			h.cost_basis AS total_invested
-		FROM holdings h
-		LEFT JOIN latest_prices lp ON lp.asset_id = h.asset_id
-		JOIN assets a ON a.id = h.asset_id
-		WHERE h.qty > 0
-		ORDER BY current_value DESC
-	`, portfolioID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var rois []*model.AssetROI
-	for rows.Next() {
-		r := &model.AssetROI{}
-		if err := rows.Scan(&r.AssetID, &r.Ticker, &r.Name, &r.CurrentValue, &r.TotalInvested); err != nil {
-			return nil, err
-		}
-		if r.TotalInvested.IsPositive() {
-			r.ROI = r.CurrentValue.Sub(r.TotalInvested).Div(r.TotalInvested).Mul(decimal.NewFromInt(100))
-		}
-		rois = append(rois, r)
-	}
-	return rois, nil
-}
-
 func (r *portfolioRepo) HeldAssets(ctx context.Context, portfolioID uuid.UUID) ([]*model.Asset, error) {
 	rows, err := r.db.Query(ctx, `
 		WITH buy AS (
@@ -381,7 +151,8 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 	}
 	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT t.portfolio_id, t.asset_id, a.ticker, a.name, a.currency,
-			COALESCE(p.close, 0) AS last_close, (p.close IS NOT NULL) AS has_price
+			COALESCE(p.close, 0) AS last_close, (p.close IS NOT NULL) AS has_price,
+			a.country, a.category_id, a.price_fetched_at
 		FROM transactions t
 		JOIN assets a ON a.id = t.asset_id
 		LEFT JOIN LATERAL (
@@ -397,7 +168,7 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 	base := make([]*model.Holding, 0)
 	for rows.Next() {
 		h := &model.Holding{}
-		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency, &h.LastClose, &h.HasPrice); err != nil {
+		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency, &h.LastClose, &h.HasPrice, &h.Country, &h.CategoryID, &h.PriceFetchedAt); err != nil {
 			return nil, err
 		}
 		base = append(base, h)
