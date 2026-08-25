@@ -83,6 +83,8 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 
 ```bash
 make up              # Avvia tutto con podman-compose
+make down            # Ferma tutti i servizi
+make reset           # Ferma i servizi e cancella i volumi dati (fresh start)
 make logs            # Log in tempo reale
 make migrate         # Esegui migration DB
 make test            # Test Go (in container)
