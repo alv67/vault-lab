@@ -3,6 +3,7 @@ package model
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -13,10 +14,13 @@ type PortfolioSummary struct {
 	TotalCost     decimal.Decimal `json:"total_cost"`
 	GainLoss      decimal.Decimal `json:"gain_loss"`
 	GainLossPct   decimal.Decimal `json:"gain_loss_pct"`
-	RealizedGL    decimal.Decimal `json:"realized_gl"`
-	UnrealizedGL  decimal.Decimal `json:"unrealized_gl"`
-	AssetCount    int             `json:"asset_count"`
-	Holdings      []AssetHolding  `json:"holdings"`
+	RealizedGL     decimal.Decimal `json:"realized_gl"`
+	UnrealizedGL   decimal.Decimal `json:"unrealized_gl"`
+	AssetCount     int             `json:"asset_count"`
+	MissingCountry int             `json:"missing_country"`
+	MissingCategory int            `json:"missing_category"`
+	StaleCount     int             `json:"stale_count"`
+	Holdings       []AssetHolding  `json:"holdings"`
 }
 
 type AssetAllocation struct {
@@ -55,9 +59,12 @@ type Holding struct {
 	CostCCY     decimal.Decimal `json:"cost_ccy"` // cost basis in asset currency
 	Realized    decimal.Decimal `json:"realized"` // realized P&L in portfolio currency
 	RealizedCCY decimal.Decimal `json:"realized_ccy"`
-	AvgCost     decimal.Decimal `json:"avg_cost"`
-	LastClose   decimal.Decimal `json:"last_close"` // latest close in asset currency
-	HasPrice    bool            `json:"has_price"`
+	AvgCost         decimal.Decimal `json:"avg_cost"`
+	LastClose       decimal.Decimal `json:"last_close"` // latest close in asset currency
+	HasPrice        bool            `json:"has_price"`
+	Country         string          `json:"country"`
+	CategoryID      *uuid.UUID      `json:"category_id,omitempty"`
+	PriceFetchedAt  *time.Time      `json:"price_fetched_at,omitempty"`
 }
 
 type AssetHolding struct {
@@ -75,6 +82,7 @@ type AssetHolding struct {
 	Unrealized  decimal.Decimal `json:"unrealized"`
 	ROI         decimal.Decimal `json:"roi"`
 	FXMissing   bool            `json:"fx_missing"`
+	Stale       bool            `json:"stale"`
 	Closed      bool            `json:"closed"`
 }
 
