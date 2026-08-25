@@ -129,8 +129,10 @@ vault-lab/
 
 ---
 
-## Stato attuale (30 Lug 2026)
+## Stato attuale (25 Ago 2026)
 
-Fase 0 completata. Fase 1 in corso (vedi STATUS.md).
-Prossima sessione: fixare il worker prezzi (Yahoo rate-limit), completare Fase 1.
+**Release v0.1.0** pubblicata su `main` (prima release ufficiale).
+
+Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo procede su `develop`.
+Prossime aree (vedi STATUS.md): EPIC B (esposizione geografica/settore), EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item di condivisione/CSV della Fase 1.
 
