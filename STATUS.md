@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (25 Ago 2026)
+# VaultLab — Stato Progetto (26 Ago 2026)
 
 ## Infrastruttura
 
@@ -9,6 +9,7 @@
 | Database | PostgreSQL 16 | Con docker volume |
 | Cache | Redis 7 | Caching dashboard/series, rate-limit Yahoo |
 | Worker | Go (prezzi) | Container separato |
+| Python Service | FastAPI + uvirror + requests + bs4 | ETF metadata (JustETF) — in arrivo con EPIC B |
 | Container | podman + podman-compose su macOS | |
 
 ## Release
@@ -63,10 +64,29 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 
 ## Fase 2 — Pianificata
 
-- EPIC B — Distribuzione territoriale e per settore GICS (#36)
-- EPIC C — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo (#39)
-- EPIC E — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
-- EPIC D — Design system & dark mode
+### EPIC B — Distribuzione geo/settore + FX history + Asset detail (#36) — 10 sub-issues
+| Issue | Titolo | Componente |
+|-------|--------|------------|
+| #7  | B.1 — Migration + region/sector weight model + `fx_history` + `exchange` | Backend |
+| #8  | B.2 — GICS seed + populate category_id + Yahoo v10 fetch-profile | Backend |
+| #9  | B.3 — Country backfill + ISO normalization + country→macro-region mapping | Backend |
+| #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend |
+| #11 | B.5 — Python microservice: ETF metadata da JustETF | Python |
+| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend |
+| #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend |
+| #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend |
+| #44 | B.9 — FX rate history + series engine per-date | Backend |
+| #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack |
+
+**Ordine di implementazione**:
+1. Data layer: B.1 → B.9 → B.3
+2. Backend: B.2 → B.5 → B.6/B.7
+3. Frontend: B.10 → B.4 → B.8
+
+### Altri EPIC Fase 2
+- EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo
+- EPIC E (#38) — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
+- EPIC D (#37) — Design system & dark mode
 
 ## Fase 3 — Pianificata
 
