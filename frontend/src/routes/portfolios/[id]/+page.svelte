@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { page } from '$app/state'
+  import { resolve } from '$app/paths'
   import { toast } from '$lib/stores/toast.svelte'
   import {
     portfolioApi,
@@ -273,7 +274,9 @@
             {#each summary.holdings as h (h.asset_id)}
               <tr class="border-b last:border-0">
                 <td class="py-2">
-                  <span class="font-medium">{h.ticker}</span>
+                  <a href={resolve(`/assets/${h.asset_id}`)} class="font-medium text-blue-600 hover:underline">
+                    {h.ticker}
+                  </a>
                   <span class="block text-xs text-gray-500">{h.name}</span>
                 </td>
                 <td class="py-2 text-right">{h.closed ? '-' : h.qty}</td>

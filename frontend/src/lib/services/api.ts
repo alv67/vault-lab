@@ -59,6 +59,67 @@ export interface Asset {
   category_id: string
   country: string
   currency: string
+  exchange?: string
+  sector?: string
+  industry?: string
+}
+
+export interface AssetQuote {
+  currency: string
+  last_close: string
+  last_date: string
+  change_1d: string
+  change_1w: string
+  change_1m: string
+  change_1y: string
+  change_ytd: string
+  has_data: boolean
+}
+
+// Body accettato da PATCH /assets/{id}. Campi omessi = invariati; stringa
+// vuota = svuota (isin, country, exchange, sector, industry).
+export interface AssetPatch {
+  ticker?: string
+  isin?: string
+  name?: string
+  type?: string
+  category_id?: string
+  country?: string
+  currency?: string
+  exchange?: string
+  sector?: string
+  industry?: string
+}
+
+export interface Price {
+  id: string
+  asset_id: string
+  date: string
+  open: string
+  high: string
+  low: string
+  close: string
+  volume: number
+  source: string
+  created_at: string
+}
+
+export interface ExposureRow {
+  name: string
+  weight: string
+}
+
+export interface AssetExposure {
+  regions: ExposureRow[]
+  sectors: ExposureRow[]
+}
+
+// Body accettato da PUT /assets/{id}/exposure. Le dimensioni sono
+// indipendenti: omettendo una chiave la relativa distribuzione non viene
+// modificata.
+export interface AssetExposurePatch {
+  regions?: ExposureRow[]
+  sectors?: ExposureRow[]
 }
 
 export interface Currency {
@@ -390,9 +451,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export const api = {
   get: (url: string, init: RequestInit = {}) => request(url, { ...init, method: 'GET' }),
-  post: (url: string, body: any, init: RequestInit = {}) => request(url, { ...init, method: 'POST', body }),
-  put: (url: string, body: any, init: RequestInit = {}) => request(url, { ...init, method: 'PUT', body }),
-  patch: (url: string, body: any, init: RequestInit = {}) => request(url, { ...init, method: 'PATCH', body }),
+  post: (url: string, body: unknown, init: RequestInit = {}) => request(url, { ...init, method: 'POST', body }),
+  put: (url: string, body: unknown, init: RequestInit = {}) => request(url, { ...init, method: 'PUT', body }),
+  patch: (url: string, body: unknown, init: RequestInit = {}) => request(url, { ...init, method: 'PATCH', body }),
   delete: (url: string, init: RequestInit = {}) => request(url, { ...init, method: 'DELETE' }),
 };
 
@@ -438,6 +499,18 @@ export const assetApi = {
   meta: (ticker: string) => request<AssetMeta>(`/assets/meta?ticker=${ticker}`),
   get: (id: string) => request<Asset>(`/assets/${id}`),
   create: (data: Partial<Asset>) => request<Asset>('/assets', { method: 'POST', body: data }),
+  update: (id: string, patch: AssetPatch) =>
+    request<Asset>(`/assets/${id}`, { method: 'PATCH', body: patch }),
+  quote: (id: string) => request<AssetQuote>(`/assets/${id}/quote`),
+  fetchProfile: (id: string) =>
+    request<Asset>(`/assets/${id}/fetch-profile`, { method: 'POST' }),
+  exposure: (id: string) => request<AssetExposure>(`/assets/${id}/exposure`),
+  saveExposure: (id: string, exposure: AssetExposurePatch) =>
+    request<AssetExposure>(`/assets/${id}/exposure`, { method: 'PUT', body: exposure }),
+  fetchExposure: (id: string) =>
+    request<AssetExposure>(`/assets/${id}/fetch-exposure`, { method: 'POST' }),
+  backfillHistory: (id: string) =>
+    request<{ status: string }>(`/assets/${id}/backfill-history`, { method: 'POST' }),
   remove: (id: string) => request<void>(`/assets/${id}`, { method: 'DELETE' }),
   sync: () => request<{ status: string }>('/assets/sync', { method: 'POST' }),
 }
@@ -457,6 +530,7 @@ export const pricesApi = {
       method: 'POST',
       params: portfolioId ? { portfolio_id: portfolioId } : {},
     }),
+  byAsset: (assetId: string) => request<Price[]>(`/prices/${assetId}?full=1`),
 }
 
 export const settingsApi = {

@@ -49,16 +49,63 @@ const (
 )
 
 type Asset struct {
-	ID             uuid.UUID  `json:"id"`
-	Ticker         string     `json:"ticker"`
-	ISIN           string     `json:"isin,omitempty"`
-	Name           string     `json:"name"`
-	Type           AssetType  `json:"type"`
-	CategoryID     *uuid.UUID `json:"category_id,omitempty"`
-	Country        string     `json:"country,omitempty"`
-	Currency       string     `json:"currency"`
-	CreatedAt      time.Time  `json:"created_at"`
-	PriceFetchedAt *time.Time `json:"price_fetched_at,omitempty"`
+	ID                uuid.UUID  `json:"id"`
+	Ticker            string     `json:"ticker"`
+	ISIN              string     `json:"isin,omitempty"`
+	Name              string     `json:"name"`
+	Type              AssetType  `json:"type"`
+	CategoryID        *uuid.UUID `json:"category_id,omitempty"`
+	Country           string     `json:"country,omitempty"`
+	Currency          string     `json:"currency"`
+	Exchange          string     `json:"exchange,omitempty"`
+	Sector            string     `json:"sector,omitempty"`
+	Industry          string     `json:"industry,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	PriceFetchedAt    *time.Time `json:"price_fetched_at,omitempty"`
+	HistoryBackfilled bool       `json:"-"`
+}
+
+// AssetQuote holds the headline metrics shown on the asset detail page. It is
+// asset-scoped and independent of any portfolio.
+type AssetQuote struct {
+	Currency  string          `json:"currency"`
+	LastClose decimal.Decimal `json:"last_close"`
+	LastDate  time.Time       `json:"last_date"`
+	Change1D  decimal.Decimal `json:"change_1d"`
+	Change1W  decimal.Decimal `json:"change_1w"`
+	Change1M  decimal.Decimal `json:"change_1m"`
+	Change1Y  decimal.Decimal `json:"change_1y"`
+	ChangeYTD decimal.Decimal `json:"change_ytd"`
+	HasData   bool            `json:"has_data"`
+}
+
+// AssetPatch is the body accepted by PATCH /assets/{id}. Pointer fields
+// distinguish "not provided" (nil) from an explicit value, so string fields can
+// be cleared by sending an empty string.
+type AssetPatch struct {
+	Ticker     *string    `json:"ticker"`
+	ISIN       *string    `json:"isin"`
+	Name       *string    `json:"name"`
+	Type       *AssetType `json:"type"`
+	CategoryID *uuid.UUID `json:"category_id"`
+	Country    *string    `json:"country"`
+	Currency   *string    `json:"currency"`
+	Exchange   *string    `json:"exchange"`
+	Sector     *string    `json:"sector"`
+	Industry   *string    `json:"industry"`
+}
+
+// ExposureRow è una singola voce di peso percentuale per una dimensione
+// (regione o settore). Weight è in percentuale (somma = 100).
+type ExposureRow struct {
+	Name   string          `json:"name"`
+	Weight decimal.Decimal `json:"weight"`
+}
+
+// AssetExposure contiene la distribuzione geografica e settoriale di un asset.
+type AssetExposure struct {
+	Regions []ExposureRow `json:"regions"`
+	Sectors []ExposureRow `json:"sectors"`
 }
 
 type Currency struct {
