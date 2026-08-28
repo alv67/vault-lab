@@ -59,7 +59,7 @@ esterne sono le etichette che dicono "questa scatola appartiene a quest'altra".
 
 ## 2. Il quadro d'insieme
 
-Ci sono tredici tabelle, raggruppabili per argomento:
+Ci sono quindici tabelle, raggruppabili per argomento:
 
 | Ambito | Tabelle | Cosa rappresentano |
 |---|---|---|
@@ -68,6 +68,7 @@ Ci sono tredici tabelle, raggruppabili per argomento:
 | **Portafogli e operazioni** | `portfolios`, `transactions` | i portafogli e le operazioni comprate/vendute |
 | **Storia** | `portfolio_series`, `asset_series` | il valore e il costo giorno per giorno |
 | **Dati di mercato** | `prices`, `splits`, `fx_rates` | prezzi, split azionari e tassi di cambio |
+| **Esposizione** | `asset_region_weights`, `asset_sector_weights` | la distribuzione geografica e settoriale di un titolo |
 | **Configurazione e cache** | `supported_currencies`, `lookup_cache` | le valute consentite e la cache della ricerca |
 
 ---
@@ -101,6 +102,8 @@ erDiagram
 erDiagram
     assets ||--o{ prices : "prezzi (asset_id)"
     assets ||--o{ splits : "split (asset_id)"
+    assets ||--o{ asset_region_weights : "geografia (asset_id)"
+    assets ||--o{ asset_sector_weights : "settori (asset_id)"
 
     fx_rates {
         text base_currency PK
@@ -129,6 +132,8 @@ erDiagram
 | `portfolio_series` | `portfolio_id` | `portfolios` | 1 portafoglio → N giorni | CASCADE |
 | `asset_series` | `portfolio_id` | `portfolios` | 1 portafoglio → N righe | CASCADE |
 | `asset_series` | `asset_id` | `assets` | 1 titolo → N righe | CASCADE |
+| `asset_region_weights` | `asset_id` | `assets` | 1 titolo → N regioni | CASCADE |
+| `asset_sector_weights` | `asset_id` | `assets` | 1 titolo → N settori | CASCADE |
 
 ---
 
@@ -162,6 +167,9 @@ Ogni riga è un account. La password non è salvata in chiaro, ma come **hash**
 Il "catalogo" dei titoli (azioni, ETF, crypto...). Il `ticker` è unico: non
 esistono due titoli con lo stesso simbolo. `price_fetched_at` ricorda quando è
 stato scaricato l'ultimo prezzo, per evitare chiamate inutili a Yahoo.
+`exchange`, `sector` e `industry` sono metadati descrittivi modificati sulla
+pagina asset; `history_backfilled` indica se lo storico prezzi completo è già
+stato scaricato (vedi sotto).
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
@@ -173,8 +181,18 @@ stato scaricato l'ultimo prezzo, per evitare chiamate inutili a Yahoo.
 | `category_id` | UUID (FK) | categoria (→ `categories.id`), può essere vuota |
 | `country` | TEXT | paese di origine |
 | `currency` | TEXT | valuta in cui è quotato (default `USD`) |
+| `exchange` | TEXT | borsa / mercato di quotazione (può essere vuoto) |
+| `sector` | TEXT | settore economico (può essere vuoto) |
+| `industry` | TEXT | industria specifica (può essere vuota) |
+| `history_backfilled` | BOOLEAN | se lo storico prezzi completo è stato scaricato (default `FALSE`) |
 | `price_fetched_at` | TIMESTAMPTZ | quando è stato aggiornato l'ultimo prezzo |
 | `created_at` | TIMESTAMPTZ | quando è stato aggiunto |
+
+> **Sullo storico completo (`history_backfilled`)**: un titolo con
+> `history_backfilled = FALSE` riceve al primo sync lo **storico completo** dei
+> prezzi da Yahoo (dal 1970), dopodiché la flag diventa `TRUE` e il sync è
+> incrementale. La pagina asset può forzare in ogni momento un re-download
+> completo ("Backfill storico completo").
 
 ### `portfolios` — i portafogli
 
@@ -254,6 +272,33 @@ può avere un solo split per giorno.
 | `denominator` | NUMERIC(18, 8) | denominatore del rapporto |
 | `source` | TEXT | origine del dato |
 | `created_at` | TIMESTAMPTZ | quando è stato salvato |
+
+### `asset_region_weights` — l'esposizione geografica
+
+Per ogni titolo, quanto del suo valore è distribuito tra le **macro-regioni**
+(Nord America, Europa, Asia...). Una riga per ogni `asset_id + region`; i pesi
+dello stesso titolo dovrebbero idealmente sommare a 100%. Per una singola
+azione c'è una sola riga (il paese mappato alla sua regione al 100%); per un
+ETF è un mix inserito a mano o scaricato in futuro dal servizio Python.
+
+| Colonna | Tipo | Spiegazione |
+|---|---|---|
+| `asset_id` | UUID (FK, parte della PK) | il titolo (→ `assets.id`) |
+| `region` | TEXT (parte della PK) | la macro-regione, es. `North America` |
+| `weight` | NUMERIC(10, 4) | il peso percentuale (es. `0.6500`) |
+
+### `asset_sector_weights` — l'esposizione settoriale
+
+Per ogni titolo, quanto del suo valore appartiene a ogni **settore GICS**.
+Una riga per ogni `asset_id + sector`; i pesi dello stesso titolo dovrebbero
+sommare a 100%. Per una singola azione c'è una sola riga (il suo settore al
+100%); per un ETF è il mix dei `sectorWeightings` scaricati da Yahoo.
+
+| Colonna | Tipo | Spiegazione |
+|---|---|---|
+| `asset_id` | UUID (FK, parte della PK) | il titolo (→ `assets.id`) |
+| `sector` | TEXT (parte della PK) | il settore GICS, es. `Technology` |
+| `weight` | NUMERIC(10, 4) | il peso percentuale (es. `0.2340`) |
 
 ### `fx_rates` — i tassi di cambio
 
@@ -355,6 +400,8 @@ qui per qualche giorno, così la stessa ricerca non rifà la chiamata a Yahoo.
 - su `transactions`: portafoglio, titolo e data
 - su `prices`: titolo e data
 - su `asset_series`: portafoglio + data
+- su `asset_region_weights`: il titolo
+- su `asset_sector_weights`: il titolo
 
 ---
 
@@ -380,11 +427,16 @@ In sintesi, chi scrive e chi legge:
 
 - **Prezzi, split e tassi di cambio** li scarica il worker da Yahoo e li salva
   in `prices`, `splits`, `fx_rates` (guidato dal capitolo 12 e 13 della guida).
+  Il primo sync scarica lo **storico completo** per i titoli non ancora
+  backfillati (`history_backfilled`).
 - **Le serie** (`portfolio_series`, `asset_series`) le ricostruisce il motore
   AVCO quando cambiano transazioni o prezzi, e le leggi per disegnare i grafici
   (capitolo 9 della guida).
 - **Le operazioni** le scrive l'utente dalla pagina (via API), dentro
   `transactions`.
+- **L'esposizione** (`asset_region_weights`, `asset_sector_weights`) la si
+  modifica dalla pagina asset, oppure la si scarica da Yahoo per i pesi
+  settoriali di un ETF quando l'utente clicca "Aggiorna da Yahoo".
 - **La whitelist delle valute** la gestisce l'amministratore via API in
   `supported_currencies` (capitolo 11 della guida).
 
@@ -402,3 +454,9 @@ In sintesi, chi scrive e chi legge:
   indipendente.
 - **`fx_rates` ha solo USD come base**: la conversione tra due valute
   qualsiasi passa sempre dal dollaro.
+- **Le tabelle di esposizione sono solo per-asset**: l'allocazione pesata a
+  livello portafoglio (widget dashboard) non è ancora implementata, anche se
+  esistono i pesi per-asset sottostanti.
+- **`assets.isin` non si scarica automaticamente**: Yahoo non espone l'ISIN,
+  quindi il valore si tiene a mano nella pagina asset finché non si aggiungerà
+  una futura fonte (Python/JustETF).

@@ -196,24 +196,27 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000007`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000011`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
 | `users` | gli utenti | email, nome, hash della password, ruolo |
 | `categories` | le categorie dei titoli | settori economici (stile GICS) |
-| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), valuta |
+| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
 | `transactions` | le operazioni | compra/vendita/dividendo/split/commissione, quantità, prezzo, data |
 | `prices` | i prezzi giornalieri | per ogni titolo e per ogni giorno: apertura, chiusura, volume |
 | `fx_rates` | i tassi di cambio | quanto vale 1 dollaro in ogni altra valuta |
 | `splits` | gli split azionari | es. un titolo da 1 azione diventa 4 azioni |
+| `asset_region_weights` | l'esposizione geografica | per ogni titolo, il peso di ogni macro-regione |
+| `asset_sector_weights` | l'esposizione settoriale | per ogni titolo, il peso di ogni settore GICS |
 | `supported_currencies` | la lista delle valute | quali valute si possono usare (capitolo 11) |
 | `lookup_cache` | la cache del cerca-titolo | risultati già scaricati da Yahoo per la ricerca automatica |
 | `portfolio_series` | serie per portafoglio | valore e costo del portafoglio per ogni giorno |
 | `asset_series` | serie per titolo | valore e costo di ogni titolo per ogni giorno |
+| `health_events` | gli eventi di health dei prezzi | registrazioni di aggiornamenti prezzi vecchi/falliti nella pagina health |
 
 Due idee fondamentali del database:
 
@@ -467,8 +470,46 @@ aggiornamento è fallito.
   oggi, riprendendo da dove si era rimasti (scarica tutto se manca, altrimenti
   solo dall'ultima data disponibile). Il salvataggio è idempotente per data:
   riscrivere lo stesso giorno non crea duplicati.
+- **Storico completo (`HistoryAsset.Full`)**: quando un titolo non è mai stato
+  backfillato (`assets.history_backfilled = FALSE`), il primo sync scarica lo
+  **storico completo** dei prezzi da Yahoo (dal 1970) in una passata, poi porta
+  la flag a `TRUE`. Da lì in poi il sync è incrementale. La pagina asset
+  espone questo comando come **"Backfill storico completo"**
+  (`POST /assets/{id}/backfill-history`): forza il re-download completo e
+  invalida i prezzi in cache.
 - **Split (`EnsureSplits`)**: scarica gli eventi di split da Yahoo e li
   salva (anche qui in modo idempotente su `asset_id, date`).
+
+### Profilo ed esposizione dell'asset
+
+Per la pagina di dettaglio asset il backend dialoga anche con l'endpoint
+`quoteSummary` di Yahoo (che richiede l'handshake con **crumb** + cookie di
+sessione a vita breve, vedi `meta.go`):
+
+- **Profilo (`FetchAssetProfile`)**: il modulo `assetProfile` fornisce il
+  `sector` GICS e l'`industry` di una singola azione.
+- **Esposizione settoriale (`FetchAssetExposure`)**: per un ETF, il modulo
+  `topHoldings` espone `sectorWeightings` (una frazione per chiave di settore),
+  che il backend converte nei nostri 11 settori GICS canonici (in percentuale).
+  L'esposizione geografica (paesi → macro-regioni) di un ETF non viene ancora
+  scaricata automaticamente: si inserisce a mano nell'editor o tramite il
+  futuro servizio Python (B.5).
+- **Esposizione geografica**: per una singola **azione**, il paese (dal profilo
+  asset) viene mappato a una macro-regione al 100% (`geo.RegionForCountry`).
+
+Nota sull'**ISIN**: Yahoo non espone l'ISIN in nessun modulo, quindi il campo
+resta modificabile a mano nella pagina asset.
+
+### Invalidation della cache (`bumpRev`)
+
+Ogni lettura in cache (`cached()`, capitolo 7) è chiavata su un **numero di
+revisione** globale. Dopo ogni scrittura (nuovi prezzi, un backfill, un
+aggiornamento dell'esposizione, ...) il service chiama `bumpRev` così la
+lettura successiva salta la cache obsoleta. È anche per questo che
+`SyncAssetData` e il sync in background dopo la creazione di un asset
+invalidano la cache dei prezzi: altrimenti un asset appena backfillato
+continuerebbe a mostrare un grafico vecchio e parziale fino alla scadenza
+della TTL di cache.
 
 ### La ricerca dei titoli (`lookup_cache`)
 
@@ -578,6 +619,15 @@ L'amministratore aggiunge una valuta ──► POST /settings/currencies
 
 L'utente apre la dashboard ──► GET /dashboard:
     posizioni (AVCO) + tassi di cambio + serie dal database → JSON al frontend
+
+L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&full=1):
+    range di quota + storico prezzi dal database → JSON al frontend
+
+L'utente modifica l'esposizione ──► PUT /assets/{id}/exposure
+    → valida somma=100% → salva asset_region_weights / asset_sector_weights → bumpRev
+
+L'utente clicca "Aggiorna da Yahoo" ──► POST /assets/{id}/fetch-profile
+    → quoteSummary (crumb) → settore/industria (+ sectorWeightings) → salvati via PATCH/fetch-exposure
 ```
 
 ---
@@ -592,14 +642,15 @@ backend/
 ├── internal/
 │   ├── auth/jwt.go         # JWT: generazione, validazione, middleware
 │   ├── config/config.go    # variabili d'ambiente + DSN di connessione
+│   ├── geo/geo.go          # macro-regioni, settori GICS, mappatura paese→regione
 │   ├── handler/            # livello HTTP (auth.go, portfolio.go, settings.go, ...)
 │   ├── model/              # strutture dati con tag JSON
 │   ├── position/           # motore AVCO (State, Apply, Walk)
-│   ├── price/              # client Yahoo (yahoo.go, spark.go, throttle.go, report.go, ...)
-│   ├── repository/         # query SQL (repository.go = "hub" + WithTx + DBTX)
+│   ├── price/              # client Yahoo (yahoo.go, spark.go, meta.go, throttle.go, report.go, ...)
+│   ├── repository/         # query SQL (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # serie giornaliere materializzate (Recompute, LoadRates, FxFactor)
 │   └── service/            # logica di business (service.go)
-├── migrations/             # SQL versionato (000001..000007)
+├── migrations/             # SQL versionato (000001..000011)
 └── go.mod
 ```
 
@@ -656,6 +707,10 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
 - **`canAccessPortfolio`** controlla solo il proprietario del portafoglio:
   la tabella `portfolio_shares` (la condivisione con altri utenti) esiste ma
   non è ancora usata.
+- La pagina asset e gli endpoint di esposizione salvano i **pesi per-asset**
+  in `asset_region_weights` e `asset_sector_weights`; gli endpoint di
+  allocazione pesata a livello portafoglio (EPIC B.6/B.7) e i widget
+  dashboard/portfolio (B.8) non sono ancora implementati.
 - Esistono metodi SQL alternativi per riepiloghi e allocazioni
   (`GetSummary`, `GetAllocation`, `GetROI`) che non vengono usati dal livello
   service: il calcolo finanziario vive nel motore AVCO (capitolo 8), non in

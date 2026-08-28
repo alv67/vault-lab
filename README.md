@@ -9,6 +9,7 @@ Track your investments, monitor asset performance, and gain insights into your f
 - **Multi-user** — Family-friendly with role-based access (owner, admin, editor, viewer)
 - **Portfolio management** — Multiple portfolios per user, export/import, ownership enforced on all endpoints
 - **Asset tracking** — Stocks, ETFs, bonds, crypto, commodities with auto-complete and sync via Yahoo Finance
+- **Asset detail page** — Editable metadata (exchange, ISIN), full price history with backfill, and editable geographic/sector exposure with charts
 - **Transaction history** — Buy, sell, dividends, splits, fees with multi-currency support
 - **Dashboard** — Portfolio value, gain/loss, allocation, performance charts, ROI by asset
 - **Market prices** — Yahoo Finance with Redis caching, rate-limit/backoff, series materialization, price health dashboard
