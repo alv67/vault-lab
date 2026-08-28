@@ -220,7 +220,11 @@
                   <tbody>
                     {#each pa.assets as a (a.asset_id)}
                       <tr class="border-b last:border-0">
-                        <td class="py-2 font-medium">{a.ticker}</td>
+                        <td class="py-2 font-medium">
+                          <a href={resolve(`/assets/${a.asset_id}`)} class="text-blue-600 hover:underline">
+                            {a.ticker}
+                          </a>
+                        </td>
                         <td class="py-2 text-gray-600">{a.name}</td>
                         <td class="py-2">
                           {a.currency}

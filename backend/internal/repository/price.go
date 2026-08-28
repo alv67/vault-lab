@@ -3,10 +3,12 @@ package repository
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/shopspring/decimal"
 
 	"github.com/amelamela/vault-lab/internal/model"
 )
@@ -18,6 +20,7 @@ type PriceRepository interface {
 	FindLatestForAssets(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]*model.Price, error)
 	FindForPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.Price, error)
 	MinMaxDate(ctx context.Context, assetID uuid.UUID) (earliest, latest *time.Time, err error)
+	ReferenceCloses(ctx context.Context, assetID uuid.UUID, dates []time.Time) (map[time.Time]decimal.Decimal, error)
 }
 
 type priceRepo struct {
@@ -43,7 +46,7 @@ func (r *priceRepo) Create(ctx context.Context, price *model.Price) (*model.Pric
 func (r *priceRepo) FindByAsset(ctx context.Context, assetID uuid.UUID) ([]*model.Price, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT id, asset_id, date, open, high, low, close, volume, source, created_at
-		 FROM prices WHERE asset_id = $1 ORDER BY date DESC LIMIT 365`,
+		 FROM prices WHERE asset_id = $1 ORDER BY date DESC`,
 		assetID,
 	)
 	if err != nil {
@@ -140,4 +143,56 @@ func (r *priceRepo) MinMaxDate(ctx context.Context, assetID uuid.UUID) (*time.Ti
 		return nil, nil, err
 	}
 	return earliest, latest, nil
+}
+
+// ReferenceCloses returns, for each reference date, the close of the most
+// recent stored price not later than that date. Dates with no such price are
+// absent from the returned map.
+func (r *priceRepo) ReferenceCloses(ctx context.Context, assetID uuid.UUID, dates []time.Time) (map[time.Time]decimal.Decimal, error) {
+	if len(dates) == 0 {
+		return map[time.Time]decimal.Decimal{}, nil
+	}
+
+	refDates := make([]time.Time, len(dates))
+	for i, d := range dates {
+		refDates[i] = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	sort.Slice(refDates, func(i, j int) bool { return refDates[i].Before(refDates[j]) })
+
+	rows, err := r.db.Query(ctx,
+		`SELECT date, close FROM prices WHERE asset_id = $1 ORDER BY date ASC`,
+		assetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type closeBar struct {
+		date  time.Time
+		close decimal.Decimal
+	}
+	var bars []closeBar
+	for rows.Next() {
+		var b closeBar
+		if err := rows.Scan(&b.date, &b.close); err != nil {
+			return nil, err
+		}
+		bars = append(bars, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	closes := make(map[time.Time]decimal.Decimal, len(refDates))
+	pos := 0
+	for _, ref := range refDates {
+		for pos < len(bars) && !bars[pos].date.After(ref) {
+			pos++
+		}
+		if pos > 0 {
+			closes[ref] = bars[pos-1].close
+		}
+	}
+	return closes, nil
 }

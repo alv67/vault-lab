@@ -1,0 +1,2 @@
+-- UP
+ALTER TABLE assets ADD COLUMN history_backfilled BOOLEAN NOT NULL DEFAULT FALSE;

@@ -417,7 +417,8 @@ func (h *Handler) GetPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prices, err := h.svc.GetPrices(r.Context(), uid)
+	full := r.URL.Query().Get("full") == "1"
+	prices, err := h.svc.GetPrices(r.Context(), uid, full)
 	if err != nil {
 		log.Error().Err(err).Msg("get prices failed")
 		respondError(w, http.StatusInternalServerError, "get prices failed")

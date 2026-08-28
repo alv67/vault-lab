@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (26 Ago 2026)
+# VaultLab — Stato Progetto (28 Ago 2026)
 
 ## Infrastruttura
 
@@ -9,7 +9,7 @@
 | Database | PostgreSQL 16 | Con docker volume |
 | Cache | Redis 7 | Caching dashboard/series, rate-limit Yahoo |
 | Worker | Go (prezzi) | Container separato |
-| Python Service | FastAPI + uvirror + requests + bs4 | ETF metadata (JustETF) — in arrivo con EPIC B |
+| Python Service | FastAPI + uvirror + requests + bs4 | ETF metadata (JustETF) — in arrivo con EPIC B (B.5) |
 | Container | podman + podman-compose su macOS | |
 
 ## Release
@@ -62,26 +62,49 @@ Mitigato con rate-limit/backoff e throttling, ma Yahoo può comunque bloccare il
 Asset europei su Yahoo usano suffisso exchange (es. VWCE.DE, VWCE.AS). L'utente deve sapere il
 ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplete.
 
-## Fase 2 — Pianificata
+## Fase 2 — In corso
 
 ### EPIC B — Distribuzione geo/settore + FX history + Asset detail (#36) — 10 sub-issues
-| Issue | Titolo | Componente |
-|-------|--------|------------|
-| #7  | B.1 — Migration + region/sector weight model + `fx_history` + `exchange` | Backend |
-| #8  | B.2 — GICS seed + populate category_id + Yahoo v10 fetch-profile | Backend |
-| #9  | B.3 — Country backfill + ISO normalization + country→macro-region mapping | Backend |
-| #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend |
-| #11 | B.5 — Python microservice: ETF metadata da JustETF | Python |
-| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend |
-| #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend |
-| #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend |
-| #44 | B.9 — FX rate history + series engine per-date | Backend |
-| #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack |
+| Issue | Titolo | Componente | Stato |
+|-------|--------|------------|-------|
+| #7  | B.1 — Migration + region/sector weight model + `fx_history` + `exchange` | Backend | ✅ model + migrazioni (exchange, exposure, history) |
+| #8  | B.2 — GICS seed + populate category_id + Yahoo v10 fetch-profile | Backend | ⏳ fetch-profile e sector weightings fatti; seed GICS + category_id differito |
+| #9  | B.3 — Country backfill + ISO normalization + country→macro-region mapping | Backend | ⏳ `geo.RegionForCountry` + stock default, backfill completo differito |
+| #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend | ✅ editor tabelle + pie chart sulla pagina asset; scrape differito a B.5 |
+| #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ⏳ pianificato (prefill JustETF differito) |
+| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
+| #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
+| #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ⏳ pianificato |
+| #44 | B.9 — FX rate history + series engine per-date | Backend | ⏳ pianificato |
+| #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack | ✅ completa |
 
 **Ordine di implementazione**:
 1. Data layer: B.1 → B.9 → B.3
 2. Backend: B.2 → B.5 → B.6/B.7
 3. Frontend: B.10 → B.4 → B.8
+
+### Completato in questa sessione (EPIC B, parte)
+- **Pagina asset detail `/assets/[id]`** (B.10) su branch `feat/B.10-asset-detail`:
+  - Caratteristiche editabili: Ticker, ISIN, Nome, Tipo, Valuta, Exchange (+ metadati `exchange`, `sector`, `industry` nel modello)
+  - Card metriche + grafico prezzi ECharts con selettore periodo (1M/3M/1Y/MAX)
+  - Tabelle distribuzione **geo** (8 macro-regioni) e **settore** (11 settori GICS) **modificabili**,
+    con validazione somma=100% e grafici a ciambella affiancati
+  - Pulsanti da menu hamburger: **"Aggiorna da Yahoo"** (meta: profile + sector weightings)
+    e **"Backfill storico completo"** (storico prezzi completo da Yahoo)
+  - Backend: migrazioni `000009` (asset meta), `000010` (exposure weights), `000011` (history_backfilled);
+    package `geo` (macro-regioni + settori GICS + mappatura paese→regione);
+    repository exposure; service `UpdateAsset`/`GetAssetQuote`/`FetchAssetProfile`/
+    `GetAssetExposure`/`SaveAssetExposure`/`FetchAssetExposure`/`BackfillAssetHistory`;
+    fix invalidazione cache (`bumpRev`) su sync dati
+  - Endpoint: PATCH `/assets/{id}`, GET `/assets/{id}/quote`, POST `/assets/{id}/fetch-profile`,
+    GET/PUT `/assets/{id}/exposure`, POST `/assets/{id}/fetch-exposure`,
+    POST `/assets/{id}/backfill-history`
+
+### Decisione ISIN
+Verificato: **Yahoo non espone l'ISIN** (nessun campo in `assetProfile`/`fundProfile`/`price`).
+`investing.com` è bloccato da Cloudflare (403) e Morningstar richiede API a pagamento
+o scraping fragile token-gated. Decisione: il campo `isin` resta **editabile a mano**
+nella pagina asset; l'automazione ticker→ISIN è rimandata a **B.5** (microservizio JustETF).
 
 ### Altri EPIC Fase 2
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo

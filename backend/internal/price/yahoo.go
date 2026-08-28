@@ -34,6 +34,9 @@ type YahooFetcher struct {
 	throttle        *throttler
 	mu              sync.Mutex
 	health          HealthRecorder
+	crumbValue      string
+	crumbCookie     string
+	crumbAt         time.Time
 }
 
 type YahooFetcherOption func(*YahooFetcher)
@@ -179,6 +182,7 @@ type HistoryAsset struct {
 	ID     uuid.UUID
 	Ticker string
 	From   time.Time
+	Full   bool // true = backfill completo dall'inizio disponibile su Yahoo
 }
 
 // FetchAll refreshes prices for every asset in the DB that is stale and keeps
@@ -380,6 +384,10 @@ func (f *YahooFetcher) fetchChartRange(ctx context.Context, ticker string, from,
 	return bars, nil
 }
 
+// fullHistoryStart is the period1 used for full history backfills, far enough
+// back to cover every asset Yahoo has data for.
+var fullHistoryStart = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // EnsureHistory backfills daily closes from Yahoo for the given assets so the
 // portfolio history series has market values from the first transaction to now.
 func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset) error {
@@ -396,6 +404,10 @@ func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset)
 
 		var bars []historyBar
 		switch {
+		case a.Full:
+			// Explicit full backfill from the beginning of Yahoo history,
+			// regardless of any partially stored data. No cooldown.
+			bars, err = f.fetchChartRange(ctx, a.Ticker, fullHistoryStart, now)
 		case latest == nil || earliest == nil || earliest.After(a.From.Add(30*24*time.Hour)):
 			if last, ok := f.historyCooldown[a.ID]; ok && last.Add(f.refreshInterval).After(now) {
 				continue
@@ -415,6 +427,11 @@ func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset)
 		for _, b := range bars {
 			if _, err := f.repos.Price.Create(ctx, &model.Price{AssetID: a.ID, Date: b.Date, Close: b.Close, Source: "yahoo"}); err != nil {
 				log.Warn().Err(err).Str("symbol", a.Ticker).Str("date", b.Date.Format("2006-01-02")).Msg("history save failed")
+			}
+		}
+		if a.Full {
+			if err := f.repos.Asset.MarkHistoryBackfilled(ctx, a.ID); err != nil {
+				log.Warn().Err(err).Str("symbol", a.Ticker).Msg("history backfill mark failed")
 			}
 		}
 	}

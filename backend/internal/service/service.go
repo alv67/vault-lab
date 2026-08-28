@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/amelamela/vault-lab/internal/auth"
 	"github.com/amelamela/vault-lab/internal/cache"
+	"github.com/amelamela/vault-lab/internal/geo"
 	"github.com/amelamela/vault-lab/internal/model"
 	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
@@ -28,6 +30,8 @@ var (
 	ErrNotFound           = errors.New("not found")
 	ErrForbidden          = errors.New("forbidden")
 	ErrAssetInUse         = errors.New("asset is used in transactions")
+	ErrAssetNotFound      = errors.New("asset not found")
+	ErrInvalidWeights     = errors.New("weights must sum to 100")
 	ErrWeakPassword       = errors.New("password must be at least 8 characters")
 	ErrInvalidInput       = errors.New("invalid input")
 	ErrCurrencyExists     = errors.New("currency already in whitelist")
@@ -226,6 +230,352 @@ func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.A
 
 func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
 	return s.repos.Asset.FindByID(ctx, id)
+}
+
+// UpdateAsset merges the editable asset fields from the patch into the stored
+// asset and persists the result. Only fields explicitly present in the patch
+// are applied; for the required fields an empty value keeps the current one,
+// while the optional string fields can be cleared by sending an empty string.
+func (s *Service) UpdateAsset(ctx context.Context, id uuid.UUID, patch *model.AssetPatch) (*model.Asset, error) {
+	existing, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	if patch.Ticker != nil && *patch.Ticker != "" {
+		existing.Ticker = *patch.Ticker
+	}
+	if patch.ISIN != nil {
+		existing.ISIN = *patch.ISIN
+	}
+	if patch.Name != nil && *patch.Name != "" {
+		existing.Name = *patch.Name
+	}
+	if patch.Type != nil && *patch.Type != "" {
+		existing.Type = *patch.Type
+	}
+	if patch.CategoryID != nil {
+		existing.CategoryID = patch.CategoryID
+	}
+	if patch.Country != nil {
+		existing.Country = *patch.Country
+	}
+	if patch.Currency != nil && *patch.Currency != "" {
+		existing.Currency = *patch.Currency
+	}
+	if patch.Exchange != nil {
+		existing.Exchange = *patch.Exchange
+	}
+	if patch.Sector != nil {
+		existing.Sector = *patch.Sector
+	}
+	if patch.Industry != nil {
+		existing.Industry = *patch.Industry
+	}
+
+	updated, err := s.repos.Asset.Update(ctx, existing)
+	if err != nil {
+		return nil, err
+	}
+	s.bumpRev(ctx)
+	return updated, nil
+}
+
+// GetAssetQuote returns the headline metrics for the asset detail page: latest
+// close and the percentage changes vs. 1 day, 1 week, 1 month, 1 year and
+// year-to-date reference closes. Changes are zero when the reference price is
+// missing.
+func (s *Service) GetAssetQuote(ctx context.Context, id uuid.UUID) (*model.AssetQuote, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	quote := &model.AssetQuote{Currency: asset.Currency}
+	latest, err := s.repos.Price.FindLatest(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return quote, nil
+		}
+		return nil, err
+	}
+
+	quote.HasData = true
+	quote.LastClose = latest.Close
+	quote.LastDate = latest.Date
+
+	now := time.Now()
+	refDates := []time.Time{
+		series.DayOf(now.AddDate(0, 0, -1)),
+		series.DayOf(now.AddDate(0, 0, -7)),
+		series.DayOf(now.AddDate(0, -1, 0)),
+		series.DayOf(now.AddDate(-1, 0, 0)),
+		series.DayOf(time.Date(now.Year(), 1, 1, 0, 0, 0, 0, time.UTC)),
+	}
+
+	refCloses, err := s.repos.Price.ReferenceCloses(ctx, id, refDates)
+	if err != nil {
+		return nil, err
+	}
+
+	changes := []struct {
+		ref time.Time
+		pct *decimal.Decimal
+	}{
+		{refDates[0], &quote.Change1D},
+		{refDates[1], &quote.Change1W},
+		{refDates[2], &quote.Change1M},
+		{refDates[3], &quote.Change1Y},
+		{refDates[4], &quote.ChangeYTD},
+	}
+	for _, c := range changes {
+		refClose, ok := refCloses[c.ref]
+		if !ok || refClose.IsZero() {
+			continue
+		}
+		*c.pct = quote.LastClose.Sub(refClose).Div(refClose).Mul(decimal.NewFromInt(100))
+	}
+	return quote, nil
+}
+
+// FetchAssetProfile resolves sector and industry from Yahoo and persists them
+// on the asset. The Yahoo error is propagated to the caller when the profile
+// cannot be fetched.
+func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	sector, industry, err := s.fetcher.FetchAssetProfile(ctx, asset.Ticker)
+	if err != nil {
+		return nil, err
+	}
+	asset.Sector = sector
+	asset.Industry = industry
+
+	updated, err := s.repos.Asset.Update(ctx, asset)
+	if err != nil {
+		return nil, err
+	}
+	s.bumpRev(ctx)
+	return updated, nil
+}
+
+// GetAssetExposure returns the region and sector weight distribution of an
+// asset. The output always contains every canonical region and GICS sector, in
+// canonical order, with zero weight when not stored. When no weights are stored
+// for a dimension, stocks fall back to a single 100% entry derived from the
+// asset country and sector.
+func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	regions, err := s.repos.Exposure.FindRegions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	sectors, err := s.repos.Exposure.FindSectors(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildExposure(asset, regions, sectors), nil
+}
+
+// SaveAssetExposure validates and persists the weight distribution for an
+// asset. Each dimension is validated and saved independently: a dimension that
+// is absent from the body (nil slice) is left untouched. Present dimensions
+// must sum to ~100 (tolerance 0.5); rows with an empty name or a non-positive
+// weight are ignored. Returns the complete output built from the stored state.
+func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure *model.AssetExposure) (*model.AssetExposure, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	var regions, sectors []model.ExposureRow
+	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
+		if exposure.Regions != nil {
+			regions = normalizeExposureRows(exposure.Regions)
+			if err := validateExposureWeights(regions); err != nil {
+				return err
+			}
+			if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
+				return err
+			}
+		}
+		if exposure.Sectors != nil {
+			sectors = normalizeExposureRows(exposure.Sectors)
+			if err := validateExposureWeights(sectors); err != nil {
+				return err
+			}
+			if err := rx.Exposure.ReplaceSectors(ctx, id, sectors); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.bumpRev(ctx)
+
+	// Ricostruisci l'output completo dallo stato persistito (la dimensione non
+	// toccata mantiene i valori memorizzati, non quelli del body).
+	storedRegions, err := s.repos.Exposure.FindRegions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	storedSectors, err := s.repos.Exposure.FindSectors(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildExposure(asset, storedRegions, storedSectors), nil
+}
+
+// FetchAssetExposure fetches sector/industry + sector weights from Yahoo,
+// persists them into the exposure tables and returns the complete exposure.
+func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	sector, industry, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	if err != nil {
+		return nil, err
+	}
+
+	sectors := make([]model.ExposureRow, 0, len(weightings))
+	for _, w := range weightings {
+		if w.Name == "" || !w.Weight.IsPositive() {
+			continue
+		}
+		sectors = append(sectors, w)
+	}
+	// Single stocks have no topHoldings weights: fall back to the assetProfile
+	// sector at 100%.
+	if len(sectors) == 0 && sector != "" {
+		sectors = []model.ExposureRow{{Name: geo.NormalizeSector(sector), Weight: decimal.NewFromInt(100)}}
+	}
+
+	// Keep existing non-empty profile fields untouched when Yahoo returns empty.
+	if sector != "" {
+		asset.Sector = geo.NormalizeSector(sector)
+	}
+	if industry != "" {
+		asset.Industry = industry
+	}
+
+	regions, err := s.repos.Exposure.FindRegions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
+		if _, err := rx.Asset.Update(ctx, asset); err != nil {
+			return err
+		}
+		return rx.Exposure.ReplaceSectors(ctx, id, sectors)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.bumpRev(ctx)
+	return s.buildExposure(asset, regions, sectors), nil
+}
+
+// buildExposure assembles the complete exposure output for an asset: every
+// canonical region and GICS sector in canonical order, overlaid with the stored
+// weights and the stock defaults when nothing is stored.
+func (s *Service) buildExposure(asset *model.Asset, regions, sectors []model.ExposureRow) *model.AssetExposure {
+	out := &model.AssetExposure{
+		Regions: make([]model.ExposureRow, 0, len(geo.Regions)),
+		Sectors: make([]model.ExposureRow, 0, len(geo.GICSSectors)),
+	}
+
+	regionWeights := make(map[string]decimal.Decimal, len(regions))
+	for _, r := range regions {
+		regionWeights[r.Name] = r.Weight
+	}
+	for _, name := range geo.Regions {
+		out.Regions = append(out.Regions, model.ExposureRow{Name: name, Weight: regionWeights[name]})
+	}
+
+	sectorWeights := make(map[string]decimal.Decimal, len(sectors))
+	for _, r := range sectors {
+		sectorWeights[r.Name] = r.Weight
+	}
+	for _, name := range geo.GICSSectors {
+		out.Sectors = append(out.Sectors, model.ExposureRow{Name: name, Weight: sectorWeights[name]})
+	}
+
+	if asset.Type == model.AssetTypeStock {
+		if len(regions) == 0 {
+			region := geo.RegionForCountry(asset.Country)
+			for i := range out.Regions {
+				if out.Regions[i].Name == region {
+					out.Regions[i].Weight = decimal.NewFromInt(100)
+					break
+				}
+			}
+		}
+		if len(sectors) == 0 && asset.Sector != "" {
+			sector := geo.NormalizeSector(asset.Sector)
+			for i := range out.Sectors {
+				if out.Sectors[i].Name == sector {
+					out.Sectors[i].Weight = decimal.NewFromInt(100)
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
+// normalizeExposureRows drops rows with an empty name or a non-positive weight.
+func normalizeExposureRows(rows []model.ExposureRow) []model.ExposureRow {
+	out := make([]model.ExposureRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Name == "" || !row.Weight.IsPositive() {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// validateExposureWeights checks that a dimension sums to ~100 with a 0.5
+// tolerance.
+func validateExposureWeights(rows []model.ExposureRow) error {
+	sum := decimal.Zero
+	for _, row := range rows {
+		sum = sum.Add(row.Weight)
+	}
+	if sum.Sub(decimal.NewFromInt(100)).Abs().GreaterThan(decimal.NewFromFloat(0.5)) {
+		return ErrInvalidWeights
+	}
+	return nil
 }
 
 func (s *Service) SearchAssets(ctx context.Context, query string) ([]*model.Asset, error) {
@@ -1060,7 +1410,12 @@ func (s *Service) SyncAssetData(ctx context.Context) error {
 	// Newly fetched prices change every series; recompute so charts and the
 	// dashboard reflect the fresh data immediately instead of waiting for the
 	// next worker tick.
-	return series.RecomputeAll(ctx, s.repos)
+	if err := series.RecomputeAll(ctx, s.repos); err != nil {
+		return err
+	}
+	// Invalidate cached reads so the fresh prices/series are visible right away.
+	s.bumpRev(ctx)
+	return nil
 }
 
 func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {
@@ -1081,12 +1436,29 @@ func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {
 		if fd, ok := firstDates[a.ID]; ok {
 			from = series.DayOf(fd)
 		}
-		historyAssets = append(historyAssets, price.HistoryAsset{ID: a.ID, Ticker: a.Ticker, From: from})
+		historyAssets = append(historyAssets, price.HistoryAsset{ID: a.ID, Ticker: a.Ticker, From: from, Full: !a.HistoryBackfilled})
 	}
 	if err := s.fetcher.EnsureSplits(ctx, assets); err != nil {
 		return err
 	}
 	return s.fetcher.EnsureHistory(ctx, historyAssets)
+}
+
+// BackfillAssetHistory forces a full price-history backfill for a single
+// asset, regardless of stored data. Used by the asset detail page.
+func (s *Service) BackfillAssetHistory(ctx context.Context, id uuid.UUID) error {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrAssetNotFound
+		}
+		return err
+	}
+	if err := s.fetcher.EnsureHistory(ctx, []price.HistoryAsset{{ID: asset.ID, Ticker: asset.Ticker, Full: true}}); err != nil {
+		return err
+	}
+	s.bumpRev(ctx)
+	return nil
 }
 
 func (s *Service) syncAssetBackground(assetID uuid.UUID) {
@@ -1095,7 +1467,9 @@ func (s *Service) syncAssetBackground(assetID uuid.UUID) {
 		defer cancel()
 		if err := s.syncAssets(ctx, []uuid.UUID{assetID}); err != nil {
 			log.Warn().Err(err).Str("asset_id", assetID.String()).Msg("asset background sync failed")
+			return
 		}
+		s.bumpRev(ctx)
 	}()
 }
 
@@ -1246,8 +1620,12 @@ func mustUUID(s string) uuid.UUID {
 	return id
 }
 
-func (s *Service) GetPrices(ctx context.Context, assetID uuid.UUID) ([]*model.Price, error) {
-	return cached(s.cache, ctx, "prices", assetID.String(), cacheTTLPrices, false, func() ([]*model.Price, error) {
+func (s *Service) GetPrices(ctx context.Context, assetID uuid.UUID, full bool) ([]*model.Price, error) {
+	kind := "prices"
+	if full {
+		kind = "prices_full"
+	}
+	return cached(s.cache, ctx, kind, assetID.String(), cacheTTLPrices, false, func() ([]*model.Price, error) {
 		prices, err := s.repos.Price.FindByAsset(ctx, assetID)
 		if err != nil {
 			return nil, err
@@ -1256,7 +1634,9 @@ func (s *Service) GetPrices(ctx context.Context, assetID uuid.UUID) ([]*model.Pr
 		for i := len(prices) - 1; i >= 0; i-- {
 			vals = append(vals, *prices[i])
 		}
-		vals = series.Prices(vals, s.seriesMaxPoints)
+		if !full {
+			vals = series.Prices(vals, s.seriesMaxPoints)
+		}
 		out := make([]*model.Price, 0, len(vals))
 		for i := len(vals) - 1; i >= 0; i-- {
 			out = append(out, &vals[i])
