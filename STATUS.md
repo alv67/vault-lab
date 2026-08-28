@@ -115,7 +115,11 @@ nella pagina asset; l'automazione ticker→ISIN è rimandata a **B.5** (microser
 - **Nuova `assets.asset_class`** (migrazione `000013`, check enum): `equity`, `bond`, `commodity`,
   `currency`, `crypto`, `real_estate`, `mixed`, `other`. Etichetta primaria esclusiva; per i
   multi-classe si usa `mixed`.
-- **Auto-detect da Yahoo** (`assetClass` della quote, mapper `MapYahooAssetClass`) con default dal tipo
+- **Auto-detect da Yahoo**: l'endpoint non espone più `assetClass` (modulo `quote`
+  inesistente in quoteSummary v10), quindi il rilevamento usa la categoria fondo
+  Morningstar (`defaultKeyStatistics.category`/`fundProfile.categoryName`, es. "Intermediate Core
+  Bond", "Commodities Focused") + heuristica su nome/module in `geo.ClassifyAssetClass`
+  (BND→bond, GLD→commodity, VWCE.DE→equity), con default dal tipo
   (`stock`→equity, `bond`→bond, `commodity`→commodity, `cash`→currency, `crypto`→crypto);
   **override manuale** nell'editor asset detail che vince sull'auto-detect.
 - Metrica data-quality: `missing_category` → **`missing_sector`** (asset con `sector` non valorizzato).

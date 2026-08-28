@@ -493,7 +493,7 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	sector, industry, weightings, assetClass, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	sector, industry, weightings, fundCategory, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -519,9 +519,11 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		asset.Industry = industry
 	}
 	// Apply the detected class only when the current one is 'other' or empty so
-	// a manual override wins.
-	if assetClass != "" && (asset.AssetClass == "" || asset.AssetClass == "other") {
-		asset.AssetClass = assetClass
+	// a manual override wins. Classification is best-effort (keyword heuristics
+	// on name + fund category), never authoritative.
+	detected := geo.ClassifyAssetClass(string(asset.Type), asset.Name, fundCategory)
+	if detected != "" && (asset.AssetClass == "" || asset.AssetClass == "other") {
+		asset.AssetClass = detected
 	}
 
 	regions, err := s.repos.Exposure.FindRegions(ctx, id)
