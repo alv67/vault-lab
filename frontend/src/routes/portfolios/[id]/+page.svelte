@@ -18,8 +18,13 @@
     type Transaction,
     type Asset,
   } from '$lib/services/api'
-  import { formatCurrency, formatPercent } from '$lib/format'
+  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
   import PositionChart from '$lib/components/PositionChart.svelte'
+  import ExposurePie from '$lib/components/ExposurePie.svelte'
+  import {
+    type ExposureRow,
+    type PortfolioClassAllocation,
+  } from '$lib/services/api'
   import { Plus, Pencil, Trash2, Download } from 'lucide-svelte'
 
   const id = $derived(page.params.id as string | undefined)
@@ -50,6 +55,8 @@
   let transactions = $state<Transaction[] | null>(null)
   let assets = $state<Asset[] | null>(null)
   let history = $state<PortfolioHistory | null>(null)
+  let classAlloc = $state<PortfolioClassAllocation | null>(null)
+  let classAllocError = $state(false)
   let selectedAsset = $state('')
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
@@ -59,6 +66,12 @@
   let deleting = $state(false)
 
   const currency = $derived(portfolio?.currency || 'USD')
+  const classAllocRows = $derived<ExposureRow[]>(
+    (classAlloc?.classes ?? []).map((c) => ({
+      name: ASSET_CLASS_LABELS[c.class] ?? c.class,
+      weight: c.weight,
+    })),
+  )
   const gainLossClass = $derived(
     summary && Number(summary.gain_loss) >= 0 ? 'text-green-600' : 'text-red-600',
   )
@@ -88,6 +101,14 @@
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load portfolio'
       toast.error(message)
+    }
+
+    // L'allocazione per classi è isolata: se il backend non la espone ancora
+    // (es. asset_class non popolati) non blocca il resto della pagina.
+    try {
+      classAlloc = await portfolioApi.classAllocation(id)
+    } catch {
+      classAllocError = true
     }
 
     try {
@@ -332,6 +353,45 @@
       />
     {:else}
       <p class="text-sm text-gray-400">No data</p>
+    {/if}
+  </div>
+
+  <div class="mb-6 rounded-xl bg-white p-4 shadow">
+    <h2 class="mb-4 font-semibold">Allocazione per classi</h2>
+    {#if classAllocError}
+      <p class="text-sm text-gray-400">Allocazione per classi non disponibile</p>
+    {:else if classAlloc && classAllocRows.length > 0}
+      <div class="flex flex-col gap-4 md:flex-row">
+        <div class="w-full md:w-1/2 lg:w-1/3">
+          <ExposurePie data={classAllocRows} title="Allocazione per classi" />
+        </div>
+        <div class="flex-1 overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead>
+              <tr class="border-b text-gray-500">
+                <th class="pb-2">Classe</th>
+                <th class="pb-2 text-right">Valore</th>
+                <th class="pb-2 text-right">Peso %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each classAlloc.classes as c (c.class)}
+                <tr class="border-b last:border-0">
+                  <td class="py-2 font-medium">{ASSET_CLASS_LABELS[c.class] ?? c.class}</td>
+                  <td class="py-2 text-right">
+                    {formatCurrency(c.value, classAlloc.currency)}
+                  </td>
+                  <td class="py-2 text-right font-medium">
+                    {formatPercent(c.weight)}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {:else}
+      <p class="text-sm text-gray-400">Nessuna allocazione per classi</p>
     {/if}
   </div>
 

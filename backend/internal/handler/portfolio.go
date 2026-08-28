@@ -310,6 +310,39 @@ func (h *Handler) GetPortfolioAllocation(w http.ResponseWriter, r *http.Request)
 	respond(w, http.StatusOK, allocation)
 }
 
+func (h *Handler) GetPortfolioClassAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
+		return
+	}
+
+	allocation, err := h.svc.GetPortfolioClassAllocation(r.Context(), portfolioID)
+	if err != nil {
+		log.Error().Err(err).Msg("get class allocation failed")
+		respondError(w, http.StatusInternalServerError, "class allocation failed")
+		return
+	}
+
+	respond(w, http.StatusOK, allocation)
+}
+
 func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {

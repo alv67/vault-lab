@@ -196,14 +196,13 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000011`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000013`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
 | `users` | gli utenti | email, nome, hash della password, ruolo |
-| `categories` | le categorie dei titoli | settori economici (stile GICS) |
-| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), valuta, exchange, settore, industria |
+| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
 | `transactions` | le operazioni | compra/vendita/dividendo/split/commissione, quantità, prezzo, data |

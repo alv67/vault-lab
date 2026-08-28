@@ -37,3 +37,15 @@ export function formatPercent(value: number | string): string {
   const val = typeof value === 'string' ? Number(value) : value
   return `${val.toFixed(2)}%`
 }
+
+// Etichette italiane per le classi di asset (valore backend → label UI).
+export const ASSET_CLASS_LABELS: Record<string, string> = {
+  equity: 'Azioni',
+  bond: 'Obbligazioni',
+  commodity: 'Materie prime',
+  currency: 'Valute',
+  crypto: 'Crypto',
+  real_estate: 'Immobiliare',
+  mixed: 'Misto',
+  other: 'Altro',
+}

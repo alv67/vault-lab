@@ -49,8 +49,7 @@ backend/
 
 ### Schema DB (stato attuale)
 - `users` (id, email, name, password_hash, role: owner/admin/editor/viewer)
-- `categories` (GICS: name, sector, industry)
-- `assets` (ticker, isin, name, type: stock/etf/bond/mutual_fund/crypto/commodity/cash, country, currency)
+- `assets` (ticker, isin, name, type: stock/etf/bond/mutual_fund/crypto/commodity/cash, asset_class: equity/bond/commodity/currency/crypto/real_estate/mixed/other — default 'other', country, currency, exchange, sector, industry; schematica: niente più category_id/categories)
 - `portfolios` (user_id, name, description, currency)
 - `portfolio_shares` (portfolio_id, user_id, role) — **condivisione non ancora implementata**
 - `transactions` (type: buy/sell/dividend/split/fee, quantity, price, currency, exchange_rate, fees, date)

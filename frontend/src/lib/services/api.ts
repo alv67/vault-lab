@@ -56,7 +56,7 @@ export interface Asset {
   isin: string
   name: string
   type: string
-  category_id: string
+  asset_class: string
   country: string
   currency: string
   exchange?: string
@@ -83,7 +83,7 @@ export interface AssetPatch {
   isin?: string
   name?: string
   type?: string
-  category_id?: string
+  asset_class?: string
   country?: string
   currency?: string
   exchange?: string
@@ -186,6 +186,17 @@ export interface AssetAllocation {
   name: string
   value: string
   alloc_pct: string
+}
+
+export interface AssetClassSlice {
+  class: string
+  value: string
+  weight: string
+}
+
+export interface PortfolioClassAllocation {
+  currency: string
+  classes: AssetClassSlice[]
 }
 
 export interface PortfolioPerformance {
@@ -479,6 +490,8 @@ export const portfolioApi = {
   delete: (id: string) => request<void>(`/portfolios/${id}`, { method: 'DELETE' }),
   summary: (id: string) => request<PortfolioSummary>(`/portfolios/${id}/summary`),
   allocation: (id: string) => request<AssetAllocation[]>(`/portfolios/${id}/allocation`),
+  classAllocation: (id: string) =>
+    request<PortfolioClassAllocation>(`/portfolios/${id}/allocation/class`),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),

@@ -38,7 +38,33 @@ var (
 	ErrCurrencyInUse      = errors.New("currency is used by assets or portfolios")
 	ErrCurrencyProtected  = errors.New("currency cannot be removed")
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
+	ErrInvalidAssetClass = errors.New("invalid asset class")
 )
+
+// assetClasses is the allowed set for asset_class plus a helper to derive a
+// default class from the asset type.
+var assetClasses = map[string]bool{
+	"equity": true, "bond": true, "commodity": true, "currency": true,
+	"crypto": true, "real_estate": true, "mixed": true, "other": true,
+}
+
+// defaultAssetClassForType maps an asset type to its default investment class.
+func defaultAssetClassForType(t model.AssetType) string {
+	switch t {
+	case model.AssetTypeStock:
+		return "equity"
+	case model.AssetTypeBond:
+		return "bond"
+	case model.AssetTypeCommodity:
+		return "commodity"
+	case model.AssetTypeCrypto:
+		return "crypto"
+	case model.AssetTypeCash:
+		return "currency"
+	default:
+		return "other"
+	}
+}
 
 const (
 	cacheTTLStats  = 5 * time.Minute
@@ -220,6 +246,9 @@ func (s *Service) ChangePassword(ctx context.Context, userID uuid.UUID, currentP
 }
 
 func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	if asset.AssetClass == "" {
+		asset.AssetClass = defaultAssetClassForType(asset.Type)
+	}
 	created, err := s.repos.Asset.Create(ctx, asset)
 	if err != nil {
 		return nil, err
@@ -257,8 +286,11 @@ func (s *Service) UpdateAsset(ctx context.Context, id uuid.UUID, patch *model.As
 	if patch.Type != nil && *patch.Type != "" {
 		existing.Type = *patch.Type
 	}
-	if patch.CategoryID != nil {
-		existing.CategoryID = patch.CategoryID
+	if patch.AssetClass != nil {
+		if *patch.AssetClass != "" && !assetClasses[*patch.AssetClass] {
+			return nil, ErrInvalidAssetClass
+		}
+		existing.AssetClass = *patch.AssetClass
 	}
 	if patch.Country != nil {
 		existing.Country = *patch.Country
@@ -461,7 +493,7 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	sector, industry, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	sector, industry, weightings, assetClass, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -485,6 +517,11 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	}
 	if industry != "" {
 		asset.Industry = industry
+	}
+	// Apply the detected class only when the current one is 'other' or empty so
+	// a manual override wins.
+	if assetClass != "" && (asset.AssetClass == "" || asset.AssetClass == "other") {
+		asset.AssetClass = assetClass
 	}
 
 	regions, err := s.repos.Exposure.FindRegions(ctx, id)
@@ -932,8 +969,8 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 			if h.Country == "" {
 				summary.MissingCountry++
 			}
-			if h.CategoryID == nil {
-				summary.MissingCategory++
+			if h.Sector == "" {
+				summary.MissingSector++
 			}
 			stale := h.PriceFetchedAt == nil || time.Since(*h.PriceFetchedAt) > staleThreshold
 			if stale {
@@ -1027,6 +1064,61 @@ func (s *Service) GetPortfolioAllocation(ctx context.Context, portfolioID uuid.U
 			}
 		}
 		return allocs, nil
+	})
+}
+
+func (s *Service) GetPortfolioClassAllocation(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioClassAllocation, error) {
+	return cached(s.cache, ctx, "allocation-class", portfolioID.String(), cacheTTLStats, false, func() (*model.PortfolioClassAllocation, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, p.Currency)
+		if err != nil {
+			return nil, err
+		}
+
+		byClass := map[string]decimal.Decimal{}
+		var total decimal.Decimal
+		for _, h := range holdings {
+			if !h.Qty.IsPositive() || !h.HasPrice {
+				continue
+			}
+			value := h.Qty.Mul(h.LastClose)
+			if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+				value = value.Mul(factor)
+			} else {
+				continue
+			}
+			if !value.IsPositive() {
+				continue
+			}
+			class := h.AssetClass
+			if class == "" {
+				class = "other"
+			}
+			byClass[class] = byClass[class].Add(value)
+			total = total.Add(value)
+		}
+
+		classes := make([]*model.ClassAllocation, 0, len(byClass))
+		for class, value := range byClass {
+			classes = append(classes, &model.ClassAllocation{
+				Class: class,
+				Value: value,
+			})
+		}
+		sort.Slice(classes, func(i, j int) bool { return classes[i].Value.GreaterThan(classes[j].Value) })
+		for _, c := range classes {
+			if total.IsPositive() {
+				c.Weight = c.Value.Div(total).Mul(decimal.NewFromInt(100))
+			}
+		}
+		return &model.PortfolioClassAllocation{Currency: p.Currency, Classes: classes}, nil
 	})
 }
 
@@ -1311,7 +1403,7 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 				return nil, err
 			}
 			if a == nil {
-				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD"}
+				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD", AssetClass: "equity"}
 				for i := range doc.Assets {
 					if strings.EqualFold(doc.Assets[i].Ticker, ticker) {
 						if doc.Assets[i].Name != "" {
@@ -1320,6 +1412,7 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 						a.ISIN = doc.Assets[i].ISIN
 						if doc.Assets[i].Type != "" {
 							a.Type = doc.Assets[i].Type
+							a.AssetClass = defaultAssetClassForType(a.Type)
 						}
 						if doc.Assets[i].Currency != "" {
 							a.Currency = doc.Assets[i].Currency

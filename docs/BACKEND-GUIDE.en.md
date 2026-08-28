@@ -201,13 +201,12 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 ## 6. The database
 
 The migrations (`backend/migrations/`, files numbered from `000001` to
-`000011`) build the schema. The main tables:
+`000013`) build the schema. The main tables:
 
 | Table | Contains | Explanation |
 |---|---|---|
 | `users` | the users | email, name, password hash, role |
-| `categories` | the security categories | economic sectors (GICS-style) |
-| `assets` | the securities | ticker, name, type (stock, ETF, crypto...), currency, exchange, sector, industry |
+| `assets` | the securities | ticker, name, type (stock, ETF, crypto...), investment class, currency, exchange, sector, industry |
 | `portfolios` | the portfolios | a portfolio belongs to a user and has a currency |
 | `portfolio_shares` | the sharing | who else can see a portfolio (and with what role) |
 | `transactions` | the operations | buy/sell/dividend/split/fee, quantity, price, date |

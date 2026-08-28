@@ -73,11 +73,16 @@ type yahooTopHoldings struct {
 	} `json:"sectorWeightings"`
 }
 
+type yahooQuote struct {
+	AssetClass string `json:"assetClass"`
+}
+
 type yahooQuoteSummaryResponse struct {
 	QuoteSummary struct {
 		Result []struct {
 			AssetProfile yahooAssetProfile `json:"assetProfile"`
 			TopHoldings  yahooTopHoldings  `json:"topHoldings"`
+			Quote        yahooQuote        `json:"quote"`
 		} `json:"result"`
 		Error interface{} `json:"error"`
 	} `json:"quoteSummary"`
@@ -102,16 +107,17 @@ func (f *YahooFetcher) FetchAssetProfile(ctx context.Context, ticker string) (se
 	return profile.Sector, profile.Industry, nil
 }
 
-// FetchAssetProfileExtended returns sector/industry (from assetProfile) plus
-// the sector weightings (from topHoldings) for a ticker. sectorWeightings is
-// empty when the module is absent (e.g. single stocks).
-func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker string) (sector, industry string, sectorWeightings []model.ExposureRow, err error) {
-	result, err := f.fetchQuoteSummary(ctx, ticker, "assetProfile,topHoldings")
+// FetchAssetProfileExtended returns sector/industry (from assetProfile), the
+// sector weightings (from topHoldings) and the mapped investment asset class
+// (from quote) for a ticker. sectorWeightings is empty when the module is
+// absent (e.g. single stocks).
+func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker string) (sector, industry string, sectorWeightings []model.ExposureRow, assetClass string, err error) {
+	result, err := f.fetchQuoteSummary(ctx, ticker, "assetProfile,topHoldings,quote")
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, "", err
 	}
 	if result == nil {
-		return "", "", nil, nil
+		return "", "", nil, "", nil
 	}
 
 	r := result.QuoteSummary.Result[0]
@@ -129,7 +135,30 @@ func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker str
 			sectorWeightings = append(sectorWeightings, model.ExposureRow{Name: name, Weight: pct})
 		}
 	}
-	return r.AssetProfile.Sector, r.AssetProfile.Industry, sectorWeightings, nil
+	return r.AssetProfile.Sector, r.AssetProfile.Industry, sectorWeightings, MapYahooAssetClass(r.Quote.AssetClass), nil
+}
+
+// MapYahooAssetClass maps a Yahoo assetClass value to VaultLab's investment
+// class. Unknown or empty values map to "" so callers can fall back.
+func MapYahooAssetClass(s string) string {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "EQUITY":
+		return "equity"
+	case "BOND", "MONEY_MARKET":
+		return "bond"
+	case "COMMODITY":
+		return "commodity"
+	case "CURRENCY":
+		return "currency"
+	case "CRYPTOCURRENCY":
+		return "crypto"
+	case "REAL_ESTATE":
+		return "real_estate"
+	case "MIXED":
+		return "mixed"
+	default:
+		return ""
+	}
 }
 
 // fetchQuoteSummary fetches the requested quoteSummary modules for a ticker,

@@ -18,7 +18,7 @@
     type ExposureRow,
     type Price,
   } from '$lib/services/api'
-  import { formatCurrency, formatPercent } from '$lib/format'
+  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import { EllipsisVertical, Loader2 } from 'lucide-svelte'
@@ -73,6 +73,7 @@
     type: 'stock',
     currency: 'USD',
     exchange: '',
+    asset_class: 'other',
   })
 
   const currency = $derived(asset?.currency || 'USD')
@@ -85,7 +86,8 @@
       form.name !== asset.name ||
       form.type !== asset.type ||
       form.currency !== asset.currency ||
-      form.exchange !== (asset.exchange || '')
+      form.exchange !== (asset.exchange || '') ||
+      form.asset_class !== (asset.asset_class || 'other')
     )
   })
 
@@ -121,6 +123,7 @@
       type: a.type,
       currency: a.currency,
       exchange: a.exchange || '',
+      asset_class: a.asset_class || 'other',
     }
   }
 
@@ -189,6 +192,7 @@
       type: form.type,
       currency: form.currency.trim(),
       exchange: form.exchange.trim(),
+      asset_class: form.asset_class,
     }
     try {
       const updated = await assetApi.update(id, patch)
@@ -435,6 +439,18 @@
             bind:value={form.exchange}
             class="w-full rounded-lg border px-3 py-2 text-sm"
           />
+        </div>
+        <div>
+          <label for="asset-class" class="mb-1 block text-xs font-medium text-gray-500">Classe</label>
+          <select
+            id="asset-class"
+            bind:value={form.asset_class}
+            class="w-full rounded-lg border px-3 py-2 text-sm"
+          >
+            {#each Object.entries(ASSET_CLASS_LABELS) as [value, label] (value)}
+              <option value={value}>{label}</option>
+            {/each}
+          </select>
         </div>
       </div>
     </div>

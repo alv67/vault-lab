@@ -13,7 +13,7 @@ Track your investments, monitor asset performance, and gain insights into your f
 - **Transaction history** — Buy, sell, dividends, splits, fees with multi-currency support
 - **Dashboard** — Portfolio value, gain/loss, allocation, performance charts, ROI by asset
 - **Market prices** — Yahoo Finance with Redis caching, rate-limit/backoff, series materialization, price health dashboard
-- **Data quality** — Summary exposes staleness / missing-country / missing-category / missing-FX metrics
+- **Data quality** — Summary exposes staleness / missing-country / missing-sector / missing-FX metrics
 - **Self-contained** — Everything runs via `podman-compose up`
 
 ## Tech Stack
