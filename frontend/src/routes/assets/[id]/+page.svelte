@@ -212,6 +212,8 @@
     refreshingMeta = true
     metaMenuOpen = false
     try {
+      // La classe arriva da meta; l'override manuale deve vincere: se l'asset
+      // ha già una classe diversa da "other"/vuota, il refresh non la sovrascrive.
       const meta = await assetApi.meta(asset.ticker)
       form = {
         ...form,
@@ -219,6 +221,10 @@
         type: meta.type || form.type,
         currency: meta.currency || form.currency,
         exchange: meta.exchange || form.exchange,
+        asset_class:
+          !asset.asset_class || asset.asset_class === 'other'
+            ? meta.asset_class || form.asset_class
+            : form.asset_class,
       }
       toast.success('Campi aggiornati da Yahoo')
     } catch (err: unknown) {

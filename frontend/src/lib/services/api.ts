@@ -362,6 +362,7 @@ export interface AssetMeta {
   currency: string
   exchange: string
   country: string
+  asset_class: string
 }
 
 interface RequestOptions {

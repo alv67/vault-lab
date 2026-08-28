@@ -492,12 +492,16 @@ see `meta.go`):
   backend converts to our canonical 11 GICS sectors (percentage). The
   countries → macro-regions exposure for an ETF is not yet scraped auto-matically:
   it is entered by hand in the editor or via the future Python service (B.5).
-- **Asset class (`FetchAssetExposure`)**: Yahoo no longer exposes `assetClass`
-  (the `quote` quoteSummary module does not exist; v7 `/quote` does not return
-  it). Auto-detection therefore uses the Morningstar-style fund category
-  (`defaultKeyStatistics.category` or `fundProfile.categoryName`) combined with
-  a heuristic on the fund name (`geo.ClassifyAssetClass`). A manual override in
-  the asset editor always wins.
+- **Asset class (asset-info refresh / `GET /assets/meta`)**: Yahoo no longer
+  exposes `assetClass` (the `quote` quoteSummary module does not exist; v7
+  `/quote` does not return it). The class is derived in `FetchMeta` via
+  `geo.ClassifyAssetClass` (Morningstar-style fund category
+  `defaultKeyStatistics.category`/`fundProfile.categoryName` fetched by
+  `FetchFundCategory`, plus a name heuristic; type-based default). It is
+  coupled to the asset-info refresh (used at creation and by "Aggiorna da
+  Yahoo") and **not** to the sector read: `fetch-exposure` does not update it.
+  A manual override in the asset editor always wins (only applied when empty or
+  `other`).
 - **Geographic exposure**: for a single **stock**, the country (from the asset
   profile) is mapped to a macro-region at 100% (`geo.RegionForCountry`).
 

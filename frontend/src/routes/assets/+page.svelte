@@ -12,6 +12,7 @@
     currency: 'USD',
     country: '',
     exchange: '',
+    asset_class: '',
   })
 
   let showCreate = $state(false)
@@ -77,6 +78,7 @@
       currency: result.currency || 'USD',
       country: '',
       exchange: result.exchange || '',
+      asset_class: '',
     }
     selectedTicker = true
     showSuggestions = false
@@ -90,6 +92,7 @@
         currency: meta.currency || form.currency,
         country: meta.country || form.country,
         exchange: meta.exchange || form.exchange,
+        asset_class: meta.asset_class || '',
       }
     } catch {
       // keep lookup defaults; currency/type remain editable

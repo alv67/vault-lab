@@ -38,7 +38,7 @@ var (
 	ErrCurrencyInUse      = errors.New("currency is used by assets or portfolios")
 	ErrCurrencyProtected  = errors.New("currency cannot be removed")
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
-	ErrInvalidAssetClass = errors.New("invalid asset class")
+	ErrInvalidAssetClass  = errors.New("invalid asset class")
 )
 
 // assetClasses is the allowed set for asset_class plus a helper to derive a
@@ -493,7 +493,7 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	sector, industry, weightings, fundCategory, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	sector, industry, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -517,13 +517,6 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	}
 	if industry != "" {
 		asset.Industry = industry
-	}
-	// Apply the detected class only when the current one is 'other' or empty so
-	// a manual override wins. Classification is best-effort (keyword heuristics
-	// on name + fund category), never authoritative.
-	detected := geo.ClassifyAssetClass(string(asset.Type), asset.Name, fundCategory)
-	if detected != "" && (asset.AssetClass == "" || asset.AssetClass == "other") {
-		asset.AssetClass = detected
 	}
 
 	regions, err := s.repos.Exposure.FindRegions(ctx, id)

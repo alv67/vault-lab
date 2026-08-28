@@ -252,3 +252,14 @@ func containsAnyWord(hay string, words []string) bool {
 	}
 	return false
 }
+
+// FundClassifiable reports whether an asset type needs fund-category-based
+// classification, i.e. its class is not already fixed by the type itself.
+func FundClassifiable(assetType string) bool {
+	switch assetType {
+	case "stock", "bond", "commodity", "crypto", "cash":
+		return false
+	default:
+		return true
+	}
+}

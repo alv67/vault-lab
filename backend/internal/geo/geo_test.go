@@ -4,11 +4,11 @@ import "testing"
 
 func TestClassifyAssetClass(t *testing.T) {
 	cases := []struct {
-		name       string
-		assetType  string
-		assetName  string
-		category   string
-		want       string
+		name      string
+		assetType string
+		assetName string
+		category  string
+		want      string
 	}{
 		{"stock defaults to equity", "stock", "Apple Inc.", "", "equity"},
 		{"bond type", "bond", "Some Bond", "", "bond"},
@@ -36,6 +36,25 @@ func TestClassifyAssetClass(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("%s: ClassifyAssetClass(%q, %q, %q) = %q, want %q",
 				tc.name, tc.assetType, tc.assetName, tc.category, got, tc.want)
+		}
+	}
+}
+
+func TestFundClassifiable(t *testing.T) {
+	cases := map[string]bool{
+		"stock":       false,
+		"bond":        false,
+		"commodity":   false,
+		"crypto":      false,
+		"cash":        false,
+		"etf":         true,
+		"mutual_fund": true,
+		"other":       true,
+		"":            true,
+	}
+	for typ, want := range cases {
+		if got := FundClassifiable(typ); got != want {
+			t.Errorf("FundClassifiable(%q) = %v, want %v", typ, got, want)
 		}
 	}
 }

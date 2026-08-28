@@ -116,12 +116,14 @@ nella pagina asset; l'automazione ticker→ISIN è rimandata a **B.5** (microser
   `currency`, `crypto`, `real_estate`, `mixed`, `other`. Etichetta primaria esclusiva; per i
   multi-classe si usa `mixed`.
 - **Auto-detect da Yahoo**: l'endpoint non espone più `assetClass` (modulo `quote`
-  inesistente in quoteSummary v10), quindi il rilevamento usa la categoria fondo
-  Morningstar (`defaultKeyStatistics.category`/`fundProfile.categoryName`, es. "Intermediate Core
-  Bond", "Commodities Focused") + heuristica su nome/module in `geo.ClassifyAssetClass`
-  (BND→bond, GLD→commodity, VWCE.DE→equity), con default dal tipo
-  (`stock`→equity, `bond`→bond, `commodity`→commodity, `cash`→currency, `crypto`→crypto);
-  **override manuale** nell'editor asset detail che vince sull'auto-detect.
+  inesistente in quoteSummary v10), quindi la classe viene derivata da
+  `geo.ClassifyAssetClass` (categoria fondo Morningstar `defaultKeyStatistics.category`/
+  `fundProfile.categoryName` + euristica sul nome; BND→bond, GLD→commodity, VWCE.DE→equity),
+  con default dal tipo (`stock`→equity, `bond`→bond, `commodity`→commodity, `cash`→currency,
+  `crypto`→crypto). Il recupero della classe è **accorpato al recupero info asset**
+  (`GET /assets/meta`, usato alla creazione e da "Aggiorna da Yahoo") e **non** alla lettura
+  dei settori (`fetch-exposure` non la tocca più); **override manuale** nell'editor asset
+  che vince sempre (aggiornato solo se vuota o `other`).
 - Metrica data-quality: `missing_category` → **`missing_sector`** (asset con `sector` non valorizzato).
 - **Endpoint** `GET /portfolios/{id}/allocation/class` (somma pesata sul valore in valuta portafoglio)
   e widget donut "Allocazione per classi" nella pagina portfolio.

@@ -493,12 +493,14 @@ sessione a vita breve, vedi `meta.go`):
   L'esposizione geografica (paesi → macro-regioni) di un ETF non viene ancora
   scaricata automaticamente: si inserisce a mano nell'editor o tramite il
   futuro servizio Python (B.5).
-- **Asset class (`FetchAssetExposure`)**: Yahoo non espone più `assetClass`
-  (il modulo `quote` di quoteSummary non esiste, il v7 `/quote` non lo
-  restituisce). Il rilevamento automatico usa quindi la categoria fondo
-  Morningstar (`defaultKeyStatistics.category` oppure `fundProfile.categoryName`)
-  combinata con un'euristica sulla denominazione del fondo
-  (`geo.ClassifyAssetClass`). L'override manuale nell'editor asset vince sempre.
+- **Asset class (recupero info asset / `GET /assets/meta`)**: Yahoo non espone più
+  `assetClass` (il modulo `quote` di quoteSummary non esiste, il v7 `/quote` non lo
+  restituisce). La classe viene derivata in `FetchMeta` con `geo.ClassifyAssetClass`
+  (categoria fondo Morningstar `defaultKeyStatistics.category`/`fundProfile.categoryName`
+  con `FetchFundCategory`, più euristica sul nome; default dal tipo).
+  È accorpata al recupero info asset (usato alla creazione e da "Aggiorna da Yahoo") e
+  **non** alla lettura dei settori: `fetch-exposure` non la aggiorna. L'override manuale
+  nell'editor asset vince sempre (aggiornato solo se vuota o `other`).
 - **Esposizione geografica**: per una singola **azione**, il paese (dal profilo
   asset) viene mappato a una macro-regione al 100% (`geo.RegionForCountry`).
 
