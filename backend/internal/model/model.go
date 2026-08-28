@@ -54,7 +54,7 @@ type Asset struct {
 	ISIN              string     `json:"isin,omitempty"`
 	Name              string     `json:"name"`
 	Type              AssetType  `json:"type"`
-	CategoryID        *uuid.UUID `json:"category_id,omitempty"`
+	AssetClass        string     `json:"asset_class"`
 	Country           string     `json:"country,omitempty"`
 	Currency          string     `json:"currency"`
 	Exchange          string     `json:"exchange,omitempty"`
@@ -87,7 +87,7 @@ type AssetPatch struct {
 	ISIN       *string    `json:"isin"`
 	Name       *string    `json:"name"`
 	Type       *AssetType `json:"type"`
-	CategoryID *uuid.UUID `json:"category_id"`
+	AssetClass *string    `json:"asset_class"`
 	Country    *string    `json:"country"`
 	Currency   *string    `json:"currency"`
 	Exchange   *string    `json:"exchange"`
@@ -115,12 +115,6 @@ type Currency struct {
 	Enabled   bool      `json:"enabled"`
 	Sort      int       `json:"sort"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-type Category struct {
-	ID     uuid.UUID `json:"id"`
-	Name   string    `json:"name"`
-	Sector string    `json:"sector,omitempty"`
 }
 
 type TransactionType string

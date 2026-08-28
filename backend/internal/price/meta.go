@@ -16,12 +16,13 @@ import (
 )
 
 type AssetMeta struct {
-	Ticker   string `json:"ticker"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Currency string `json:"currency"`
-	Exchange string `json:"exchange"`
-	Country  string `json:"country,omitempty"`
+	Ticker     string `json:"ticker"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Currency   string `json:"currency"`
+	Exchange   string `json:"exchange"`
+	Country    string `json:"country,omitempty"`
+	AssetClass string `json:"asset_class,omitempty"`
 }
 
 // FetchMeta resolves metadata (currency, name, type, country) for a ticker via
@@ -41,17 +42,26 @@ func (f *YahooFetcher) FetchMeta(ctx context.Context, ticker string) (*AssetMeta
 
 	assetType := mapType(meta.InstrumentType)
 	assetMeta := &AssetMeta{
-		Ticker:   meta.Symbol,
-		Name:     name,
-		Type:     assetType,
-		Currency: meta.Currency,
-		Exchange: meta.ExchangeName,
+		Ticker:     meta.Symbol,
+		Name:       name,
+		Type:       assetType,
+		Currency:   meta.Currency,
+		Exchange:   meta.ExchangeName,
+		AssetClass: geo.ClassifyAssetClass(assetType, name, ""),
 	}
 
 	// Country only makes sense for a single equity; ETFs/other types span
 	// multiple countries.
 	if assetType == "stock" {
 		assetMeta.Country = exchangeCountry(meta.ExchangeName)
+	}
+
+	// Best-effort refinement of the class for funds from the Morningstar
+	// category (non-blocking: chart meta already gives a sensible default).
+	if geo.FundClassifiable(assetType) {
+		if fund, err := f.FetchFundCategory(ctx, ticker); err == nil && fund != "" {
+			assetMeta.AssetClass = geo.ClassifyAssetClass(assetType, name, fund)
+		}
 	}
 
 	return assetMeta, nil
@@ -73,11 +83,21 @@ type yahooTopHoldings struct {
 	} `json:"sectorWeightings"`
 }
 
+type yahooDefaultKeyStatistics struct {
+	Category string `json:"category"`
+}
+
+type yahooFundProfile struct {
+	CategoryName string `json:"categoryName"`
+}
+
 type yahooQuoteSummaryResponse struct {
 	QuoteSummary struct {
 		Result []struct {
-			AssetProfile yahooAssetProfile `json:"assetProfile"`
-			TopHoldings  yahooTopHoldings  `json:"topHoldings"`
+			AssetProfile         yahooAssetProfile         `json:"assetProfile"`
+			TopHoldings          yahooTopHoldings          `json:"topHoldings"`
+			DefaultKeyStatistics yahooDefaultKeyStatistics `json:"defaultKeyStatistics"`
+			FundProfile          yahooFundProfile          `json:"fundProfile"`
 		} `json:"result"`
 		Error interface{} `json:"error"`
 	} `json:"quoteSummary"`
@@ -102,7 +122,7 @@ func (f *YahooFetcher) FetchAssetProfile(ctx context.Context, ticker string) (se
 	return profile.Sector, profile.Industry, nil
 }
 
-// FetchAssetProfileExtended returns sector/industry (from assetProfile) plus
+// FetchAssetProfileExtended returns sector/industry (from assetProfile) and
 // the sector weightings (from topHoldings) for a ticker. sectorWeightings is
 // empty when the module is absent (e.g. single stocks).
 func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker string) (sector, industry string, sectorWeightings []model.ExposureRow, err error) {
@@ -129,7 +149,30 @@ func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker str
 			sectorWeightings = append(sectorWeightings, model.ExposureRow{Name: name, Weight: pct})
 		}
 	}
+
 	return r.AssetProfile.Sector, r.AssetProfile.Industry, sectorWeightings, nil
+}
+
+// FetchFundCategory returns the Morningstar-style fund category for a ticker
+// (defaultKeyStatistics.category, falling back to fundProfile.categoryName).
+// It is used to guess the investment class of ETFs and mutual funds. An empty
+// string is returned without error when the ticker is not a fund or the
+// category is unknown. This intentionally reads only the fund-category
+// modules, never the sector holdings.
+func (f *YahooFetcher) FetchFundCategory(ctx context.Context, ticker string) (string, error) {
+	result, err := f.fetchQuoteSummary(ctx, ticker, "defaultKeyStatistics,fundProfile")
+	if err != nil {
+		return "", err
+	}
+	if result == nil {
+		return "", nil
+	}
+	r := result.QuoteSummary.Result[0]
+	category := r.DefaultKeyStatistics.Category
+	if category == "" {
+		category = r.FundProfile.CategoryName
+	}
+	return strings.TrimSpace(category), nil
 }
 
 // fetchQuoteSummary fetches the requested quoteSummary modules for a ticker,

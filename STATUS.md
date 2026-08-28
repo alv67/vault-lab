@@ -25,7 +25,7 @@ Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0` su `main`
 - [x] Frontend migrato a SvelteKit (da React/Vite)
 - [x] Auth JWT (access + refresh token, rotazione automatica)
 - [x] API REST (auth, assets, portfolios, transactions, prices, settings, dashboard, health)
-- [x] DB schema (users, assets, categories, portfolios, portfolio_shares, transactions, prices, fx_rates, splits, series, health_events)
+- [x] DB schema (users, assets, portfolios, portfolio_shares, transactions, prices, fx_rates, splits, series, health_events)
 - [x] Makefile aggiornato per podman-compose
 
 ## Fase 1 — ✅ Completata
@@ -41,7 +41,7 @@ Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0` su `main`
 - [x] EPIC A — Data correctness & security (#3 #4 #5 #6):
   - Aggregazione coerente con FX mancante (bucket esplicito + forward-fill serie)
   - Enforce ownership su tutti gli endpoint analitici
-  - Metric data-quality nel summary (`missing_country`, `missing_category`, `stale_count`, `fx_missing_*`)
+  - Metric data-quality nel summary (`missing_country`, `missing_sector`, `stale_count`, `fx_missing_*`)
   - Rimosso codice SQL morto in `repository/portfolio.go`
 
 ### Da fare (Fase 1/2)
@@ -68,7 +68,7 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 | Issue | Titolo | Componente | Stato |
 |-------|--------|------------|-------|
 | #7  | B.1 — Migration + region/sector weight model + `fx_history` + `exchange` | Backend | ✅ model + migrazioni (exchange, exposure, history) |
-| #8  | B.2 — GICS seed + populate category_id + Yahoo v10 fetch-profile | Backend | ⏳ fetch-profile e sector weightings fatti; seed GICS + category_id differito |
+| #8  | B.2 — GICS/sector backfill + Yahoo v10 fetch-profile (`category_id` rimosso) | Backend | ⏳ fetch-profile e sector weightings fatti; seed GICS + populate `assets.sector` normalizzato differito |
 | #9  | B.3 — Country backfill + ISO normalization + country→macro-region mapping | Backend | ⏳ `geo.RegionForCountry` + stock default, backfill completo differito |
 | #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend | ✅ editor tabelle + pie chart sulla pagina asset; scrape differito a B.5 |
 | #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ⏳ pianificato (prefill JustETF differito) |
@@ -77,6 +77,8 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 | #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ⏳ pianificato |
 | #44 | B.9 — FX rate history + series engine per-date | Backend | ⏳ pianificato |
 | #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack | ✅ completa |
+| #49 | B.11 — Asset class: colonna `asset_class` + auto-detect Yahoo + override manuale | Full-stack | ✅ implementata (da validare) |
+| #50 | B.12 — Allocazione per classi: `GET /allocation/class` + donut | Full-stack | ✅ implementata (da validare) |
 
 **Ordine di implementazione**:
 1. Data layer: B.1 → B.9 → B.3
@@ -105,6 +107,26 @@ Verificato: **Yahoo non espone l'ISIN** (nessun campo in `assetProfile`/`fundPro
 `investing.com` è bloccato da Cloudflare (403) e Morningstar richiede API a pagamento
 o scraping fragile token-gated. Decisione: il campo `isin` resta **editabile a mano**
 nella pagina asset; l'automazione ticker→ISIN è rimandata a **B.5** (microservizio JustETF).
+
+### Asset class + allocazione per classi (B.11, B.12)
+- **Rimossa la classificazione single-category** (`category_id` → tabella `categories`): inadatta agli ETF
+  multi-settore; la distribuzione settoriale è già coperta da `asset_sector_weights`/`assets.sector`.
+  Migrazione `000012_remove_category` (drop colonna + tabella).
+- **Nuova `assets.asset_class`** (migrazione `000013`, check enum): `equity`, `bond`, `commodity`,
+  `currency`, `crypto`, `real_estate`, `mixed`, `other`. Etichetta primaria esclusiva; per i
+  multi-classe si usa `mixed`.
+- **Auto-detect da Yahoo**: l'endpoint non espone più `assetClass` (modulo `quote`
+  inesistente in quoteSummary v10), quindi la classe viene derivata da
+  `geo.ClassifyAssetClass` (categoria fondo Morningstar `defaultKeyStatistics.category`/
+  `fundProfile.categoryName` + euristica sul nome; BND→bond, GLD→commodity, VWCE.DE→equity),
+  con default dal tipo (`stock`→equity, `bond`→bond, `commodity`→commodity, `cash`→currency,
+  `crypto`→crypto). Il recupero della classe è **accorpato al recupero info asset**
+  (`GET /assets/meta`, usato alla creazione e da "Aggiorna da Yahoo") e **non** alla lettura
+  dei settori (`fetch-exposure` non la tocca più); **override manuale** nell'editor asset
+  che vince sempre (aggiornato solo se vuota o `other`).
+- Metrica data-quality: `missing_category` → **`missing_sector`** (asset con `sector` non valorizzato).
+- **Endpoint** `GET /portfolios/{id}/allocation/class` (somma pesata sul valore in valuta portafoglio)
+  e widget donut "Allocazione per classi" nella pagina portfolio.
 
 ### Altri EPIC Fase 2
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo

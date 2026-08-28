@@ -317,6 +317,10 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusNotFound, "asset not found")
 			return
 		}
+		if err == service.ErrInvalidAssetClass {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		log.Error().Err(err).Msg("update asset failed")
 		respondError(w, http.StatusInternalServerError, "update failed")
 		return

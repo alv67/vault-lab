@@ -189,3 +189,77 @@ var sectorKeyToGICS = map[string]string{
 func SectorKeyToGICS(key string) string {
 	return sectorKeyToGICS[strings.ToLower(strings.TrimSpace(key))]
 }
+
+// Investment-class keywords used by ClassifyAssetClass. Operated on the
+// lower-cased concatenation of name + fund category.
+var (
+	classCryptoKeywords   = []string{"crypto", "bitcoin", "ethereum", "blockchain"}
+	classMoneyMarketWords = []string{"money market", "cash reserve", "cash mgmt", " mmf"}
+	classCommodityWords   = []string{"commodit", "gold", "silver", "platinum", "palladium", "precious metals", "crude oil", "natural gas", "uranium", "copper", "agricultur"}
+	classRealEstateWords  = []string{"real estate", " reit", "property "}
+	classBondWords        = []string{"bond", "treasury", "governm", "aggregate", "corporate", "municipal", "muni", "fixed income", "high yield", "inflation-protected", " tips", "ultra-short", "duration", "credit"}
+	classCurrencyWords    = []string{"currency", "foreign exchange", " fxetf"}
+	classMixedWords       = []string{"allocation", "balanced", "target-date", "target date", "multi-asset", "moderate", "conservative", "lifestyle"}
+)
+
+// ClassifyAssetClass guesses the investment class of an asset from its type,
+// name and (for funds) the provider's fund category (Morningstar-style).
+//
+// Stocks, bonds, commodities and crypto map by type; ETFs and mutual funds are
+// classified by keyword heuristics on name + category, defaulting to "equity".
+// The result is best-effort: a manual override on the asset page always wins.
+func ClassifyAssetClass(assetType, name, fundCategory string) string {
+	switch assetType {
+	case "stock":
+		return "equity"
+	case "bond":
+		return "bond"
+	case "commodity":
+		return "commodity"
+	case "crypto":
+		return "crypto"
+	case "cash":
+		return "currency"
+	}
+
+	hay := strings.ToLower(name + " " + fundCategory)
+	switch {
+	case containsAnyWord(hay, classCryptoKeywords):
+		return "crypto"
+	case containsAnyWord(hay, classMoneyMarketWords):
+		// Money market is not a class in our taxonomy: it lands on bond (debt).
+		return "bond"
+	case containsAnyWord(hay, classCommodityWords):
+		return "commodity"
+	case containsAnyWord(hay, classRealEstateWords):
+		return "real_estate"
+	case containsAnyWord(hay, classBondWords):
+		return "bond"
+	case containsAnyWord(hay, classCurrencyWords):
+		return "currency"
+	case containsAnyWord(hay, classMixedWords):
+		return "mixed"
+	default:
+		return "equity"
+	}
+}
+
+func containsAnyWord(hay string, words []string) bool {
+	for _, w := range words {
+		if strings.Contains(hay, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// FundClassifiable reports whether an asset type needs fund-category-based
+// classification, i.e. its class is not already fixed by the type itself.
+func FundClassifiable(assetType string) bool {
+	switch assetType {
+	case "stock", "bond", "commodity", "crypto", "cash":
+		return false
+	default:
+		return true
+	}
+}

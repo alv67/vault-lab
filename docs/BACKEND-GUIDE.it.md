@@ -196,14 +196,13 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000011`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000013`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
 | `users` | gli utenti | email, nome, hash della password, ruolo |
-| `categories` | le categorie dei titoli | settori economici (stile GICS) |
-| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), valuta, exchange, settore, industria |
+| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
 | `transactions` | le operazioni | compra/vendita/dividendo/split/commissione, quantità, prezzo, data |
@@ -494,6 +493,14 @@ sessione a vita breve, vedi `meta.go`):
   L'esposizione geografica (paesi → macro-regioni) di un ETF non viene ancora
   scaricata automaticamente: si inserisce a mano nell'editor o tramite il
   futuro servizio Python (B.5).
+- **Asset class (recupero info asset / `GET /assets/meta`)**: Yahoo non espone più
+  `assetClass` (il modulo `quote` di quoteSummary non esiste, il v7 `/quote` non lo
+  restituisce). La classe viene derivata in `FetchMeta` con `geo.ClassifyAssetClass`
+  (categoria fondo Morningstar `defaultKeyStatistics.category`/`fundProfile.categoryName`
+  con `FetchFundCategory`, più euristica sul nome; default dal tipo).
+  È accorpata al recupero info asset (usato alla creazione e da "Aggiorna da Yahoo") e
+  **non** alla lettura dei settori: `fetch-exposure` non la aggiorna. L'override manuale
+  nell'editor asset vince sempre (aggiornato solo se vuota o `other`).
 - **Esposizione geografica**: per una singola **azione**, il paese (dal profilo
   asset) viene mappato a una macro-regione al 100% (`geo.RegionForCountry`).
 

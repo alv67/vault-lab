@@ -76,8 +76,7 @@
 ```
 User         → id, email, name, password_hash, role, created_at
 Portfolio    → id, user_id, name, description, currency, created_at
-Asset        → id, isin, ticker, name, type, category_id, country, exchange, currency, sector, industry
-Category     → id, name, sector (GICS classification)
+Asset        → id, isin, ticker, name, type, asset_class, country, exchange, currency, sector, industry
 Transaction  → id, portfolio_id, asset_id, type (buy/sell), quantity, price, date, fees, notes
 Price        → id, asset_id, date, open, high, low, close, volume, source
 FxHistory    → base_currency, quote_currency, date, rate, source
@@ -164,8 +163,10 @@ Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo 
 procede su `develop` (feature branch `feat/B.10-asset-detail` per la parte EPIC B completata).
 Realizzate le parti di EPIC B afferenti alla **pagina dettaglio asset** (#45) e ai relativi
 layer dati/backend (asset meta, exposure geo/settore, storico prezzi completo). Restano da
-completare in EPIC B: B.5 (microservizio JustETF), B.6/B.7 (endpoint allocazione),
-B.8 (chart dashboard/portfolio), B.9 (FX history) e il seed GICS/populate category_id (B.2/B.3).
+completare in EPIC B: B.5 (microservizio JustETF), B.6/B.7 (endpoint allocazione geo/settore),
+B.8 (chart dashboard/portfolio), B.9 (FX history) e il seed GICS/populate `assets.sector` (B.2/B.3).
+Fatte intanto B.11/B.12 (asset class: colonna `asset_class`, auto-detect Yahoo, endpoint e donut
+"allocazione per classi") e rimossa la vecchia classificazione `category_id`/`categories`.
 Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
 di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

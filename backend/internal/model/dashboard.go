@@ -3,7 +3,6 @@ package model
 import (
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 )
 
@@ -20,7 +19,7 @@ type PortfolioSummary struct {
 	FXMissingCount  int             `json:"fx_missing_count"`
 	FXMissingValue  decimal.Decimal `json:"fx_missing_value"`
 	MissingCountry  int             `json:"missing_country"`
-	MissingCategory int             `json:"missing_category"`
+	MissingSector   int             `json:"missing_sector"`
 	StaleCount      int             `json:"stale_count"`
 	Holdings        []AssetHolding  `json:"holdings"`
 }
@@ -32,6 +31,21 @@ type AssetAllocation struct {
 	Value    decimal.Decimal `json:"value"`
 	AllocPct decimal.Decimal `json:"alloc_pct"`
 	FXMissing bool           `json:"fx_missing"`
+}
+
+// ClassAllocation is one investment-class bucket within a portfolio's class
+// allocation. Weight is in percentage (sum = 100).
+type ClassAllocation struct {
+	Class  string          `json:"class"`
+	Value  decimal.Decimal `json:"value"`
+	Weight decimal.Decimal `json:"weight"`
+}
+
+// PortfolioClassAllocation groups the class allocation of a portfolio in its
+// reference currency.
+type PortfolioClassAllocation struct {
+	Currency string             `json:"currency"`
+	Classes  []*ClassAllocation `json:"classes"`
 }
 
 type PortfolioPerformance struct {
@@ -66,7 +80,8 @@ type Holding struct {
 	LastClose       decimal.Decimal `json:"last_close"` // latest close in asset currency
 	HasPrice        bool            `json:"has_price"`
 	Country         string          `json:"country"`
-	CategoryID      *uuid.UUID      `json:"category_id,omitempty"`
+	Sector          string          `json:"sector,omitempty"`
+	AssetClass      string          `json:"asset_class,omitempty"`
 	PriceFetchedAt  *time.Time      `json:"price_fetched_at,omitempty"`
 }
 

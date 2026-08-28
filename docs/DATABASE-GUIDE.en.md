@@ -57,12 +57,12 @@ keys are the labels saying "this box belongs to that one".
 
 ## 2. The big picture
 
-There are fifteen tables, which can be grouped by topic:
+There are fourteen tables, which can be grouped by topic:
 
 | Area | Tables | What they represent |
 |---|---|---|
 | **Identity and access** | `users`, `portfolio_shares` | who the users are and who can see portfolios |
-| **Securities** | `assets`, `categories` | the securities (stocks, ETFs...) and their categories |
+| **Securities** | `assets` | the securities (stocks, ETFs...) with type, class and sector |
 | **Portfolios and operations** | `portfolios`, `transactions` | the portfolios and the buy/sell operations |
 | **History** | `portfolio_series`, `asset_series` | value and cost day by day |
 | **Market data** | `prices`, `splits`, `fx_rates` | prices, stock splits and exchange rates |
@@ -88,7 +88,6 @@ erDiagram
     portfolios ||--o{ portfolio_shares : "shared (portfolio_id)"
     portfolios ||--o{ transactions : "has (portfolio_id)"
     assets ||--o{ transactions : "appears in (asset_id)"
-    categories ||--o{ assets : "classifies (category_id)"
     portfolios ||--o{ portfolio_series : "history (portfolio_id)"
     portfolios ||--o{ asset_series : "history (portfolio_id)"
     assets ||--o{ asset_series : "history (asset_id)"
@@ -124,7 +123,6 @@ erDiagram
 | `portfolios` | `user_id` | `users` | 1 user → N portfolios | CASCADE |
 | `portfolio_shares` | `portfolio_id` | `portfolios` | N portfolios ⇄ N users | CASCADE |
 | `portfolio_shares` | `user_id` | `users` | N portfolios ⇄ N users | CASCADE |
-| `assets` | `category_id` | `categories` | 1 category → N securities | rejected (the category may also be missing) |
 | `prices` | `asset_id` | `assets` | 1 security → N prices | CASCADE |
 | `splits` | `asset_id` | `assets` | 1 security → N splits | CASCADE |
 | `portfolio_series` | `portfolio_id` | `portfolios` | 1 portfolio → N days | CASCADE |
@@ -151,23 +149,14 @@ Each row is an account. The password is not stored in plain text, but as a
 | `role` | TEXT | role: `owner`, `admin`, `editor` or `viewer` |
 | `created_at` / `updated_at` | TIMESTAMPTZ | when the account was created/modified |
 
-### `categories` — the security categories
-
-| Column | Type | Explanation |
-|---|---|---|
-| `id` | UUID (PK) | identifier |
-| `name` | TEXT | category name |
-| `sector` | TEXT | economic sector |
-| `industry` | TEXT | specific industry (may be empty) |
-
 ### `assets` — the securities
 
 The "catalog" of securities (stocks, ETFs, crypto...). The `ticker` is unique:
 no two securities can have the same symbol. `price_fetched_at` remembers when
 the last price was downloaded, to avoid useless Yahoo calls. `exchange`,
-`sector` and `industry` are descriptive metadata edited on the asset page;
-`history_backfilled` tells whether the full price history has been downloaded
-(see below).
+`sector`, `industry` and `asset_class` are descriptive metadata edited on the
+asset page; `history_backfilled` tells whether the full price history has been
+downloaded (see below).
 
 | Column | Type | Explanation |
 |---|---|---|
@@ -176,7 +165,7 @@ the last price was downloaded, to avoid useless Yahoo calls. `exchange`,
 | `isin` | TEXT | international ISIN code (may be missing) |
 | `name` | TEXT | name of the security |
 | `type` | TEXT (CHECK) | `stock`, `etf`, `bond`, `mutual_fund`, `crypto`, `commodity`, `cash` |
-| `category_id` | UUID (FK) | category (→ `categories.id`), may be empty |
+| `asset_class` | TEXT (CHECK) | investment class: `equity`, `bond`, `commodity`, `currency`, `crypto`, `real_estate`, `mixed`, `other` (default `other`) |
 | `country` | TEXT | country of origin |
 | `currency` | TEXT | currency it is quoted in (default `USD`) |
 | `exchange` | TEXT | stock exchange / venue (may be empty) |
@@ -450,9 +439,10 @@ In short, who writes and who reads:
   derived from transactions and prices, not an independent data source.
 - **`fx_rates` has only USD as its base**: the conversion between any two
   currencies always goes through the dollar.
-- **The exposure tables are per-asset only**: the weighted-sum allocation at
-  portfolio level (dashboard widgets) is not implemented yet, even though the
-  underlying per-asset weights exist.
+- **The exposure tables are per-asset only**: the per-asset weights exist and
+  the weighted-sum allocation **by investment class** at portfolio level is
+  implemented (`GET /portfolios/{id}/allocation/class`); the weighted geo/sector
+  allocation at portfolio level (B.6/B.7) is not implemented yet.
 - **`assets.isin` is not fetched automatically**: Yahoo does not expose the
   ISIN, so the value is kept manually on the asset page until a future source
   (Python/JustETF) is added.

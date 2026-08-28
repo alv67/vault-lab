@@ -59,12 +59,12 @@ esterne sono le etichette che dicono "questa scatola appartiene a quest'altra".
 
 ## 2. Il quadro d'insieme
 
-Ci sono quindici tabelle, raggruppabili per argomento:
+Ci sono quattordici tabelle, raggruppabili per argomento:
 
 | Ambito | Tabelle | Cosa rappresentano |
 |---|---|---|
 | **Identità e accesso** | `users`, `portfolio_shares` | chi sono gli utenti e chi può vedere i portafogli |
-| **Titoli** | `assets`, `categories` | i titoli (azioni, ETF...) e le loro categorie |
+| **Titoli** | `assets` | i titoli (azioni, ETF...) con tipo, classe e settore |
 | **Portafogli e operazioni** | `portfolios`, `transactions` | i portafogli e le operazioni comprate/vendute |
 | **Storia** | `portfolio_series`, `asset_series` | il valore e il costo giorno per giorno |
 | **Dati di mercato** | `prices`, `splits`, `fx_rates` | prezzi, split azionari e tassi di cambio |
@@ -90,7 +90,6 @@ erDiagram
     portfolios ||--o{ portfolio_shares : "condiviso (portfolio_id)"
     portfolios ||--o{ transactions : "ha (portfolio_id)"
     assets ||--o{ transactions : "appare in (asset_id)"
-    categories ||--o{ assets : "classifica (category_id)"
     portfolios ||--o{ portfolio_series : "storia (portfolio_id)"
     portfolios ||--o{ asset_series : "storia (portfolio_id)"
     assets ||--o{ asset_series : "storia (asset_id)"
@@ -126,7 +125,6 @@ erDiagram
 | `portfolios` | `user_id` | `users` | 1 utente → N portafogli | CASCADE |
 | `portfolio_shares` | `portfolio_id` | `portfolios` | N portafogli ⇄ N utenti | CASCADE |
 | `portfolio_shares` | `user_id` | `users` | N portafogli ⇄ N utenti | CASCADE |
-| `assets` | `category_id` | `categories` | 1 categoria → N titoli | rifiutato (la categoria può anche mancare) |
 | `prices` | `asset_id` | `assets` | 1 titolo → N prezzi | CASCADE |
 | `splits` | `asset_id` | `assets` | 1 titolo → N split | CASCADE |
 | `portfolio_series` | `portfolio_id` | `portfolios` | 1 portafoglio → N giorni | CASCADE |
@@ -153,23 +151,14 @@ Ogni riga è un account. La password non è salvata in chiaro, ma come **hash**
 | `role` | TEXT | ruolo: `owner`, `admin`, `editor` o `viewer` |
 | `created_at` / `updated_at` | TIMESTAMPTZ | quando l'account è stato creato/modificato |
 
-### `categories` — le categorie dei titoli
-
-| Colonna | Tipo | Spiegazione |
-|---|---|---|
-| `id` | UUID (PK) | identificatore |
-| `name` | TEXT | nome della categoria |
-| `sector` | TEXT | settore economico |
-| `industry` | TEXT | industria specifica (può essere vuota) |
-
 ### `assets` — i titoli
 
 Il "catalogo" dei titoli (azioni, ETF, crypto...). Il `ticker` è unico: non
 esistono due titoli con lo stesso simbolo. `price_fetched_at` ricorda quando è
 stato scaricato l'ultimo prezzo, per evitare chiamate inutili a Yahoo.
-`exchange`, `sector` e `industry` sono metadati descrittivi modificati sulla
-pagina asset; `history_backfilled` indica se lo storico prezzi completo è già
-stato scaricato (vedi sotto).
+`exchange`, `sector`, `industry` e `asset_class` sono metadati descrittivi
+modificabili sulla pagina asset; `history_backfilled` indica se lo storico
+prezzi completo è già stato scaricato (vedi sotto).
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
@@ -178,7 +167,7 @@ stato scaricato (vedi sotto).
 | `isin` | TEXT | codice ISIN internazionale (può mancare) |
 | `name` | TEXT | nome del titolo |
 | `type` | TEXT (CHECK) | `stock`, `etf`, `bond`, `mutual_fund`, `crypto`, `commodity`, `cash` |
-| `category_id` | UUID (FK) | categoria (→ `categories.id`), può essere vuota |
+| `asset_class` | TEXT (CHECK) | classe di investimento: `equity`, `bond`, `commodity`, `currency`, `crypto`, `real_estate`, `mixed`, `other` (default `other`) |
 | `country` | TEXT | paese di origine |
 | `currency` | TEXT | valuta in cui è quotato (default `USD`) |
 | `exchange` | TEXT | borsa / mercato di quotazione (può essere vuoto) |
@@ -454,9 +443,10 @@ In sintesi, chi scrive e chi legge:
   indipendente.
 - **`fx_rates` ha solo USD come base**: la conversione tra due valute
   qualsiasi passa sempre dal dollaro.
-- **Le tabelle di esposizione sono solo per-asset**: l'allocazione pesata a
-  livello portafoglio (widget dashboard) non è ancora implementata, anche se
-  esistono i pesi per-asset sottostanti.
+- **Le tabelle di esposizione sono solo per-asset**: esistono i pesi per-asset
+  e l'allocazione pesata **per classi** a livello portafoglio
+  (`GET /portfolios/{id}/allocation/class`); l'allocazione pesata geo/settore
+  a livello portafoglio (B.6/B.7) non è ancora implementata.
 - **`assets.isin` non si scarica automaticamente**: Yahoo non espone l'ISIN,
   quindi il valore si tiene a mano nella pagina asset finché non si aggiungerà
   una futura fonte (Python/JustETF).
