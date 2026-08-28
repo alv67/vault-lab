@@ -1,4 +1,4 @@
-COMPOSE ?= podman-compose
+COMPOSE := $(shell if command -v docker > /dev/null 2>&1 && docker compose version > /dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose > /dev/null 2>&1; then echo "docker-compose"; elif command -v podman-compose > /dev/null 2>&1; then echo "podman-compose"; else echo "podman-compose"; fi)
 
 .PHONY: dev build up down reset migrate migrate-down frontend-dev
 
