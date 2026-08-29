@@ -1,5 +1,7 @@
 # Workflow preferences
 
+- **Language**: GitHub issues, commits, PRs, and code comments must always be in
+  **English** (titles and bodies), regardless of the language used in chat.
 - Always propose the solution and discuss it with the user BEFORE writing any
   code. Do not implement a chosen technical direction on your own initiative.
 - After changes, restart the stack with `make down` and `make up` to test
