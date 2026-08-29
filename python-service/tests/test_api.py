@@ -18,20 +18,23 @@ def test_get_exposure_ok(monkeypatch):
     def fake_fetch(isin):
         assert isin == "IE00B3RBWM25"
         return Exposure(
+            isin="IE00B3RBWM25",
             countries=[
                 ExposureRow(name="United States", weight=58.85),
                 ExposureRow(name="Japan", weight=5.92),
             ],
-            sectors=[],
+            sectors=[ExposureRow(name="Technology", weight=35.46)],
         )
 
     monkeypatch.setattr("app.main.scraper.fetch_exposure", fake_fetch)
     response = client.get("/api/v1/etf/IE00B3RBWM25/exposure")
     assert response.status_code == 200
     body = response.json()
+    assert body["isin"] == "IE00B3RBWM25"
     assert body["countries"][0]["name"] == "United States"
     assert body["countries"][1]["weight"] == 5.92
-    assert body["sectors"] == []
+    assert body["sectors"][0]["name"] == "Technology"
+    assert body["sectors"][0]["weight"] == 35.46
 
 
 def test_get_exposure_upstream_error(monkeypatch):

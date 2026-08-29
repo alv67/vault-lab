@@ -19,11 +19,24 @@ PAGE_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-COUNTRIES_ROW_TESTID = "etf-holdings_countries_row"
-COUNTRIES_NAME_TESTID = "tl_etf-holdings_countries_value_name"
-COUNTRIES_PCT_TESTID = "tl_etf-holdings_countries_value_percentage"
+COUNTRIES = {
+    "row_testid": "etf-holdings_countries_row",
+    "name_testid": "tl_etf-holdings_countries_value_name",
+    "pct_testid": "tl_etf-holdings_countries_value_percentage",
+}
+SECTORS = {
+    "row_testid": "etf-holdings_sectors_row",
+    "name_testid": "tl_etf-holdings_sectors_value_name",
+    "pct_testid": "tl_etf-holdings_sectors_value_percentage",
+}
+
+# Wicket AJAX behavior paths that reveal the full tables (the 'Show more' links).
+COUNTRIES_WICKET_PATH = "holdingsSection-countries-loadMoreCountries"
+SECTORS_WICKET_PATH = "holdingsSection-sectors-loadMoreSectors"
 
 _WEIGHT_RE = re.compile(r"([\d]+(?:[.,]\d+)?)\s*%")
+_ISIN_JS_RE = re.compile(r'"isin"\s*:\s*"([A-Z]{2}[A-Z0-9]{10})"')
+_ISIN_FAQ_RE = re.compile(r"The ISIN of .*? is ([A-Z]{2}[A-Z0-9]{10})\.", re.IGNORECASE)
 
 
 def _parse_weight(text):
@@ -33,12 +46,20 @@ def _parse_weight(text):
     return float(match.group(1).replace(",", "."))
 
 
-def _parse_country_rows(html):
+def _extract_isin(html):
+    match = _ISIN_JS_RE.search(html or "")
+    if match:
+        return match.group(1)
+    match = _ISIN_FAQ_RE.search(html or "")
+    return match.group(1) if match else ""
+
+
+def _parse_rows(html, row_testid, name_testid, pct_testid):
     soup = BeautifulSoup(html, "html.parser")
     rows = []
-    for tr in soup.select(f'[data-testid="{COUNTRIES_ROW_TESTID}"]'):
-        name_el = tr.select_one(f'[data-testid="{COUNTRIES_NAME_TESTID}"]')
-        pct_el = tr.select_one(f'[data-testid="{COUNTRIES_PCT_TESTID}"]')
+    for tr in soup.select(f'[data-testid="{row_testid}"]'):
+        name_el = tr.select_one(f'[data-testid="{name_testid}"]')
+        pct_el = tr.select_one(f'[data-testid="{pct_testid}"]')
         name = name_el.get_text(" ", strip=True) if name_el else ""
         weight = _parse_weight(pct_el.get_text(" ", strip=True)) if pct_el else None
         if name and weight is not None:
@@ -46,19 +67,18 @@ def _parse_country_rows(html):
     return rows
 
 
-def _fetch_full_countries(session, isin, page_url):
-    """Fetches the full country breakdown via the Wicket AJAX 'Show more'.
+def _wicket_rows(session, isin, page_url, path, row_testid, name_testid, pct_testid):
+    """Fetches a full holdings table through the JustETF Wicket AJAX 'Show more'.
 
-    JustETF renders only the top countries server-side and expands the rest
-    through a Wicket AJAX behavior on the load-more link. The behavior URL is
-    stable across sessions; it must be called with the Wicket AJAX headers on
-    the same session that loaded the profile page.
+    JustETF renders only the top rows server-side and expands the rest through a
+    Wicket AJAX behavior on the load-more link. The behavior URL is stable across
+    sessions; it must be called with the Wicket AJAX headers on the same session
+    that loaded the profile page.
     """
     page_path = page_url.removeprefix("https://www.justetf.com/")
     ajax_url = (
         "https://www.justetf.com/en/etf-profile.html"
-        f"?0-1.0-holdingsSection-countries-loadMoreCountries&isin={isin}"
-        f"&_wicket=1&_={int(time.time() * 1000)}"
+        f"?0-1.0-{path}&isin={isin}&_wicket=1&_={int(time.time() * 1000)}"
     )
     headers = {
         "User-Agent": USER_AGENT,
@@ -77,26 +97,37 @@ def _fetch_full_countries(session, isin, page_url):
         root = ET.fromstring(response.text)
         for component in root.findall("component"):
             cdata = component.text or ""
-            if COUNTRIES_ROW_TESTID in cdata:
-                return _parse_country_rows(cdata)
+            if row_testid in cdata:
+                return _parse_rows(cdata, row_testid, name_testid, pct_testid)
         return None
     except ET.ParseError:
         return None
 
 
 def fetch_exposure(isin):
-    """Best-effort country exposure for an ETF. Prefers the full country list
-    from the Wicket AJAX endpoint and falls back to the server-rendered top
-    countries when that fails."""
+    """Best-effort ETF metadata from JustETF: ISIN, full country and sector
+    breakdowns. Prefers the Wicket AJAX 'Show more' tables and falls back to the
+    server-rendered top rows when those calls fail."""
     session = requests.Session()
     page = session.get(JUSTETF_URL.format(isin=isin), headers=PAGE_HEADERS, timeout=TIMEOUT_SECONDS)
     page.raise_for_status()
 
     try:
-        countries = _fetch_full_countries(session, isin, page.url)
+        countries = _wicket_rows(session, isin, page.url, COUNTRIES_WICKET_PATH, **COUNTRIES)
     except requests.RequestException:
         countries = None
     if not countries:
-        countries = _parse_country_rows(page.text)
+        countries = _parse_rows(page.text, **COUNTRIES)
 
-    return Exposure(countries=countries, sectors=[])
+    try:
+        sectors = _wicket_rows(session, isin, page.url, SECTORS_WICKET_PATH, **SECTORS)
+    except requests.RequestException:
+        sectors = None
+    if not sectors:
+        sectors = _parse_rows(page.text, **SECTORS)
+
+    return Exposure(
+        isin=_extract_isin(page.text),
+        countries=countries,
+        sectors=sectors,
+    )

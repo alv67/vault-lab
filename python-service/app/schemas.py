@@ -7,6 +7,7 @@ class ExposureRow(BaseModel):
 
 
 class Exposure(BaseModel):
+    isin: str = ""
     countries: list[ExposureRow] = []
     sectors: list[ExposureRow] = []
 
