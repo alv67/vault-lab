@@ -112,3 +112,27 @@ func TestNormalizeCountry(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeSectorJustETF(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"Technology", "Information Technology"},
+		{"Finance", "Financials"},
+		{"Non-Energy Materials", "Materials"},
+		{"Consumer Non-Cyclicals", "Consumer Staples"},
+		{"Consumer Cyclicals", "Consumer Discretionary"},
+		{"Consumer Services", "Consumer Discretionary"},
+		{"Telecommunication", "Communication Services"},
+		{"Healthcare", "Health Care"},
+		{"Industrials", "Industrials"},
+		{"Energy", "Energy"},
+		{"Utilities", "Utilities"},
+	}
+	for _, tc := range cases {
+		if got := NormalizeSector(tc.in); got != tc.want {
+			t.Errorf("NormalizeSector(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
