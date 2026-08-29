@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -17,9 +18,18 @@ import (
 	"github.com/amelamela/vault-lab/internal/model"
 )
 
-// ETFFetcher resolves the geographic and sector exposure of an ETF from its ISIN.
+// ETFFetcher resolves the geographic and sector exposure of an ETF from its ISIN
+// and can look up an ETF ISIN from a ticker through the python-service.
 type ETFFetcher interface {
 	FetchExposure(ctx context.Context, isin string) (*model.AssetExposure, error)
+	SearchTicker(ctx context.Context, query string) ([]EtfSearchResult, error)
+}
+
+// EtfSearchResult is an ETF matched by the python-service ticker search.
+type EtfSearchResult struct {
+	ISIN   string `json:"isin"`
+	Name   string `json:"name"`
+	Ticker string `json:"ticker"`
 }
 
 // JustETFFetcher fetches ETF exposure from the python-service microservice.
@@ -123,6 +133,60 @@ func statusMessage(status int, body []byte) string {
 		msg = fmt.Sprintf("%s: %s", msg, errResp.Detail)
 	}
 	return msg
+}
+
+// SearchTicker resolves a ticker (or name fragment) to ETF ISINs through the
+// python-service search endpoint. Network failures are retried like FetchExposure.
+func (f *JustETFFetcher) SearchTicker(ctx context.Context, query string) ([]EtfSearchResult, error) {
+	url := fmt.Sprintf("%s/api/v1/etf/search?q=%s", f.baseURL, url.QueryEscape(query))
+
+	var err error
+	for attempt := 0; attempt <= etfMaxRetries; attempt++ {
+		if attempt > 0 {
+			if err := sleepCtx(ctx, etfRetryDelay); err != nil {
+				return nil, err
+			}
+		}
+		var results []EtfSearchResult
+		results, err = f.searchOnce(ctx, url)
+		if err == nil {
+			return results, nil
+		}
+		var transportErr *etfTransportError
+		if !errors.As(err, &transportErr) {
+			return nil, err
+		}
+	}
+	return nil, err
+}
+
+func (f *JustETFFetcher) searchOnce(ctx context.Context, url string) ([]EtfSearchResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, &etfTransportError{err: err}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, &etfStatusError{status: resp.StatusCode, message: statusMessage(resp.StatusCode, body)}
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	var results []EtfSearchResult
+	if err := json.Unmarshal(body, &results); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w (body: %s)", err, string(body))
+	}
+	return results, nil
 }
 
 // exposureRows converts the raw python-service rows into model rows.

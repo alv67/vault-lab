@@ -43,6 +43,27 @@ func TestJustETFFetcherFetchExposure(t *testing.T) {
 	}
 }
 
+func TestJustETFFetcherSearchTicker(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/etf/search" || r.URL.Query().Get("q") != "EUNL" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[{"isin":"IE00B4L5Y983","name":"iShares Core MSCI World UCITS ETF USD (Acc)"}]`)
+	}))
+	defer ts.Close()
+
+	f := NewJustETFFetcher(ts.URL)
+	results, err := f.SearchTicker(context.Background(), "EUNL")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || results[0].ISIN != "IE00B4L5Y983" {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+}
+
 func TestJustETFFetcherStatusError(t *testing.T) {
 	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -573,7 +573,14 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 		return nil, ErrNotETF
 	}
 	if strings.TrimSpace(asset.ISIN) == "" {
-		return nil, fmt.Errorf("%w: asset has no ISIN", ErrInvalidInput)
+		isin, err := s.resolveETFISIN(ctx, asset.Ticker)
+		if err != nil {
+			return nil, err
+		}
+		asset.ISIN = isin
+		if _, err := s.repos.Asset.Update(ctx, asset); err != nil {
+			return nil, err
+		}
 	}
 
 	raw, err := s.etfFetcher.FetchExposure(ctx, asset.ISIN)
@@ -589,6 +596,30 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 		mapped.Sectors = sectors
 	}
 	return s.SaveAssetExposure(ctx, id, mapped)
+}
+
+// resolveETFISIN looks up the ISIN of an ETF from its ticker through the
+// python-service. Prefers an exact ticker match and falls back to the first
+// result when the provider does not echo the ticker.
+func (s *Service) resolveETFISIN(ctx context.Context, ticker string) (string, error) {
+	if strings.TrimSpace(ticker) == "" {
+		return "", fmt.Errorf("%w: asset has no ticker to resolve an ISIN", ErrInvalidInput)
+	}
+	results, err := s.etfFetcher.SearchTicker(ctx, ticker)
+	if err != nil {
+		return "", err
+	}
+	for _, r := range results {
+		if r.ISIN != "" && strings.EqualFold(r.Ticker, ticker) {
+			return r.ISIN, nil
+		}
+	}
+	for _, r := range results {
+		if r.ISIN != "" {
+			return r.ISIN, nil
+		}
+	}
+	return "", fmt.Errorf("%w: no ETF found for ticker %s", ErrNotFound, ticker)
 }
 
 // buildExposure assembles the complete exposure output for an asset: every

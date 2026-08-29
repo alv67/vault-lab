@@ -460,8 +460,8 @@ func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
 	exposure, err := h.svc.FetchETFExposure(r.Context(), uid)
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrAssetNotFound):
-			respondError(w, http.StatusNotFound, "asset not found")
+		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
 		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
 			respondError(w, http.StatusBadRequest, err.Error())
 		default:
