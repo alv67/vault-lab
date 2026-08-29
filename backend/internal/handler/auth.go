@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -442,6 +443,31 @@ func (h *Handler) FetchAssetExposure(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Error().Err(err).Msg("fetch asset exposure failed")
 		respondError(w, http.StatusBadGateway, "asset exposure fetch failed")
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
+func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchETFExposure(r.Context(), uid)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAssetNotFound):
+			respondError(w, http.StatusNotFound, "asset not found")
+		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("fetch etf exposure failed")
+			respondError(w, http.StatusBadGateway, "etf exposure fetch failed")
+		}
 		return
 	}
 

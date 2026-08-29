@@ -39,6 +39,7 @@ var (
 	ErrCurrencyProtected  = errors.New("currency cannot be removed")
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
 	ErrInvalidAssetClass  = errors.New("invalid asset class")
+	ErrNotETF             = errors.New("asset is not an ETF")
 )
 
 // assetClasses is the allowed set for asset_class plus a helper to derive a
@@ -75,6 +76,7 @@ type Service struct {
 	repos           *repository.Repository
 	jwtAuth         *auth.JWTAuth
 	fetcher         *price.YahooFetcher
+	etfFetcher      price.ETFFetcher
 	lookupCacheTTL  time.Duration
 	cache           *cache.Cache
 	seriesMaxPoints int
@@ -82,14 +84,14 @@ type Service struct {
 	Health          *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, etfFetcher price.ETFFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
 	if stalePriceDays <= 0 {
 		stalePriceDays = 7
 	}
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, etfFetcher: etfFetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
 }
 
 // cached implements the read-through cache pattern: it reads the current data
@@ -554,6 +556,39 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	}
 	s.bumpRev(ctx)
 	return s.buildExposure(asset, regions, sectors), nil
+}
+
+// FetchETFExposure fetches the country and sector exposure of an ETF from the
+// python-service, maps countries to macro-regions and sectors to canonical GICS
+// names, then persists and returns the complete exposure.
+func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+	if asset.Type != model.AssetTypeETF {
+		return nil, ErrNotETF
+	}
+	if strings.TrimSpace(asset.ISIN) == "" {
+		return nil, fmt.Errorf("%w: asset has no ISIN", ErrInvalidInput)
+	}
+
+	raw, err := s.etfFetcher.FetchExposure(ctx, asset.ISIN)
+	if err != nil {
+		return nil, err
+	}
+
+	mapped := &model.AssetExposure{}
+	if regions := price.AggregateRegions(raw.Regions); len(regions) > 0 {
+		mapped.Regions = regions
+	}
+	if sectors := price.AggregateSectors(raw.Sectors); len(sectors) > 0 {
+		mapped.Sectors = sectors
+	}
+	return s.SaveAssetExposure(ctx, id, mapped)
 }
 
 // buildExposure assembles the complete exposure output for an asset: every
