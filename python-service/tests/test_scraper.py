@@ -2,6 +2,7 @@ from app.scraper import (
     COUNTRIES,
     SECTORS,
     _extract_isin,
+    _normalize_ticker,
     _parse_rows,
 )
 
@@ -84,3 +85,35 @@ def test_extract_isin_from_faq():
 
 def test_extract_isin_empty():
     assert _extract_isin("<html></html>") == ""
+
+
+def test_normalize_ticker():
+    assert _normalize_ticker("SMEA.MI") == "SMEA"
+    assert _normalize_ticker("EUNL.DE") == "EUNL"
+    assert _normalize_ticker("CSPX.L") == "CSPX"
+    assert _normalize_ticker("VWCE") == "VWCE"
+    assert _normalize_ticker("  IWDA.DE  ") == "IWDA"
+    assert _normalize_ticker("A.L") == "A.L"
+    assert _normalize_ticker("") == ""
+
+
+def test_search_etf_queries_normalized_ticker(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"etfs": [{"isin": "IE00B4K48X80", "name": "iShares Core MSCI Europe UCITS ETF EUR (Acc)"}]}
+
+    def fake_get(url, params=None, **kwargs):
+        captured["params"] = params
+        return FakeResponse()
+
+    monkeypatch.setattr("app.scraper.requests.get", fake_get)
+    from app.scraper import search_etf
+
+    results = search_etf("SMEA.MI")
+    assert captured["params"]["query"] == "SMEA"
+    assert results[0].isin == "IE00B4K48X80"

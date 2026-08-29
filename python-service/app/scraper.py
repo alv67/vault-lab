@@ -38,6 +38,18 @@ SECTORS_WICKET_PATH = "holdingsSection-sectors-loadMoreSectors"
 _WEIGHT_RE = re.compile(r"([\d]+(?:[.,]\d+)?)\s*%")
 _ISIN_JS_RE = re.compile(r'"isin"\s*:\s*"([A-Z]{2}[A-Z0-9]{10})"')
 _ISIN_FAQ_RE = re.compile(r"The ISIN of .*? is ([A-Z]{2}[A-Z0-9]{10})\.", re.IGNORECASE)
+_TICKER_SUFFIX_RE = re.compile(r"\.([A-Za-z]{1,3})$")
+
+
+def _normalize_ticker(query):
+    """Strips a trailing exchange suffix (e.g. .MI, .DE, .L) from a ticker, as
+    the JustETF site search expects: 'SMEA.MI' -> 'SMEA'. A base shorter than
+    two characters is kept unchanged."""
+    q = (query or "").strip()
+    match = _TICKER_SUFFIX_RE.search(q)
+    if match and len(q[: match.start()]) >= 2:
+        return q[: match.start()]
+    return q
 
 
 def _parse_weight(text):
@@ -137,6 +149,7 @@ def fetch_exposure(isin):
 def search_etf(query):
     """Resolves a ticker (or name fragment) to one or more ETFs via the
     JustETF quick-search API, returning their ISIN and name."""
+    query = _normalize_ticker(query)
     response = requests.get(
         JUSTETF_SEARCH_URL,
         params={
