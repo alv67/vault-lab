@@ -100,6 +100,11 @@ func TestNormalizeCountry(t *testing.T) {
 		{"empty", "", ""},
 		{"one letter is unknown", "U", ""},
 		{"usa alias resolved via map", "USA", "US"},
+		{"justetf name", "South Korea", "KR"},
+		{"justetf name", "Saudi Arabia", "SA"},
+		{"justetf name", "United Arab Emirates", "AE"},
+		{"justetf name", "Thailand", "TH"},
+		{"justetf name", "Malaysia", "MY"},
 	}
 	for _, tc := range cases {
 		if got := NormalizeCountry(tc.in); got != tc.want {
