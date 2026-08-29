@@ -573,7 +573,7 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 		return nil, ErrNotETF
 	}
 	if strings.TrimSpace(asset.ISIN) == "" {
-		isin, err := s.resolveETFISIN(ctx, asset.Ticker)
+		isin, err := s.resolveETFISIN(ctx, asset)
 		if err != nil {
 			return nil, err
 		}
@@ -599,27 +599,22 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 }
 
 // resolveETFISIN looks up the ISIN of an ETF from its ticker through the
-// python-service. Prefers an exact ticker match and falls back to the first
-// result when the provider does not echo the ticker.
-func (s *Service) resolveETFISIN(ctx context.Context, ticker string) (string, error) {
-	if strings.TrimSpace(ticker) == "" {
+// python-service (which strips the exchange suffix before querying JustETF) and
+// picks the best result via price.BestMatch.
+func (s *Service) resolveETFISIN(ctx context.Context, asset *model.Asset) (string, error) {
+	ticker := strings.TrimSpace(asset.Ticker)
+	if ticker == "" {
 		return "", fmt.Errorf("%w: asset has no ticker to resolve an ISIN", ErrInvalidInput)
 	}
 	results, err := s.etfFetcher.SearchTicker(ctx, ticker)
 	if err != nil {
 		return "", err
 	}
-	for _, r := range results {
-		if r.ISIN != "" && strings.EqualFold(r.Ticker, ticker) {
-			return r.ISIN, nil
-		}
+	best, ok := price.BestMatch(results, ticker, asset.Name)
+	if !ok {
+		return "", fmt.Errorf("%w: no ETF found for ticker %s", ErrNotFound, ticker)
 	}
-	for _, r := range results {
-		if r.ISIN != "" {
-			return r.ISIN, nil
-		}
-	}
-	return "", fmt.Errorf("%w: no ETF found for ticker %s", ErrNotFound, ticker)
+	return best.ISIN, nil
 }
 
 // buildExposure assembles the complete exposure output for an asset: every

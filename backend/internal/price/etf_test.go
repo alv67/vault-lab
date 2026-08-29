@@ -64,6 +64,37 @@ func TestJustETFFetcherSearchTicker(t *testing.T) {
 	}
 }
 
+func TestBestMatchPrefersNameOverlap(t *testing.T) {
+	results := []EtfSearchResult{
+		{ISIN: "IE00BKM4GZ66", Name: "iShares Core MSCI Emerging Markets IMI UCITS ETF (Acc)"},
+		{ISIN: "IE00B4K48X80", Name: "iShares Core MSCI Europe UCITS ETF EUR (Acc)"},
+	}
+	best, ok := BestMatch(results, "SMEA.MI", "iShares Core MSCI Europe UCITS ETF EUR (Acc)")
+	if !ok || best.ISIN != "IE00B4K48X80" {
+		t.Fatalf("expected Europe ETF, got %+v (ok=%v)", best, ok)
+	}
+}
+
+func TestBestMatchPrefersExactTicker(t *testing.T) {
+	results := []EtfSearchResult{
+		{ISIN: "IE00BKM4GZ66", Ticker: "EIMI", Name: "iShares Core MSCI Emerging Markets IMI UCITS ETF (Acc)"},
+		{ISIN: "IE00B4K48X80", Ticker: "SMEA", Name: "iShares Core MSCI Europe UCITS ETF EUR (Acc)"},
+	}
+	best, ok := BestMatch(results, "SMEA", "")
+	if !ok || best.ISIN != "IE00B4K48X80" {
+		t.Fatalf("expected exact ticker match, got %+v (ok=%v)", best, ok)
+	}
+}
+
+func TestBestMatchEmpty(t *testing.T) {
+	if _, ok := BestMatch(nil, "X", "name"); ok {
+		t.Fatal("expected no match for empty results")
+	}
+	if _, ok := BestMatch([]EtfSearchResult{{Ticker: "X"}}, "X", "name"); ok {
+		t.Fatal("expected no match when results carry no ISIN")
+	}
+}
+
 func TestJustETFFetcherStatusError(t *testing.T) {
 	var calls atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

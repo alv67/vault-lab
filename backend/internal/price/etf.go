@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/shopspring/decimal"
 
@@ -187,6 +188,62 @@ func (f *JustETFFetcher) searchOnce(ctx context.Context, url string) ([]EtfSearc
 		return nil, fmt.Errorf("unmarshal: %w (body: %s)", err, string(body))
 	}
 	return results, nil
+}
+
+// BestMatch picks the best ETF search result for an asset, preferring an exact
+// ticker match, then the result whose name shares the most words with the asset
+// name (guards against fuzzy search picking an unrelated fund), and finally the
+// first result. Returns false when no result carries an ISIN.
+func BestMatch(results []EtfSearchResult, ticker, assetName string) (EtfSearchResult, bool) {
+	if len(results) == 0 {
+		return EtfSearchResult{}, false
+	}
+	if ticker != "" {
+		for _, r := range results {
+			if r.ISIN != "" && strings.EqualFold(r.Ticker, ticker) {
+				return r, true
+			}
+		}
+	}
+	best := EtfSearchResult{}
+	bestScore := -1
+	for _, r := range results {
+		if r.ISIN == "" {
+			continue
+		}
+		score := nameOverlap(r.Name, assetName)
+		if score > bestScore {
+			best, bestScore = r, score
+		}
+	}
+	if best.ISIN == "" {
+		return EtfSearchResult{}, false
+	}
+	return best, true
+}
+
+// nameOverlap counts how many distinct words of a are matched by a word in b,
+// in either direction (prefix match included). Used to rank search results
+// against the asset name.
+func nameOverlap(a, b string) int {
+	wa := tokenize(strings.ToLower(a))
+	wb := tokenize(strings.ToLower(b))
+	score := 0
+	for _, x := range wa {
+		for _, y := range wb {
+			if x == y || strings.HasPrefix(x, y) || strings.HasPrefix(y, x) {
+				score++
+				break
+			}
+		}
+	}
+	return score
+}
+
+func tokenize(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 }
 
 // exposureRows converts the raw python-service rows into model rows.
