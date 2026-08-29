@@ -1,8 +1,8 @@
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from . import scraper
-from .schemas import Exposure, Holdings
+from .schemas import EtfSearchResult, Exposure, Holdings
 
 app = FastAPI(title="VaultLab ETF metadata service", version="1.0.0")
 
@@ -10,6 +10,14 @@ app = FastAPI(title="VaultLab ETF metadata service", version="1.0.0")
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+@app.get("/api/v1/etf/search", response_model=list[EtfSearchResult])
+def search_etf(q: str = Query(...)):
+    try:
+        return scraper.search_etf(q)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"upstream search failed: {exc}")
 
 
 @app.get("/api/v1/etf/{isin}/exposure", response_model=Exposure)

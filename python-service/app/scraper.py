@@ -5,9 +5,10 @@ import xml.etree.ElementTree as ET
 import requests
 from bs4 import BeautifulSoup
 
-from .schemas import Exposure, ExposureRow
+from .schemas import EtfSearchResult, Exposure, ExposureRow
 
 JUSTETF_URL = "https://www.justetf.com/en/etf-profile.html?isin={isin}"
+JUSTETF_SEARCH_URL = "https://www.justetf.com/api/etfs/quick-search"
 TIMEOUT_SECONDS = 10
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -131,3 +132,37 @@ def fetch_exposure(isin):
         countries=countries,
         sectors=sectors,
     )
+
+
+def search_etf(query):
+    """Resolves a ticker (or name fragment) to one or more ETFs via the
+    JustETF quick-search API, returning their ISIN and name."""
+    response = requests.get(
+        JUSTETF_SEARCH_URL,
+        params={
+            "locale": "en",
+            "currency": "EUR",
+            "universeType": "PRIVATE",
+            "universeCountry": "DE",
+            "limit": 10,
+            "page": 0,
+            "query": query,
+        },
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    data = response.json()
+    results = []
+    for entry in data.get("etfs", []):
+        isin = entry.get("isin", "")
+        if not isin:
+            continue
+        results.append(
+            EtfSearchResult(
+                isin=isin,
+                name=entry.get("name", ""),
+                ticker=entry.get("ticker", ""),
+            )
+        )
+    return results

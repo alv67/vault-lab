@@ -15,3 +15,9 @@ class Exposure(BaseModel):
 class Holdings(BaseModel):
     isin: str
     holdings: list[dict] = []
+
+
+class EtfSearchResult(BaseModel):
+    isin: str
+    name: str = ""
+    ticker: str = ""

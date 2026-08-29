@@ -62,3 +62,25 @@ def test_get_holdings_stub(monkeypatch):
     body = response.json()
     assert body["isin"] == "IE00B3RBWM25"
     assert body["holdings"] == []
+
+
+def test_search_etf(monkeypatch):
+    def fake_search(query):
+        assert query == "EUNL"
+        return [{"isin": "IE00B4L5Y983", "name": "iShares Core MSCI World UCITS ETF USD (Acc)", "ticker": ""}]
+
+    monkeypatch.setattr("app.main.scraper.search_etf", fake_search)
+    response = client.get("/api/v1/etf/search?q=EUNL")
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["isin"] == "IE00B4L5Y983"
+
+
+def test_search_etf_upstream_error(monkeypatch):
+    def fake_search(query):
+        raise requests.RequestException("connection refused")
+
+    monkeypatch.setattr("app.main.scraper.search_etf", fake_search)
+    response = client.get("/api/v1/etf/search?q=EUNL")
+    assert response.status_code == 502
+    assert "detail" in response.json()
