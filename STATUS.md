@@ -64,12 +64,12 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 
 ## Fase 2 — In corso
 
-### EPIC B — Distribuzione geo/settore + FX history + Asset detail (#36) — 10 sub-issues
+### EPIC B — Distribuzione geo/settore + FX history + Asset detail (#36) — 12 sub-issues
 | Issue | Titolo | Componente | Stato |
 |-------|--------|------------|-------|
 | #7  | B.1 — Migration + region/sector weight model + `fx_history` + `exchange` | Backend | ✅ model + migrazioni (exchange, exposure, history) |
-| #8  | B.2 — GICS/sector backfill + Yahoo v10 fetch-profile (`category_id` rimosso) | Backend | ⏳ fetch-profile e sector weightings fatti; seed GICS + populate `assets.sector` normalizzato differito |
-| #9  | B.3 — Country backfill + ISO normalization + country→macro-region mapping | Backend | ⏳ `geo.RegionForCountry` + stock default, backfill completo differito |
+| #8  | B.2 — GICS/sector backfill + Yahoo v10 fetch-profile | Backend | ✅ chiusa da design change: `category_id`/`categories` rimossi (migrazione `000012`, PR #51); fetch-profile + `assets.sector` normalizzato coperti altrove; residuo (backfill `missing_sector`) accorpato a B.3 |
+| #9  | B.3 — Country backfill (exposure via `assetProfile`) + sector backfill + ISO normalization + region mapping | Backend | ✅ implementata: country = domicilio emittente (fix cross-listing alla creazione), `geo.NormalizeCountry`/`RegionForCountry`, validazione ISO su create/update, `POST /assets/backfill-meta` che riempie E corregge i legacy (1AAPL.MI → US) (da review) |
 | #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend | ✅ editor tabelle + pie chart sulla pagina asset; scrape differito a B.5 |
 | #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ⏳ pianificato (prefill JustETF differito) |
 | #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
@@ -82,7 +82,7 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 
 **Ordine di implementazione**:
 1. Data layer: B.1 → B.9 → B.3
-2. Backend: B.2 → B.5 → B.6/B.7
+2. Backend: B.3 (backfill) → B.5 → B.6/B.7  <small>(B.2 chiusa: superata in B.11/B.12, residuo in B.3)</small>
 3. Frontend: B.10 → B.4 → B.8
 
 ### Completato in questa sessione (EPIC B, parte)
