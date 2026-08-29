@@ -469,6 +469,19 @@ func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// BackfillAssetMeta fills missing country/sector metadata for every stock asset
+// and returns a report of the changes applied.
+func (h *Handler) BackfillAssetMeta(w http.ResponseWriter, r *http.Request) {
+	report, err := h.svc.BackfillAssetMeta(r.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("backfill asset meta failed")
+		respondError(w, http.StatusInternalServerError, "backfill failed")
+		return
+	}
+
+	respond(w, http.StatusOK, report)
+}
+
 func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	var asset model.Asset
 	if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {

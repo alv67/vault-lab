@@ -249,6 +249,12 @@ func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.A
 	if asset.AssetClass == "" {
 		asset.AssetClass = defaultAssetClassForType(asset.Type)
 	}
+	if asset.Country != "" {
+		asset.Country = geo.NormalizeCountry(asset.Country)
+		if asset.Country == "" {
+			return nil, fmt.Errorf("%w: invalid country", ErrInvalidInput)
+		}
+	}
 	created, err := s.repos.Asset.Create(ctx, asset)
 	if err != nil {
 		return nil, err
@@ -293,7 +299,12 @@ func (s *Service) UpdateAsset(ctx context.Context, id uuid.UUID, patch *model.As
 		existing.AssetClass = *patch.AssetClass
 	}
 	if patch.Country != nil {
-		existing.Country = *patch.Country
+		existing.Country = geo.NormalizeCountry(*patch.Country)
+		// Non-empty values must resolve to an ISO alpha-2 code; an explicit
+		// empty string clears the field (ETF without a country).
+		if *patch.Country != "" && existing.Country == "" {
+			return nil, fmt.Errorf("%w: invalid country", ErrInvalidInput)
+		}
 	}
 	if patch.Currency != nil && *patch.Currency != "" {
 		existing.Currency = *patch.Currency
@@ -376,9 +387,9 @@ func (s *Service) GetAssetQuote(ctx context.Context, id uuid.UUID) (*model.Asset
 	return quote, nil
 }
 
-// FetchAssetProfile resolves sector and industry from Yahoo and persists them
-// on the asset. The Yahoo error is propagated to the caller when the profile
-// cannot be fetched.
+// FetchAssetProfile resolves sector, industry and issuer domicile country from
+// Yahoo and persists them on the asset. The Yahoo error is propagated to the
+// caller when the profile cannot be fetched.
 func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -388,12 +399,17 @@ func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.A
 		return nil, err
 	}
 
-	sector, industry, err := s.fetcher.FetchAssetProfile(ctx, asset.Ticker)
+	sector, industry, country, err := s.fetcher.FetchAssetProfile(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
 	asset.Sector = sector
 	asset.Industry = industry
+	// Only stock assets expose a single issuer country; keep existing values
+	// when Yahoo does not report one.
+	if asset.Type == model.AssetTypeStock && country != "" {
+		asset.Country = geo.NormalizeCountry(country)
+	}
 
 	updated, err := s.repos.Asset.Update(ctx, asset)
 	if err != nil {
@@ -493,7 +509,7 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	sector, industry, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	sector, industry, country, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -517,6 +533,9 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	}
 	if industry != "" {
 		asset.Industry = industry
+	}
+	if asset.Type == model.AssetTypeStock && country != "" {
+		asset.Country = geo.NormalizeCountry(country)
 	}
 
 	regions, err := s.repos.Exposure.FindRegions(ctx, id)
@@ -1547,6 +1566,73 @@ func (s *Service) BackfillAssetHistory(ctx context.Context, id uuid.UUID) error 
 	}
 	s.bumpRev(ctx)
 	return nil
+}
+
+// BackfillAssetMeta reconciles issuer country and GICS sector for every stock
+// asset. For stocks the Yahoo assetProfile.country is the source of truth for
+// the exposure country (the issuer's domicile), so it is applied whenever Yahoo
+// reports a recognizable value — filling empty fields and correcting legacy
+// values derived from the old exchange-based logic. A manual override stays
+// possible via PATCH, but a subsequent backfill restores the issuer domicile.
+// Sector is normalized to its canonical GICS form, so legacy non-canonical
+// values are corrected too. Failures are reported per asset without aborting.
+func (s *Service) BackfillAssetMeta(ctx context.Context) (*model.MetaBackfillReport, error) {
+	assets, err := s.repos.Asset.AllStocks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &model.MetaBackfillReport{
+		Processed: len(assets),
+		Errors:    []string{},
+	}
+	for _, a := range assets {
+		sector, industry, country, err := s.fetcher.FetchAssetProfile(ctx, a.Ticker)
+		if err != nil {
+			report.Failed++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %v", a.Ticker, err))
+			continue
+		}
+
+		changed := false
+
+		// Country: Yahoo is the source of truth when it recognizes the issuer
+		// domicile. Only when Yahoo reports no country do we fall back to the
+		// exchange-derived value for stocks that have none stored.
+		if c := geo.NormalizeCountry(country); c != "" {
+			if a.Country != c {
+				a.Country = c
+				report.UpdatedCountry++
+				changed = true
+			}
+		} else if a.Country == "" {
+			if c := price.ExchangeCountry(a.Exchange); c != "" {
+				a.Country = c
+				report.UpdatedCountry++
+				changed = true
+			}
+		}
+
+		if sec := geo.NormalizeSector(sector); sec != "" && a.Sector != sec {
+			a.Sector = sec
+			report.UpdatedSector++
+			changed = true
+		}
+		if industry != "" && a.Industry != industry {
+			a.Industry = industry
+			changed = true
+		}
+
+		if !changed {
+			continue
+		}
+		if _, err := s.repos.Asset.Update(ctx, a); err != nil {
+			report.Failed++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %v", a.Ticker, err))
+		}
+	}
+	s.bumpRev(ctx)
+	return report, nil
 }
 
 func (s *Service) syncAssetBackground(assetID uuid.UUID) {

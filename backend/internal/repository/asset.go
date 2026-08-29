@@ -21,6 +21,7 @@ type AssetRepository interface {
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error)
 	Search(ctx context.Context, query string) ([]*model.Asset, error)
 	List(ctx context.Context) ([]*model.Asset, error)
+	AllStocks(ctx context.Context) ([]*model.Asset, error)
 	MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error
 	MarkHistoryBackfilled(ctx context.Context, id uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -151,6 +152,28 @@ func (r *assetRepo) List(ctx context.Context) ([]*model.Asset, error) {
 		assets = append(assets, a)
 	}
 	return assets, nil
+}
+
+// AllStocks returns every stock asset, the candidates for the metadata
+// backfill (which also corrects legacy country/sector values).
+func (r *assetRepo) AllStocks(ctx context.Context) ([]*model.Asset, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+assetColumns+` FROM assets WHERE type = 'stock' ORDER BY ticker`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var assets []*model.Asset
+	for rows.Next() {
+		a := &model.Asset{}
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
+			return nil, err
+		}
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
 }
 
 func (r *assetRepo) MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error {

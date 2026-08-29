@@ -176,6 +176,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Post("/assets/{id}/backfill-history", h.BackfillAssetHistory)
 			r.Post("/assets", h.CreateAsset)
 			r.Post("/assets/sync", h.SyncAssets)
+			r.Post("/assets/backfill-meta", h.BackfillAssetMeta)
 			r.Delete("/assets/{id}", h.DeleteAsset)
 
 			r.Get("/portfolios", h.ListPortfolios)
