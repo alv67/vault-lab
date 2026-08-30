@@ -269,7 +269,7 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 | `assetApi` | list, search, lookup, meta | `GET /assets`, `GET /assets/search?q=`, `GET /assets/lookup?q=`, `GET /assets/meta?ticker=` |
 | | get, create, update, remove | `GET /assets/{id}`, `POST /assets`, `PATCH /assets/{id}`, `DELETE /assets/{id}` |
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
-| | exposure, saveExposure, fetchExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure` |
+| | exposure, saveExposure, fetchExposure, fetchETFExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
 | `transactionApi` | list, create | `GET/POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
@@ -610,6 +610,11 @@ freschi.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, i pesi settoriali `topHoldings` di
   Yahoo) precompila la tabella dei settori.
+- **Carica da JustETF** — `assetApi.fetchETFExposure(id)`
+  (`POST /assets/{id}/fetch-etf-exposure`): recupera e salva dal microservizio
+  JustETF sia la distribuzione geografica (paesi → macro-regioni canoniche) sia
+  i settori GICS; visibile solo per asset di tipo ETF
+  (`asset.type !== 'etf'` ⇒ pulsante disabilitato).
 
 ### `/settings` — Impostazioni (`routes/settings/+page.svelte`)
 

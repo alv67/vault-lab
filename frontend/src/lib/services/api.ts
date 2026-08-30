@@ -112,6 +112,7 @@ export interface ExposureRow {
 export interface AssetExposure {
   regions: ExposureRow[]
   sectors: ExposureRow[]
+  isin?: string
 }
 
 // Body accettato da PUT /assets/{id}/exposure. Le dimensioni sono
@@ -214,17 +215,23 @@ export interface SectorAllocation {
 export interface PortfolioGeographyAllocation {
   currency: string
   regions: RegionAllocation[]
+  covered_value?: string
+  excluded_value?: string
 }
 
 export interface PortfolioSectorAllocation {
   currency: string
   sectors: SectorAllocation[]
+  covered_value?: string
+  excluded_value?: string
 }
 
 export interface DashboardAllocation {
   currency: string
   regions: RegionAllocation[]
   sectors: SectorAllocation[]
+  covered_value?: string
+  excluded_value?: string
 }
 
 export interface PortfolioPerformance {
@@ -556,6 +563,8 @@ export const assetApi = {
     request<AssetExposure>(`/assets/${id}/exposure`, { method: 'PUT', body: exposure }),
   fetchExposure: (id: string) =>
     request<AssetExposure>(`/assets/${id}/fetch-exposure`, { method: 'POST' }),
+  fetchETFExposure: (id: string) =>
+    request<AssetExposure>(`/assets/${id}/fetch-etf-exposure`, { method: 'POST' }),
   backfillHistory: (id: string) =>
     request<{ status: string }>(`/assets/${id}/backfill-history`, { method: 'POST' }),
   remove: (id: string) => request<void>(`/assets/${id}`, { method: 'DELETE' }),

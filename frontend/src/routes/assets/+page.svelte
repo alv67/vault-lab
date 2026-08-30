@@ -7,6 +7,7 @@
 
   const defaultForm = () => ({
     ticker: '',
+    isin: '',
     name: '',
     type: 'stock' as string,
     currency: 'USD',
@@ -73,6 +74,7 @@
   async function selectSuggestion(result: AssetLookupResult): Promise<void> {
     form = {
       ticker: result.ticker,
+      isin: form.isin,
       name: result.name || '',
       type: result.type || 'stock',
       currency: result.currency || 'USD',
@@ -203,6 +205,12 @@
           type="text"
           placeholder="Name"
           bind:value={form.name}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
+        <input
+          type="text"
+          placeholder="ISIN (optional)"
+          bind:value={form.isin}
           class="rounded-lg border px-3 py-2 text-sm"
         />
         <select

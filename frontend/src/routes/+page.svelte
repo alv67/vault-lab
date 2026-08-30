@@ -127,8 +127,8 @@
           <p class="text-sm text-gray-400">Allocazione non disponibile</p>
         {:else}
           <div class="grid gap-4 md:grid-cols-2">
-            <GeographyChart data={alloc.regions} currency={alloc.currency} />
-            <SectorChart data={alloc.sectors} currency={alloc.currency} />
+            <GeographyChart data={alloc.regions} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
+            <SectorChart data={alloc.sectors} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
           </div>
         {/if}
       </div>

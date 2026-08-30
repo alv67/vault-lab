@@ -425,7 +425,7 @@
           <p class="text-sm text-gray-400">Allocazione geografica non disponibile</p>
         </div>
       {:else}
-        <GeographyChart data={geoAlloc?.regions ?? []} {currency} />
+        <GeographyChart data={geoAlloc?.regions ?? []} {currency} covered={geoAlloc?.covered_value} excluded={geoAlloc?.excluded_value} />
       {/if}
     </div>
     <div class="w-full md:w-1/2">
@@ -435,7 +435,7 @@
           <p class="text-sm text-gray-400">Allocazione settoriale non disponibile</p>
         </div>
       {:else}
-        <SectorChart data={sectorAlloc?.sectors ?? []} {currency} />
+        <SectorChart data={sectorAlloc?.sectors ?? []} {currency} covered={sectorAlloc?.covered_value} excluded={sectorAlloc?.excluded_value} />
       {/if}
     </div>
   </div>

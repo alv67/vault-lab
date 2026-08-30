@@ -308,12 +308,15 @@ func TestGetPortfolioGeographyAllocation_OtherBucket(t *testing.T) {
 	pf := &fakePortfolioRepo{
 		portfolio: &model.Portfolio{Currency: "USD"},
 		holdings: []*model.Holding{
-			holding(assetID.String(), "USD", "", "", model.AssetTypeBond, decimal.NewFromInt(10), decimal.NewFromInt(100)),
+			holding(assetID.String(), "USD", "", "", model.AssetTypeETF, decimal.NewFromInt(10), decimal.NewFromInt(100)),
 		},
 	}
-	// Bond with no stored rows and (for geography) an empty country -> region
-	// default is "Other / Not Classified" for the geography, but for the sector
-	// NormalizeSector("") returns "" so no default and sum is 0 -> Other.
+	// Eligible equity ETF (asset_class "equity") with no stored rows and an
+	// empty country/sector: for geography the region default is
+	// "Other / Not Classified" but (not a stock) the fallback does not map it,
+	// and for the sector NormalizeSector("") returns "" so no default and the
+	// weight sum is 0 -> Other. The holding is eligible, so it is covered
+	// rather than excluded.
 	svc := newTestService(t, pf, &fakeExposureRepo{}, &fakeFXRepo{})
 
 	geoAlloc, err := svc.GetPortfolioGeographyAllocation(context.Background(), assetID)
@@ -345,6 +348,12 @@ func TestGetPortfolioGeographyAllocation_OtherBucket(t *testing.T) {
 	if !equalDecimal(sum, decimal.NewFromInt(100)) {
 		t.Fatalf("weights sum = %v, want 100", sum)
 	}
+	if !equalDecimal(geoAlloc.Covered, decimal.NewFromInt(1000)) {
+		t.Fatalf("covered = %v, want 1000", geoAlloc.Covered)
+	}
+	if !geoAlloc.Excluded.IsZero() {
+		t.Fatalf("excluded = %v, want zero", geoAlloc.Excluded)
+	}
 
 	secAlloc, err := svc.GetPortfolioSectorAllocation(context.Background(), assetID)
 	if err != nil {
@@ -359,6 +368,12 @@ func TestGetPortfolioGeographyAllocation_OtherBucket(t *testing.T) {
 	}
 	if !equalDecimal(sOther.Value, decimal.NewFromInt(1000)) {
 		t.Fatalf("sector Other value = %v, want 1000", sOther.Value)
+	}
+	if !equalDecimal(secAlloc.Covered, decimal.NewFromInt(1000)) {
+		t.Fatalf("covered = %v, want 1000", secAlloc.Covered)
+	}
+	if !secAlloc.Excluded.IsZero() {
+		t.Fatalf("excluded = %v, want zero", secAlloc.Excluded)
 	}
 }
 
@@ -438,6 +453,12 @@ func TestGetDashboardAllocation_AggregatesAcrossPortfolios(t *testing.T) {
 	if !fin.Value.IsPositive() {
 		t.Fatalf("Financials value = %v, want positive", fin.Value)
 	}
+
+	// Both holdings (ETF equity + stock) are eligible: fully covered, nothing excluded.
+	assertDecimalInDelta(t, got.Covered, decimal.RequireFromString("211.11"), "0.01", "covered value")
+	if !got.Excluded.IsZero() {
+		t.Fatalf("excluded = %v, want zero", got.Excluded)
+	}
 }
 
 func TestGetDashboardAllocation_EmptyUser(t *testing.T) {
@@ -455,5 +476,96 @@ func TestGetDashboardAllocation_EmptyUser(t *testing.T) {
 	}
 	if got.Sectors == nil || len(got.Sectors) != 0 {
 		t.Fatalf("sectors = %v, want empty non-nil slice", got.Sectors)
+	}
+	if !got.Covered.IsZero() {
+		t.Fatalf("covered = %v, want zero", got.Covered)
+	}
+	if !got.Excluded.IsZero() {
+		t.Fatalf("excluded = %v, want zero", got.Excluded)
+	}
+}
+
+func TestGetDashboardAllocation_ExcludesNonEquity(t *testing.T) {
+	stockID := uuid.New()
+	bondID := uuid.New()
+	unclID := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolio: &model.Portfolio{Currency: "USD"},
+		portfolios: []*model.Portfolio{
+			{Currency: "USD"},
+		},
+		holdings: []*model.Holding{
+			holding(stockID.String(), "USD", "IT", "Financials", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+			holding(bondID.String(), "USD", "", "", model.AssetTypeBond, decimal.NewFromInt(2), decimal.NewFromInt(100)),
+			{
+				AssetID:    unclID.String(),
+				Currency:   "USD",
+				Country:    "US",
+				Sector:     "Technology",
+				Type:       model.AssetTypeETF,
+				AssetClass: "other",
+				Qty:        decimal.NewFromInt(3),
+				LastClose:  decimal.NewFromInt(100),
+				HasPrice:   true,
+			},
+		},
+	}
+	svc := newTestService(t, pf, &fakeExposureRepo{}, &fakeFXRepo{})
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the eligible stock (100) participates: everything else (bond 200 +
+	// unclassified ETF 300) is excluded and must not flow into buckets/weights.
+	if !equalDecimal(got.Covered, decimal.NewFromInt(100)) {
+		t.Fatalf("covered = %v, want 100", got.Covered)
+	}
+	if !equalDecimal(got.Excluded, decimal.NewFromInt(500)) {
+		t.Fatalf("excluded = %v, want 500", got.Excluded)
+	}
+
+	eu := regionByName(t, got.Regions, "Europe Developed")
+	if !equalDecimal(eu.Value, decimal.NewFromInt(100)) {
+		t.Fatalf("Europe Developed value = %v, want 100", eu.Value)
+	}
+	if !equalDecimal(eu.Weight, decimal.NewFromInt(100)) {
+		t.Fatalf("Europe Developed weight = %v, want 100", eu.Weight)
+	}
+
+	fin := sectorByName(t, got.Sectors, "Financials")
+	if !equalDecimal(fin.Value, decimal.NewFromInt(100)) {
+		t.Fatalf("Financials value = %v, want 100", fin.Value)
+	}
+	if !equalDecimal(fin.Weight, decimal.NewFromInt(100)) {
+		t.Fatalf("Financials weight = %v, want 100", fin.Weight)
+	}
+
+	// The excluded holdings must leave no trace: no literal "Other" bucket and
+	// weights still sum to 100 over the eligible universe.
+	for _, r := range got.Regions {
+		if r.Region == "Other" && !r.Value.IsZero() {
+			t.Fatalf("excluded value leaked into Other region: %v", r.Value)
+		}
+	}
+	regionWeightSum := decimal.Zero
+	for _, r := range got.Regions {
+		regionWeightSum = regionWeightSum.Add(r.Weight)
+	}
+	if !equalDecimal(regionWeightSum, decimal.NewFromInt(100)) {
+		t.Fatalf("regions weight sum = %v, want 100", regionWeightSum)
+	}
+	for _, s := range got.Sectors {
+		if s.Sector == "Other" && !s.Value.IsZero() {
+			t.Fatalf("excluded value leaked into Other sector: %v", s.Value)
+		}
+	}
+	sectorWeightSum := decimal.Zero
+	for _, s := range got.Sectors {
+		sectorWeightSum = sectorWeightSum.Add(s.Weight)
+	}
+	if !equalDecimal(sectorWeightSum, decimal.NewFromInt(100)) {
+		t.Fatalf("sectors weight sum = %v, want 100", sectorWeightSum)
 	}
 }

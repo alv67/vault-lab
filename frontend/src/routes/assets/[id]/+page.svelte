@@ -61,6 +61,7 @@
   let savingSectors = $state(false)
   let saving = $state(false)
   let prefilling = $state(false)
+  let fetchingETF = $state(false)
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
@@ -77,6 +78,14 @@
   })
 
   const currency = $derived(asset?.currency || 'USD')
+
+  const exposureApplicable = $derived(
+    asset
+      ? asset.type === 'stock' ||
+          ((asset.type === 'etf' || asset.type === 'mutual_fund') &&
+            (asset.asset_class === 'equity' || asset.asset_class === 'real_estate'))
+      : false,
+  )
 
   const hasChanges = $derived.by(() => {
     if (!asset) return false
@@ -276,6 +285,24 @@
       toast.error(message)
     } finally {
       prefilling = false
+    }
+  }
+
+  async function fetchETFExposure(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const saved = await assetApi.fetchETFExposure(id)
+      exposure = saved
+      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Distribuzione geografica e ISIN caricati da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
     }
   }
 
@@ -505,9 +532,21 @@
       <PriceChart series={chartSeries} {currency} />
     </div>
 
-    {#if exposure}
+    {#if exposureApplicable && exposure}
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
-        <h2 class="mb-4 font-semibold">Distribuzione geografica</h2>
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="font-semibold">Distribuzione geografica</h2>
+          <button
+            onclick={fetchETFExposure}
+            disabled={fetchingETF || asset.type !== 'etf'}
+            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {#if fetchingETF}
+              <Loader2 class="h-4 w-4 animate-spin" />
+            {/if}
+            Carica da JustETF
+          </button>
+        </div>
         <div class="flex flex-col gap-4 md:flex-row">
           <div class="flex-1 overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -626,6 +665,18 @@
             <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
           </div>
         </div>
+      </div>
+    {:else if exposureApplicable === false && asset}
+      <div class="mb-6 rounded-xl bg-white p-4 shadow">
+        <h2 class="mb-2 font-semibold">Distribuzione geografica e settoriale</h2>
+        <p class="text-sm text-gray-500">
+          Questa distribuzione si applica solo agli asset azionari (azioni ed ETF/fondi di classe equity).
+        </p>
+        {#if asset.type !== 'stock'}
+          <p class="mt-2 text-sm text-gray-400">
+            Imposta la classe 'Azioni' o 'Immobiliare' nelle Caratteristiche per attivarla.
+          </p>
+        {/if}
       </div>
     {/if}
   {/if}

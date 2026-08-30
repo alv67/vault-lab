@@ -16,10 +16,22 @@
     value: unknown
   }
 
-  let { data = [] as SectorAllocation[], currency = 'USD' } = $props()
+  let {
+    data = [] as SectorAllocation[],
+    currency = 'USD',
+    covered = undefined,
+    excluded = undefined,
+  }: { data?: SectorAllocation[]; currency?: string; covered?: string; excluded?: string } = $props()
 
   // Le righe con peso zero restano visibili nella tabella ma non nel donut.
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
+
+  const coveragePct = $derived.by(() => {
+    const c = Number(covered || 0)
+    const e = Number(excluded || 0)
+    const tot = c + e
+    return tot > 0 ? (c / tot) * 100 : 100
+  })
 
   const options = $derived.by((): EChartsOption => ({
     color: [
@@ -70,6 +82,11 @@
   {#if rows.length === 0}
     <p class="text-sm text-gray-400">Nessuna allocazione per settore</p>
   {:else}
+    {#if covered !== undefined && excluded !== undefined && Number(excluded || 0) > 0}
+      <p class="mb-3 text-xs text-gray-500">
+        Copre il {coveragePct.toFixed(1)}% del portafoglio: il resto è in bond, crypto e strumenti non azionari, esclusi per natura.
+      </p>
+    {/if}
     <div class="flex flex-col gap-4 md:flex-row">
       <div class="w-full md:w-1/2 lg:w-1/3">
         <div class="h-[280px] w-full">

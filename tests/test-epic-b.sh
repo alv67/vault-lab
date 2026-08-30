@@ -130,7 +130,7 @@ note "FASE 2 — Crea asset ETF SMEA.MI (idempotente al rerun)"
 CREATE1=$(curl -s -w '\n%{http_code}' -X POST "$API/assets" \
   -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
-  -d '{"ticker":"SMEA.MI","name":"iShares Core MSCI Europe UCITS ETF EUR (Acc)","type":"etf","currency":"EUR"}')
+  -d '{"ticker":"SMEA.MI","name":"iShares Core MSCI Europe UCITS ETF EUR (Acc)","type":"etf","currency":"EUR","asset_class":"equity"}')
 BODY1="${CREATE1%$'\n'*}"
 CODE1="${CREATE1##*$'\n'}"
 AI1=$(jq -r '.id // empty' <<<"$BODY1")
@@ -147,7 +147,7 @@ fi
 DUP1=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/assets" \
   -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
-  -d '{"ticker":"SMEA.MI","name":"iShares Core MSCI Europe UCITS ETF EUR (Acc)","type":"etf","currency":"EUR"}')
+  -d '{"ticker":"SMEA.MI","name":"iShares Core MSCI Europe UCITS ETF EUR (Acc)","type":"etf","currency":"EUR","asset_class":"equity"}')
 [ "$DUP1" = "409" ] && ok "duplicato SMEA.MI -> 409 (atteso)" || bad "duplicato SMEA.MI -> $DUP1 (atteso 409)"
 
 # --- FASE 3: creazione asset ETF (SXR8.DE) -----------------------------------------
@@ -155,7 +155,7 @@ note "FASE 3 — Crea asset ETF SXR8.DE (idempotente al rerun)"
 CREATE2=$(curl -s -w '\n%{http_code}' -X POST "$API/assets" \
   -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
-  -d '{"ticker":"SXR8.DE","name":"iShares Core S&P 500 UCITS ETF EUR (Acc)","type":"etf","currency":"EUR"}')
+  -d '{"ticker":"SXR8.DE","name":"iShares Core S&P 500 UCITS ETF EUR (Acc)","type":"etf","currency":"EUR","asset_class":"equity"}')
 BODY2="${CREATE2%$'\n'*}"
 CODE2="${CREATE2##*$'\n'}"
 AI2=$(jq -r '.id // empty' <<<"$BODY2")
@@ -171,7 +171,7 @@ fi
 DUP2=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/assets" \
   -H "Authorization: Bearer $TOK" \
   -H 'Content-Type: application/json' \
-  -d '{"ticker":"SXR8.DE","name":"iShares Core S&P 500 UCITS ETF EUR (Acc)","type":"etf","currency":"EUR"}')
+  -d '{"ticker":"SXR8.DE","name":"iShares Core S&P 500 UCITS ETF EUR (Acc)","type":"etf","currency":"EUR","asset_class":"equity"}')
 [ "$DUP2" = "409" ] && ok "duplicato SXR8.DE -> 409 (atteso)" || bad "duplicato SXR8.DE -> $DUP2 (atteso 409)"
 pause
 
