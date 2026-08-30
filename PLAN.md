@@ -45,11 +45,12 @@
 - [ ] Distribuzione per categoria industriale (GICS)
 - [ ] Grafici: andamento storico, composizione portafoglio
 - [ ] Report periodici (mensile/trimestrale)
-- [ ] Storico tassi di cambio (FX history, per-date nei series)
 - [x] Pagina dettaglio asset (metadati, storico prezzi, distribuzioni geo/settoriali) — **EPIC B.10 (#45)**
 - [x] Microservizio Python per metadata ETF (JustETF scraping) — **EPIC B.5 (#11)**
 - [x] Endpoint allocazione geografica (weighted sum by region) — **EPIC B.6 (#12)**
 - [x] Endpoint allocazione settore (weighted sum by GICS) — **EPIC B.7 (#13)**
+- [x] Chart dashboard/portafoglio geo & settore (GeographyChart + SectorChart, universo equity-only + coverage) — **EPIC B.8 (#14)**
+- [x] Storico tassi di cambio (FX history, per-date nei series) — **EPIC B.9 (#44)**
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -168,12 +169,12 @@ vault-lab/
 **Release v0.1.0** pubblicata su `main` (prima release ufficiale).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
-procede su `develop` (feature branch `feat/B.6-B.7-allocation` per l'ultima parte backend EPIC B,
-PR #60 open). Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10), il **backfill
-country/ISO** (B.3), il **microservizio Python JustETF** per l'esposizione ETF e l'auto-resolve
-ISIN (B.5), le asset class con allocazione per classi (B.11/B.12), e gli **endpoint di
-allocazione geo/settore a livello portafoglio** (B.6/B.7). Restano da completare in
-EPIC B: B.8 (chart dashboard/portfolio, frontend), B.9 (FX history).
+procede su `develop` (feature branch `feat/B.8-allocation-charts`, PR #62, e `feat/B.9-fx-history`,
+PR #61, per la parte finale EPIC B). Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
+il **backfill country/ISO** (B.3), il **microservizio Python JustETF** per l'esposizione ETF e
+l'auto-resolve ISIN (B.5), le asset class con allocazione per classi (B.11/B.12), gli **endpoint di
+allocazione geo/settore a livello portafoglio** (B.6/B.7), le **chart dashboard/portafoglio** con
+universo equity-only e metadati di copertura (B.8, #14) e lo **storico FX per-data** (B.9, #44).
 Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
 di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

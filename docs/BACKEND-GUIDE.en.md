@@ -517,7 +517,9 @@ see `meta.go`):
 A note on **ISIN**: Yahoo does **not** expose the ISIN in any module. For ETFs
 the value is now resolved automatically from the ticker through the JustETF
 service (B.5); the field remains editable by hand on the asset page as a
-fallback.
+fallback. The exposure responses (`GET/PUT /assets/{id}/exposure`,
+`fetch-exposure`, `fetch-etf-exposure`) include the persisted `isin` field
+(`AssetExposure.ISIN`), so the frontend can sync it after a JustETF fetch.
 
 ### Cache invalidation (`bumpRev`)
 
@@ -731,8 +733,15 @@ otherwise continue".
   allocation endpoints at portfolio level are implemented:
   `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
   8 macro-regions + `Other`, zero-filled) and `/allocation/sector` (EPIC B.7,
-  11 GICS sectors + `Other`). The dashboard/portfolio chart widgets (B.8) are
-  an upcoming frontend task.
+  11 GICS sectors + `Other`). The dashboard/portfolio chart widgets ship in
+  B.8 (frontend). Since the B.8 follow-up, the geography/sector allocations are
+  computed over the **equity-only universe** (`exposureEligible`: stocks
+  always; ETFs/mutual funds only when `asset_class` is `equity` or
+  `real_estate`); bonds, crypto, commodities, currencies and unclassified
+  funds are excluded and never flow into `Other`. The three allocation
+  responses (`/allocation/geography`, `/allocation/sector` and
+  `/dashboard/allocation`) expose `covered_value`/`excluded_value` (decimal
+  strings) with the value of the eligible vs excluded holdings.
 - The `python-service` microservice (B.5) fetches ETF exposure and resolves
   ISINs from tickers via JustETF; it is exercised only through the backend
   (`POST /assets/{id}/fetch-etf-exposure`) and its `GET /api/v1/etf/search`

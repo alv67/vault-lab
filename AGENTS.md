@@ -21,3 +21,7 @@
   (VS Code REST Client), never the dev/prod stack. The EPIC B allocation smoke
   test is `tests/test-epic-b.sh` on the same isolated stack (seeds prices via
   `tests/seed-prices.sql`, since Yahoo is disabled there).
+- **Keep the project docs in sync before closing a PR**: always check the
+  project documents first (AGENTS.md, PLAN.md, STATUS.md, `docs/` guides en/it)
+  and update them together with the code. A PR must NOT be closed until its
+  related documentation (endpoints, behavior, UI, status tables) is updated.

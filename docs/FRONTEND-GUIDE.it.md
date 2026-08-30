@@ -379,8 +379,8 @@ cambiamenti di `$props`.
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la **storico performance** del dettaglio portafoglio: un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio), asse x a categorie di date | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`) |
 | `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate | in **tre punti**: "Distribuzione geografica" e "Distribuzione settoriale" del dettaglio asset, e il donut **"Allocazione per classi"** del portafoglio (B.12). Accetta `ExposureRow[]` (`{name, weight}`) |
-| `GeographyChart.svelte` (`lib/components/domain/`) | **ciambella** (stessi raggio/palette di `ExposurePie`) + tabella delle righe complete accanto; il tooltip mostra il valore nella valuta del portafoglio e il peso; la fetta `Other` è in grigio spento | la card **geografia** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `RegionAllocation[]` (`{region, value, weight}`); le righe a peso zero restano in tabella ma non vengono disegnate |
-| `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `SectorAllocation[]` (`{sector, value, weight}`) |
+| `GeographyChart.svelte` (`lib/components/domain/`) | **ciambella** (stessi raggio/palette di `ExposurePie`) + tabella delle righe complete accanto; il tooltip mostra il valore nella valuta del portafoglio e il peso; la fetta `Other` è in grigio spento | la card **geografia** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `RegionAllocation[]` (`{region, value, weight}`); le righe a peso zero restano in tabella ma non vengono disegnate. Le prop opzionali `covered`/`excluded` (stringhe decimali) alimentano una nota di copertura ("Copre il X% del portafoglio…") mostrata quando il valore escluso è > 0 |
+| `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `SectorAllocation[]` (`{sector, value, weight}`), più la stessa nota di copertura opzionale `covered`/`excluded` di `GeographyChart` |
 
 I tooltip formattano i valori monetari con `formatCurrency` (capitolo 6), le
 date con `new Date(...).toLocaleDateString()`.
@@ -394,7 +394,11 @@ date con `new Date(...).toLocaleDateString()`.
   `portfolioApi.classAllocation`, mappati con `ASSET_CLASS_LABELS`.
 - **Dettaglio portafoglio e dashboard (B.8)** — `GeographyChart` +
   `SectorChart` per l'allocazione geo/settoriale (endpoint per-portafoglio e
-  aggregato `GET /dashboard/allocation`).
+  aggregato `GET /dashboard/allocation`). Le allocazioni sono calcolate
+  sull'universo **equity-only** (azioni sempre; ETF/fondi solo quando
+  `asset_class` è `equity` o `real_estate`); bond, crypto, commodity e fondi
+  non classificati sono esclusi e riportati come `covered_value` /
+  `excluded_value`, che i grafici trasformano in una nota di copertura.
 - **Dashboard** — `PortfolioLineChart` con il `chartData` unificato, più i
   widget B.8 "Allocazione complessiva".
 
@@ -508,7 +512,9 @@ sessione + una dashboard fresca.
 - Card **Allocazione complessiva**: `GeographyChart` + `SectorChart` affiancati
   da `dashboardAllocation()` (`GET /dashboard/allocation`, aggregato in USD su
   tutti i portafogli); se l'endpoint fallisce la card mostra "Allocazione non
-  disponibile" (la chiamata è isolata, non blocca la pagina).
+  disponibile" (la chiamata è isolata, non blocca la pagina). Entrambi i
+  grafici ricevono i metadati di copertura `covered_value`/`excluded_value` e
+  mostrano una nota quando ci sono holding non azionarie escluse.
 - Tabella **Performance by Currency**, solo quando si usano più valute
   (`hasMultipleCurrencies`).
 - Tabella **Portfolios** (nome, valuta, asset, investito, valore, realizzato,
@@ -560,7 +566,9 @@ Endpoint chiamati: `portfolioApi.get`, `.summary`, `.history`,
   (`md:flex-row`, una per grafico) con `GeographyChart` / `SectorChart` da
   `geographyAllocation()` / `sectorAllocation()`; ogni endpoint è isolato nel
   suo try/catch ("non disponibile" in caso di errore, senza mai bloccare la
-  pagina).
+  pagina). I grafici ricevono i metadati di copertura `covered_value`/
+  `excluded_value` e mostrano una nota quando ci sono holding non azionarie
+  escluse.
 - **Transazioni**: tabella (data, asset, badge del tipo, quantità, prezzo,
   totale), form di aggiunta/modifica per **buy / sell / dividend** (il
   dividendo chiede l'importo totale invece di quantità × prezzo; la quantità
@@ -606,7 +614,11 @@ freschi.
   0,5 (altrimenti il salvataggio è disabilitato), affiancate da un donut
   `ExposurePie`. Il salvataggio invia **solo la dimensione modificata**
   (`PUT /assets/{id}/exposure` con `{regions}` o `{sectors}` — omettere una
-  chiave lascia l'altra intatta), poi ricarica la risposta canonica.
+  chiave lascia l'altra intatta), poi ricarica la risposta canonica. Le due
+  card sono renderizzate solo quando l'asset è azionabile per l'universo
+  equity (`exposureApplicable`: stock, oppure etf/mutual_fund con
+  `asset_class` `equity`/`real_estate`); altrimenti compare un banner che
+  spiega che la distribuzione vale solo per gli asset azionari.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, i pesi settoriali `topHoldings` di
   Yahoo) precompila la tabella dei settori.
@@ -614,7 +626,8 @@ freschi.
   (`POST /assets/{id}/fetch-etf-exposure`): recupera e salva dal microservizio
   JustETF sia la distribuzione geografica (paesi → macro-regioni canoniche) sia
   i settori GICS; visibile solo per asset di tipo ETF
-  (`asset.type !== 'etf'` ⇒ pulsante disabilitato).
+  (`asset.type !== 'etf'` ⇒ pulsante disabilitato). Sincronizza inoltre l'ISIN
+  risolto dal backend nel campo ISIN del form.
 
 ### `/settings` — Impostazioni (`routes/settings/+page.svelte`)
 
@@ -665,6 +678,14 @@ pulsante "Refresh Now".
     "Allocazione per classi" (`md:flex-row`, una card ciascuno) e la dashboard
     aggiunge una card "Allocazione complessiva" (griglia `md:grid-cols-2`)
     alimentata da `GET /dashboard/allocation`;
+- **Universo equity-only (follow-up B.8)** — le allocazioni geo/settoriali
+  coprono solo le holding azionarie (azioni sempre; ETF/fondi solo quando
+  `asset_class` è `equity` o `real_estate`). Bond, crypto, commodity e fondi
+  non classificati sono esclusi ed esposti come `covered_value` /
+  `excluded_value` sulle risposte geography/sector/dashboard; i grafici
+  mostrano la nota "Copre il X% del portafoglio…" quando il valore escluso è
+  positivo, e la pagina asset dettaglio mostra le card di distribuzione solo
+  per gli asset azionari azionabili (banner informativo altrimenti);
 - **Non esiste una pagina `/register` separata**: la registrazione è un toggle
   dentro `/login`.
 - **Niente inserimento manuale dei prezzi nella UI**: i prezzi arrivano solo da
