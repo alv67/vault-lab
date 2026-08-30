@@ -7,6 +7,10 @@
 #   docker compose -p vaultlab-test -f docker-compose.test.yml up -d --build python-service backend
 #   until curl -s -o /dev/null http://localhost:8081/api/v1/health/prices; do sleep 1; done
 #
+# Optional — seed prices so the portfolio allocation weights below are non-zero
+# (Yahoo is disabled on the test stack, so there is no HTTP writer for prices):
+#   docker compose -p vaultlab-test -f docker-compose.test.yml exec -T postgres psql -U vaultlab -d vaultlab_test < tests/seed-prices.sql
+#
 # Then send each request in order. Stop afterwards:
 #   docker compose -p vaultlab-test -f docker-compose.test.yml down -v
 #
@@ -86,25 +90,109 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/assets/{{assetId}}/exposure
 Authorization: Bearer {{token}}
 
-# Set this to an existing portfolio id (created manually or via the UI/DB) before
-# running requests 8-10. It must hold at least one ETF (e.g. SMEA.MI) to see the
-# stored exposure weights flow into the portfolio-level regions and sectors.
-@portfolioId = 00000000-0000-0000-0000-000000000000
+### 8. Create a second ETF asset WITHOUT ISIN (US S&P 500 tracker, EUR share class)
+# @name createAsset2
+POST {{baseUrl}}/assets
+Authorization: Bearer {{token}}
+Content-Type: application/json
 
-### 8. Portfolio class allocation (baseline to reconcile with geography/sector)
+{
+  "ticker": "SXR8.DE",
+  "name": "iShares Core S&P 500 UCITS ETF EUR (Acc)",
+  "type": "etf",
+  "currency": "EUR"
+}
+
+# On a fresh stack this creates the asset (201, body has id).
+# If the ticker already exists it returns 409 — the body carries the same id in
+# both "id" and "asset_id", so {{asset2Id}} resolves on reruns too.
+@asset2Id = {{createAsset2.response.body.id}}
+
+### 9. Duplicate create — expected: 409 Conflict with {"error": "...already exists...", "id": "<existing id>", "asset_id": "<existing id>"}
+POST {{baseUrl}}/assets
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ticker": "SXR8.DE",
+  "name": "iShares Core S&P 500 UCITS ETF EUR (Acc)",
+  "type": "etf",
+  "currency": "EUR"
+}
+
+### 10. NEW — fetch ETF exposure for the S&P 500 fund (ISIN IE00B5BMR087):
+### regions tilt to North America, sectors to Information Technology.
+# @name fetchEtfExposure2
+POST {{baseUrl}}/assets/{{asset2Id}}/fetch-etf-exposure
+Authorization: Bearer {{token}}
+
+### 11. Read the persisted exposure for SXR8.DE
+# @name getExposure2
+GET {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+
+### 12. Create a portfolio (EUR) — id is captured so the allocation and transaction
+### requests below need no manual UUID editing, on a fresh stack or on reruns.
+# @name createPortfolio
+POST {{baseUrl}}/portfolios
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "BitPie portfolio",
+  "description": "Manual test portfolio: one European and one US ETF",
+  "currency": "EUR"
+}
+
+@portfolioId = {{createPortfolio.response.body.id}}
+
+### 13. Buy SMEA.MI (10 shares @ 100.00 EUR)
+# @name buySmea
+POST {{baseUrl}}/portfolios/{{portfolioId}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "asset_id": "{{assetId}}",
+  "type": "buy",
+  "quantity": 10,
+  "price": 100.00,
+  "date": "2024-01-15T00:00:00Z"
+}
+
+### 14. Buy SXR8.DE (5 shares @ 300.00 EUR)
+# @name buySxr8
+POST {{baseUrl}}/portfolios/{{portfolioId}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "asset_id": "{{asset2Id}}",
+  "type": "buy",
+  "quantity": 5,
+  "price": 300.00,
+  "date": "2024-01-15T00:00:00Z"
+}
+
+### 15. Portfolio class allocation (baseline to reconcile with geography/sector).
+### Cost basis: SMEA.MI 1000 EUR + SXR8.DE 1500 EUR = 2500 EUR, all FX-ok. Without
+### the price seed the weights are all 0 — run tests/seed-prices.sql first to see
+### non-zero values.
 # @name classAllocation
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/class
 Authorization: Bearer {{token}}
 
-### 9. NEW — Portfolio geographic allocation: 8 canonical regions zero-filled, in
+### 16. NEW — Portfolio geographic allocation: 8 canonical regions zero-filled, in
 ### canonical order; "Other" only when a value could not be assigned. Weights sum
 ### to ~100 (FX-ok holdings are the denominator, matching /allocation/class).
+### Without the price seed the weights are 0, but the 8-region structure is visible.
 # @name geographyAllocation
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/geography
 Authorization: Bearer {{token}}
 
-### 10. NEW — Portfolio sector allocation: 11 canonical GICS sectors zero-filled,
-### in canonical order; "Other" only when a value could not be assigned.
+### 17. NEW — Portfolio sector allocation: 11 canonical GICS sectors zero-filled,
+### in canonical order; "Other" only when a value could not be assigned. Without
+### the price seed the weights are 0, but the 11-sector structure is visible.
 # @name sectorAllocation
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/sector
 Authorization: Bearer {{token}}
