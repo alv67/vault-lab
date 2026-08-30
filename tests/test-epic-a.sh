@@ -6,7 +6,7 @@
 #   - Stack avviato (make up) con backend raggiungibile.
 #
 # Uso:
-#   ./scripts/test-epic-a.sh [BASE_URL]
+#   ./tests/test-epic-a.sh [BASE_URL]
 #   BASE_URL default: http://localhost:8080
 #
 # Esito: stampa PASS/FAIL per ogni check e exit code non-zero in caso di fallimento.
