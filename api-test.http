@@ -1,0 +1,86 @@
+# VaultLab — manual API tests (REST Client for VS Code, extension: humao.rest-client)
+#
+# Run against the ISOLATED test stack only (separate DB vaultlab_test, port 8081,
+# Yahoo finance disabled). NEVER against the dev/prod stack (port 8080, real data).
+#
+# Start the stack:
+#   docker compose -p vaultlab-test -f docker-compose.test.yml up -d --build python-service backend
+#   until curl -s -o /dev/null http://localhost:8081/api/v1/health/prices; do sleep 1; done
+#
+# Then send each request in order. Stop afterwards:
+#   docker compose -p vaultlab-test -f docker-compose.test.yml down -v
+#
+# The python-service microservice is intentionally not exposed on the host:
+# exercise it through the backend endpoint (auto-resolve + fetch below).
+
+@baseUrl = http://localhost:8081/api/v1
+
+### 1. Register a user (only needed once, ignore 409 if already exists)
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "manual@example.com",
+  "password": "Password123!",
+  "name": "Manual Test"
+}
+
+### 2. Login and capture the JWT
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "manual@example.com",
+  "password": "Password123!"
+}
+
+@token = {{login.response.body.access_token}}
+
+### 3. Create an ETF asset WITHOUT ISIN (auto-resolve will fill it in)
+# @name createAsset
+POST {{baseUrl}}/assets
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ticker": "SMEA.MI",
+  "name": "iShares Core MSCI Europe UCITS ETF EUR (Acc)",
+  "type": "etf",
+  "currency": "EUR"
+}
+
+# If the asset was already created, this returns 409 with a clear message and the
+# existing asset id (asset_id field). The id below then picks up that response.
+@assetId = {{createAsset.response.body.id}}
+
+### 4. Duplicate create — expected: 409 Conflict with {"error": "...already exists...", "asset_id": "<existing id>"}
+POST {{baseUrl}}/assets
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "ticker": "SMEA.MI",
+  "name": "iShares Core MSCI Europe UCITS ETF EUR (Acc)",
+  "type": "etf",
+  "currency": "EUR"
+}
+
+### 5. NEW — fetch ETF exposure. The `.MI` suffix is stripped and the ISIN is
+### resolved from the ticker (expected IE00B4K48X80), then countries/regions and
+### GICS sectors are fetched from JustETF and persisted.
+# @name fetchEtfExposure
+POST {{baseUrl}}/assets/{{assetId}}/fetch-etf-exposure
+Authorization: Bearer {{token}}
+
+### 6. Confirm the asset now carries the resolved ISIN
+# @name getAsset
+GET {{baseUrl}}/assets/{{assetId}}
+Authorization: Bearer {{token}}
+
+### 7. Read the persisted exposure (regions: Europe Developed ~96.57 + Other 3.43;
+### sectors: Financials/Industrials/Health Care/...)
+# @name getExposure
+GET {{baseUrl}}/assets/{{assetId}}/exposure
+Authorization: Bearer {{token}}
