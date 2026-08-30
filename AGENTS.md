@@ -18,4 +18,6 @@
   `explore`/`general` for research or cross-cutting tasks. Do not implement
   domain work yourself when a dedicated subagent exists.
 - For manual API testing use the isolated test stack and `tests/api-test.http`
-  (VS Code REST Client), never the dev/prod stack.
+  (VS Code REST Client), never the dev/prod stack. The EPIC B allocation smoke
+  test is `tests/test-epic-b.sh` on the same isolated stack (seeds prices via
+  `tests/seed-prices.sql`, since Yahoo is disabled there).

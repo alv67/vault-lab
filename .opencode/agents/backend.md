@@ -78,7 +78,7 @@ backend/
   - POST `/assets/{id}/backfill-history`, POST `/assets/backfill-meta`
 - Portfoli: GET/POST `/portfolios`, GET/PATCH/DELETE `/portfolios/{id}`
 - Transazioni: GET/POST `/portfolios/{id}/transactions`, PATCH/DELETE `/transactions/{id}`
-- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/roi`, GET `/dashboard`
+- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/allocation/geography`, `/allocation/sector`, `/roi`, GET `/dashboard`
 - Prezzi: GET `/prices/{assetID}`, POST `/prices/refresh`
 
 ## Config & ambiente
@@ -93,6 +93,8 @@ backend/
 - DB shell: `make db-shell`
 - Test: `cd backend && go test ./...` (o dentro container: `podman run --rm -v "$PWD/backend":/app:Z -w /app golang:1.23-alpine sh -c "go build ./... && go vet ./... && go test ./..."`)
 - Test manuali API: `tests/api-test.http` (REST Client) sullo stack isolato
+- Smoke test EPIC B allocazioni: `tests/test-epic-b.sh [--step | --no-seed]` (usa prezzi seminati
+  da `tests/seed-prices.sql` — su stack test i prezzi si scrivono solo via SQL, Yahoo è disabilitato)
 
 ## Note / problemi noti
 - `portfolio_shares` è in schema ma `canAccessPortfolio` (service.go:603) non la controlla ancora — TODO da implementare

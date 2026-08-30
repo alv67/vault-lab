@@ -726,8 +726,11 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   non è ancora usata.
 - La pagina asset e gli endpoint di esposizione salvano i **pesi per-asset**
   in `asset_region_weights` e `asset_sector_weights`; gli endpoint di
-  allocazione pesata a livello portafoglio (EPIC B.6/B.7) e i widget
-  dashboard/portfolio (B.8) non sono ancora implementati.
+  allocazione pesata a livello portafoglio sono implementati:
+  `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
+  8 macro-regioni + `Other`, zero-filled) e `/allocation/sector` (EPIC B.7,
+  11 settori GICS + `Other`). I widget grafici dashboard/portfolio (B.8) sono
+  un task frontend futuro.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; si usa solo attraverso il backend
   (`POST /assets/{id}/fetch-etf-exposure`) e il suo endpoint

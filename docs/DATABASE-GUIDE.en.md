@@ -446,7 +446,9 @@ In short, who writes and who reads:
 - **The exposure tables are per-asset only**: the per-asset weights exist and
   the weighted-sum allocation **by investment class** at portfolio level is
   implemented (`GET /portfolios/{id}/allocation/class`); the weighted geo/sector
-  allocation at portfolio level (B.6/B.7) is not implemented yet.
+  allocation at portfolio level is also implemented since EPIC B.6/B.7
+  (`GET /portfolios/{id}/allocation/geography` and `/allocation/sector`,
+  8 macro-regions / 11 GICS sectors + `Other`, zero-filled).
 - **`assets.isin`**: Yahoo does not expose the ISIN in any module, but since
   B.5 the value for ETFs is **resolved automatically from the ticker** through
   the JustETF service (`POST /assets/{id}/fetch-etf-exposure` / its search

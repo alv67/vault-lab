@@ -72,8 +72,8 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 | #9  | B.3 — Country backfill (exposure via `assetProfile`) + sector backfill + ISO normalization + region mapping | Backend | ✅ implementata: country = domicilio emittente (fix cross-listing alla creazione), `geo.NormalizeCountry`/`RegionForCountry`, validazione ISO su create/update, `POST /assets/backfill-meta` che riempie E corregge i legacy (1AAPL.MI → US) — in PR #55 |
 | #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend | ✅ editor tabelle + pie chart sulla pagina asset; scrape differito a B.5 |
 | #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ✅ implementata: `python-service` (FastAPI) con search ticker/ISIN + exposure paesi/regioni e settori; backend `POST /assets/{id}/fetch-etf-exposure` con auto-resolve ISIN — in PR #55 |
-| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
-| #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
+| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ✅ implementata: 8 macro-regioni + `Other`, zero-filled — in PR #60 |
+| #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend | ✅ implementata: 11 settori GICS, zero-filled — in PR #60 |
 | #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ⏳ pianificato |
 | #44 | B.9 — FX rate history + series engine per-date | Backend | ⏳ pianificato |
 | #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack | ✅ completa |
@@ -82,7 +82,7 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 
 **Ordine di implementazione**:
 1. Data layer: B.1 → B.9 → B.3
-2. Backend: B.3 (backfill) → B.5 → B.6/B.7  <small>(B.2 chiusa: superata in B.11/B.12, residuo in B.3)</small>
+2. Backend: B.3 (backfill) → B.5 → B.6/B.7 ✅  <small>(B.2 chiusa: superata in B.11/B.12, residuo in B.3)</small>
 3. Frontend: B.10 → B.4 → B.8
 
 ### Completato in questa sessione (EPIC B, parte)
@@ -157,6 +157,22 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
 - **Endpoint** `GET /portfolios/{id}/allocation/class` (somma pesata sul valore in valuta portafoglio)
   e widget donut "Allocazione per classi" nella pagina portfolio.
 
+### B.6 + B.7 — Allocazione geo/settoriale a livello portafoglio (branch `feat/B.6-B.7-allocation`, PR #60)
+- **Endpoint** `GET /portfolios/{id}/allocation/geography` (somma pesata per **macro-regione**) e
+  `GET /portfolios/{id}/allocation/sector` (somma pesata per **settore GICS**): stessi principi di
+  `/allocation/class` (pesi per-asset da `asset_region_weights`/`asset_sector_weights` × valore in
+  valuta portafoglio, conversioni FX incluse).
+- Risultato con **8 macro-regioni (+ `Other`)** e **11 settori GICS (+ `Other`)**, zero-filled per
+  evitare buchi: bucket sempre in ordine fisso, percentuali che sommano a 100. `Other` raccoglie
+  pesi non mappabili (asset country/region o settore non riconosciuti); per i settori un peso
+  complessivo 0 finisce tutto in `Other`.
+- Porto vuoto o totale zero → righe a zero senza bucket `Other` (niente denominatori artificiali).
+- **Verifica**: e2e-unit in `backend/internal/service/service_test.go` (ETF completo, fallback stock
+  su domicilio, conversione FX, portafoglio vuoto, bucket `Other`); test manuale di smoke su stack
+  isolato `vaultlab-test` con **`tests/test-epic-b.sh`** (20 check PASS) usando prezzi seminati da
+  **`tests/seed-prices.sql`** (Yahoo è disabilitato sullo stack test, quindi i prezzi si scrivono
+  solo via SQL) e la raccolta **`tests/api-test.http`** estesa.
+
 ### Altri EPIC Fase 2
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo
 - EPIC E (#38) — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
@@ -186,6 +202,8 @@ make test-e2e        # Test end-to-end su stack isolato
 make frontend-dev    # Sviluppo frontend con hot-reload
 # Test manuali API (estensione REST Client in VS Code) sullo stack test:
 #   tests/api-test.http — richieste in ordine contro http://localhost:8081/api/v1
+# Smoke test EPIC B sulle allocazioni (stack test, porta 8081):
+#   tests/test-epic-b.sh [--step | --no-seed]
 # Per ricreare container dopo modifiche:
 podman-compose stop <service>
 podman rm <container>
