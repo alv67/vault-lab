@@ -14,6 +14,7 @@ type TransactionRepository interface {
 	FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error)
 	FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error)
 	MinDateByAsset(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]time.Time, error)
+	MinDateByCurrency(ctx context.Context) (map[string]time.Time, error)
 	CountByAsset(ctx context.Context, assetID uuid.UUID) (int64, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error)
 	Update(ctx context.Context, tx *model.Transaction) error
@@ -59,6 +60,34 @@ func (r *transactionRepo) MinDateByAsset(ctx context.Context, assetIDs []uuid.UU
 			return nil, err
 		}
 		result[id] = min
+	}
+	return result, rows.Err()
+}
+
+// MinDateByCurrency returns the earliest transaction date per asset currency
+// across all portfolios and users. Transactions carry no currency column since
+// migration 000005, so it is resolved through the joined asset.
+func (r *transactionRepo) MinDateByCurrency(ctx context.Context) (map[string]time.Time, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT a.currency, MIN(t.date::date) AS min_date
+		 FROM transactions t
+		 JOIN assets a ON a.id = t.asset_id
+		 WHERE a.currency <> ''
+		 GROUP BY a.currency`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := map[string]time.Time{}
+	for rows.Next() {
+		var currency string
+		var min time.Time
+		if err := rows.Scan(&currency, &min); err != nil {
+			return nil, err
+		}
+		result[currency] = min
 	}
 	return result, rows.Err()
 }

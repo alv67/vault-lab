@@ -168,6 +168,12 @@ type Price struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+// FXRatePoint is one daily base->quote rate in the stored FX history series.
+type FXRatePoint struct {
+	Date time.Time       `json:"date"`
+	Rate decimal.Decimal `json:"rate"`
+}
+
 type PortfolioShare struct {
 	PortfolioID uuid.UUID `json:"portfolio_id"`
 	UserID      uuid.UUID `json:"user_id"`

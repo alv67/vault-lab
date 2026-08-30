@@ -63,7 +63,8 @@ func (f *fakeExposureRepo) FindSectorsByAssets(ctx context.Context, assetIDs []u
 }
 
 type fakeFXRepo struct {
-	rates map[string]decimal.Decimal
+	rates   map[string]decimal.Decimal
+	history map[string][]model.FXRatePoint
 }
 
 func (f *fakeFXRepo) Upsert(ctx context.Context, base, quote string, rate decimal.Decimal) error {
@@ -74,6 +75,18 @@ func (f *fakeFXRepo) LatestByQuotes(ctx context.Context, quotes []string) (map[s
 }
 func (f *fakeFXRepo) FetchedAt(ctx context.Context, quote string) (*time.Time, error) {
 	return nil, nil
+}
+func (f *fakeFXRepo) UpsertHistory(ctx context.Context, base, quote string, date time.Time, rate decimal.Decimal, source string) error {
+	return nil
+}
+func (f *fakeFXRepo) MinMaxDate(ctx context.Context, base, quote string) (*time.Time, *time.Time, error) {
+	return nil, nil, nil
+}
+func (f *fakeFXRepo) RateForDate(ctx context.Context, base, quote string, date time.Time) (decimal.Decimal, error) {
+	return decimal.Zero, nil
+}
+func (f *fakeFXRepo) History(ctx context.Context, base, quote string) ([]model.FXRatePoint, error) {
+	return f.history[quote], nil
 }
 
 func newTestService(t *testing.T, p *fakePortfolioRepo, e *fakeExposureRepo, f *fakeFXRepo) *Service {
