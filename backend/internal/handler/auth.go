@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -20,9 +21,9 @@ type Handler struct {
 
 func New(svc *service.Service, jwtAuth *auth.JWTAuth) *Handler {
 	return &Handler{
-		svc: svc,
+		svc:     svc,
 		jwtAuth: jwtAuth,
-		health: NewHealthHandler(svc.Health),
+		health:  NewHealthHandler(svc.Health),
 	}
 }
 
@@ -297,6 +298,216 @@ func (h *Handler) GetAsset(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, asset)
 }
 
+func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	var patch model.AssetPatch
+	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	asset, err := h.svc.UpdateAsset(r.Context(), uid, &patch)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		if err == service.ErrInvalidAssetClass {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Error().Err(err).Msg("update asset failed")
+		respondError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	respond(w, http.StatusOK, asset)
+}
+
+func (h *Handler) GetAssetQuote(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	quote, err := h.svc.GetAssetQuote(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("get asset quote failed")
+		respondError(w, http.StatusInternalServerError, "quote failed")
+		return
+	}
+
+	respond(w, http.StatusOK, quote)
+}
+
+func (h *Handler) FetchAssetProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	asset, err := h.svc.FetchAssetProfile(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("fetch asset profile failed")
+		respondError(w, http.StatusBadGateway, "asset profile fetch failed")
+		return
+	}
+
+	respond(w, http.StatusOK, asset)
+}
+
+func (h *Handler) GetAssetExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.GetAssetExposure(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("get asset exposure failed")
+		respondError(w, http.StatusInternalServerError, "exposure failed")
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
+func (h *Handler) SaveAssetExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	var exposure model.AssetExposure
+	if err := json.NewDecoder(r.Body).Decode(&exposure); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	saved, err := h.svc.SaveAssetExposure(r.Context(), uid, &exposure)
+	if err != nil {
+		switch {
+		case err == service.ErrAssetNotFound:
+			respondError(w, http.StatusNotFound, "asset not found")
+		case err == service.ErrInvalidInput || err == service.ErrInvalidWeights:
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("save asset exposure failed")
+			respondError(w, http.StatusInternalServerError, "save failed")
+		}
+		return
+	}
+
+	respond(w, http.StatusOK, saved)
+}
+
+func (h *Handler) FetchAssetExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchAssetExposure(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("fetch asset exposure failed")
+		respondError(w, http.StatusBadGateway, "asset exposure fetch failed")
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
+func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchETFExposure(r.Context(), uid)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("fetch etf exposure failed")
+			respondError(w, http.StatusBadGateway, "etf exposure fetch failed")
+		}
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
+func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	if err := h.svc.BackfillAssetHistory(r.Context(), uid); err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("backfill asset history failed")
+		respondError(w, http.StatusInternalServerError, "backfill failed")
+		return
+	}
+
+	respond(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// BackfillAssetMeta fills missing country/sector metadata for every stock asset
+// and returns a report of the changes applied.
+func (h *Handler) BackfillAssetMeta(w http.ResponseWriter, r *http.Request) {
+	report, err := h.svc.BackfillAssetMeta(r.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("backfill asset meta failed")
+		respondError(w, http.StatusInternalServerError, "backfill failed")
+		return
+	}
+
+	respond(w, http.StatusOK, report)
+}
+
 func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	var asset model.Asset
 	if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {
@@ -306,6 +517,17 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.svc.CreateAsset(r.Context(), &asset)
 	if err != nil {
+		var dup *service.AssetExistsError
+		if errors.As(err, &dup) {
+			respond(w, http.StatusConflict, map[string]interface{}{
+				"error":    dup.Error(),
+				"asset_id": dup.Existing.ID,
+				// Same key as a successful create, so clients that read the
+				// response body id keep working on reruns (201 vs 409).
+				"id": dup.Existing.ID,
+			})
+			return
+		}
 		log.Error().Err(err).Msg("create asset failed")
 		respondError(w, http.StatusInternalServerError, "create failed")
 		return

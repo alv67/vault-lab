@@ -1,4 +1,4 @@
-COMPOSE ?= podman-compose
+COMPOSE := $(shell if command -v docker > /dev/null 2>&1 && docker compose version > /dev/null 2>&1; then echo "docker compose"; elif command -v docker-compose > /dev/null 2>&1; then echo "docker-compose"; elif command -v podman-compose > /dev/null 2>&1; then echo "podman-compose"; else echo "podman-compose"; fi)
 
 .PHONY: dev build up down reset migrate migrate-down frontend-dev
 
@@ -36,7 +36,7 @@ test-e2e: ## Run end-to-end API tests on an isolated stack (EPIC A)
 	$(COMPOSE) -p vaultlab-test -f docker-compose.test.yml up -d --build
 	@echo "Attendo il backend su http://localhost:8081..."
 	@until curl -s -o /dev/null http://localhost:8081/api/v1/health/prices; do sleep 1; done
-	./scripts/test-epic-a.sh http://localhost:8081
+	./tests/test-epic-a.sh http://localhost:8081
 	$(COMPOSE) -p vaultlab-test -f docker-compose.test.yml down -v
 
 db-shell: ## Connect to postgres

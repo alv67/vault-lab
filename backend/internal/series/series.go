@@ -34,7 +34,17 @@ func Recompute(ctx context.Context, repos *repository.Repository, portfolioID uu
 	if err != nil {
 		return err
 	}
-	rates, err := LoadRates(ctx, repos, holdings, p.Currency)
+	currencySet := map[string]bool{p.Currency: true, "USD": true}
+	for _, h := range holdings {
+		if h.Currency != "" {
+			currencySet[h.Currency] = true
+		}
+	}
+	quotes := make([]string, 0, len(currencySet))
+	for c := range currencySet {
+		quotes = append(quotes, c)
+	}
+	dr, err := LoadDateRates(ctx, repos, "USD", quotes)
 	if err != nil {
 		return err
 	}
@@ -106,7 +116,6 @@ func Recompute(ctx context.Context, repos *repository.Repository, portfolioID uu
 	for _, aid := range assetIDs {
 		assetTxs := txByAsset[aid]
 		currency := assetCurrencies[aid]
-		factor, hasFX := FxFactor(rates, currency, p.Currency)
 		st := &position.State{}
 		pos := 0
 		series := make([]model.PositionPoint, 0, len(dates))
@@ -153,6 +162,7 @@ func Recompute(ctx context.Context, repos *repository.Repository, portfolioID uu
 			for pricePos < len(priceDates) && !priceDates[pricePos].After(d) {
 				pricePos++
 			}
+			factor, hasFX := dr.Factor(currency, p.Currency, d)
 			mv := decimal.Zero
 			if st.Qty.IsPositive() && pricePos > 0 {
 				if hasFX {
@@ -271,6 +281,79 @@ func usdRate(rates map[string]decimal.Decimal, currency string) (decimal.Decimal
 	}
 	rate, ok := rates[currency]
 	return rate, ok
+}
+
+// dateRates resolves USD cross rates as of a given calendar day from the
+// persisted FX history, falling back to the latest fx_rates snapshot when a day
+// has no stored rate.
+type dateRates struct {
+	base    string
+	latest  map[string]decimal.Decimal
+	history map[string][]model.FXRatePoint
+}
+
+// LoadDateRates loads the latest USD->quote snapshot and the per-date rate
+// history for each of the given quote currencies. A missing snapshot entry is
+// not an error: such currencies simply resolve to the history or to nothing.
+func LoadDateRates(ctx context.Context, repos *repository.Repository, baseCurrency string, quotes []string) (*dateRates, error) {
+	snapshot, err := repos.FX.LatestByQuotes(ctx, quotes)
+	if err != nil {
+		return nil, err
+	}
+	d := &dateRates{
+		base:    baseCurrency,
+		latest:  snapshot,
+		history: make(map[string][]model.FXRatePoint, len(quotes)),
+	}
+	for _, q := range quotes {
+		if q == "" || q == baseCurrency {
+			continue
+		}
+		h, err := repos.FX.History(ctx, baseCurrency, q)
+		if err != nil {
+			return nil, err
+		}
+		d.history[q] = h
+	}
+	return d, nil
+}
+
+// Factor returns the factor to convert an amount from `from` to `to` as of
+// `date`, computed via USD cross rates resolved per day. It returns ok=false
+// when a needed rate cannot be resolved for that day.
+func (d *dateRates) Factor(from, to string, date time.Time) (decimal.Decimal, bool) {
+	if from == to {
+		return decimal.NewFromInt(1), true
+	}
+	usdToFrom, okFrom := d.rate(from, date)
+	if !okFrom {
+		return decimal.Zero, false
+	}
+	usdToTo, okTo := d.rate(to, date)
+	if !okTo {
+		return decimal.Zero, false
+	}
+	if usdToFrom.IsZero() {
+		return decimal.Zero, false
+	}
+	return usdToTo.Div(usdToFrom), true
+}
+
+// rate returns the USD->quote rate as of date: the last history point not
+// after the target day, or the latest snapshot when no point qualifies.
+func (d *dateRates) rate(quote string, date time.Time) (decimal.Decimal, bool) {
+	if quote == d.base || quote == "USD" {
+		return decimal.NewFromInt(1), true
+	}
+	points := d.history[quote]
+	i := sort.Search(len(points), func(i int) bool { return points[i].Date.After(date) })
+	if i > 0 {
+		return points[i-1].Rate, true
+	}
+	if rate, ok := d.latest[quote]; ok {
+		return rate, true
+	}
+	return decimal.Zero, false
 }
 
 // DayOf truncates t to its UTC calendar day.

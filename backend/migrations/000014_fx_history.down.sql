@@ -1,0 +1,2 @@
+-- DOWN
+DROP TABLE IF EXISTS fx_history;

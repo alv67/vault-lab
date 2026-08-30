@@ -29,6 +29,7 @@ type Repository struct {
 	Currency    CurrencyRepository
 	Series      SeriesRepository
 	Health      HealthRepository
+	Exposure    ExposureRepository
 }
 
 func New(db *pgxpool.Pool, lookup LookupRepository) *Repository {
@@ -45,6 +46,7 @@ func New(db *pgxpool.Pool, lookup LookupRepository) *Repository {
 		Currency:    &currencyRepo{db},
 		Series:      &seriesRepo{db},
 		Health:      &healthRepo{db},
+		Exposure:    &exposureRepo{db},
 	}
 }
 
@@ -74,6 +76,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(*Repository) error) err
 		Split:       &splitRepo{db: tx},
 		Currency:    &currencyRepo{db: tx},
 		Series:      &seriesRepo{db: tx},
+		Exposure:    &exposureRepo{db: tx},
 	}
 
 	if err := fn(rr); err != nil {

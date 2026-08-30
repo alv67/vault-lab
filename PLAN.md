@@ -4,18 +4,18 @@
 
 **VaultLab** è una webapp self-hosted pensata per homelab, multi-utente, per il tracciamento di investimenti e finanze personali.
 
-### Stack tecnologico proposto
+### Stack tecnologico
 
 | Livello | Tecnologia | Motivazione |
 |---------|-----------|-------------|
-| **Backend** | Go (con Chi/Gin) | Performance, binary singolo, container minimale, ideale per homelab |
-| **Frontend** | React + TypeScript + Vite | SPA moderna, ecosistema ricco di librerie per grafici |
-| **Database** | PostgreSQL | Dati finanziari relazionali, CTE per statistiche, estensione TimescaleDB opzionale |
-| **Cache/Jobs** | Redis | Sessioni, code per aggiornamento prezzi |
-| **Container** | Docker + docker-compose | Homelab standard |
+| **Backend** | Go 1.23 (con Chi) | Performance, binary singolo, container minimale, ideale per homelab |
+| **Frontend** | SvelteKit 2 + Svelte 5 + TypeScript + Vite | SPA moderna, runes API, routing basato su file |
+| **Database** | PostgreSQL 16 | Dati finanziari relazionali, CTE per statistiche |
+| **Cache/Jobs** | Redis 7 | Rate-limiting Yahoo, caching prezzi |
+| **Container** | Docker/Podman + Compose | Homelab standard |
 | **Auth** | JWT + refresh token | Self-hosted, no dipendenze esterne |
-| **Grafici** | Recharts / D3.js | ROI, trend, distribuzione |
-| **API Design** | RESTful (poi GraphQL opzionale) |
+| **Grafici** | ECharts 5 | ROI, trend, distribuzione |
+| **API Design** | RESTful | |
 
 ### Perché Go?
 - Binary unico, basso consumo di RAM/CPU (ideale per homelab)
@@ -27,7 +27,7 @@
 ## 2. Roadmap (fasi)
 
 ### FASE 0 — Setup progetto
-- [ ] Struttura repository (monorepo con backend Go + frontend React)
+- [x] Struttura repository (monorepo con backend Go + frontend SvelteKit)
 - [ ] Docker + docker-compose con Postgres + Redis
 - [ ] CI/CD base (GitHub Actions per build e test)
 - [ ] Task runner / Makefile per comandi comuni
@@ -45,6 +45,12 @@
 - [ ] Distribuzione per categoria industriale (GICS)
 - [ ] Grafici: andamento storico, composizione portafoglio
 - [ ] Report periodici (mensile/trimestrale)
+- [x] Pagina dettaglio asset (metadati, storico prezzi, distribuzioni geo/settoriali) — **EPIC B.10 (#45)**
+- [x] Microservizio Python per metadata ETF (JustETF scraping) — **EPIC B.5 (#11)**
+- [x] Endpoint allocazione geografica (weighted sum by region) — **EPIC B.6 (#12)**
+- [x] Endpoint allocazione settore (weighted sum by GICS) — **EPIC B.7 (#13)**
+- [x] Chart dashboard/portafoglio geo & settore (GeographyChart + SectorChart, universo equity-only + coverage) — **EPIC B.8 (#14)**
+- [x] Storico tassi di cambio (FX history, per-date nei series) — **EPIC B.9 (#44)**
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -71,10 +77,12 @@
 ```
 User         → id, email, name, password_hash, role, created_at
 Portfolio    → id, user_id, name, description, currency, created_at
-Asset        → id, isin, ticker, name, category_id, country, currency
-Category     → id, name, sector (GICS classification)
+Asset        → id, isin, ticker, name, type, asset_class, country, exchange, currency, sector, industry
 Transaction  → id, portfolio_id, asset_id, type (buy/sell), quantity, price, date, fees, notes
 Price        → id, asset_id, date, open, high, low, close, volume, source
+FxHistory    → base_currency, quote_currency, date, rate, source
+AssetRegion  → asset_id, region, weight, source
+AssetSector  → asset_id, sector, weight, source
 ```
 
 ### Finanza (Fase 4)
@@ -97,40 +105,76 @@ Goal         → id, user_id, name, target_amount, current_amount, deadline
 
 ---
 
-## 5. Struttura directory proposta
+## 5. Struttura directory
 
 ```
 vault-lab/
 ├── docker-compose.yml
 ├── Makefile
 ├── backend/
-│   ├── cmd/server/main.go
+│   ├── cmd/
+│   │   ├── server/main.go
+│   │   └── worker/main.go
 │   ├── internal/
 │   │   ├── auth/        # JWT, middleware
 │   │   ├── handler/     # HTTP handlers
 │   │   ├── model/       # Struct/entity
 │   │   ├── repository/  # DB queries
 │   │   ├── service/     # Business logic
-│   │   └── price/       # Price fetcher (Yahoo, etc.)
+│   │   ├── price/       # Price fetcher (Yahoo, etc.)
+│   │   ├── geo/         # Macro-regioni, settori GICS, mappature paese/regione
+│   │   ├── position/    # AVCO engine
+│   │   └── series/      # Materialized daily series
 │   ├── migrations/      # SQL migrations
 │   ├── go.mod
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── services/    # API client
-│   │   └── hooks/
+│   │   ├── app.html
+│   │   ├── app.css
+│   │   ├── lib/
+│   │   │   ├── components/   # Svelte 5 components
+│   │   │   ├── stores/       # State management (runes)
+│   │   │   ├── services/     # API client (fetch + JWT refresh)
+│   │   │   └── format.ts     # Number/date formatters
+│   │   └── routes/           # SvelteKit file-based routing
+│   │       ├── +page.svelte  # Dashboard
+│   │       ├── login/
+│   │       ├── assets/
+│   │       ├── portfolios/
+│   │       └── settings/
+│   ├── svelte.config.js
+│   ├── vite.config.ts
 │   ├── Dockerfile
 │   └── package.json
+├── python-service/            # FastAPI: metadata ETF da JustETF (B.5)
+│   ├── app/                   # main.py, scraper.py, schemas.py
+│   ├── tests/                 # pytest
+│   ├── Dockerfile
+│   └── requirements.txt
+├── tests/                     # test e2e su stack isolato
+│   ├── api-test.http          # collection REST Client (VS Code)
+│   └── test-epic-a.sh
 └── docs/
-    └── ARCHITECTURE.md
+    ├── BACKEND-GUIDE.en.md
+    ├── BACKEND-GUIDE.it.md
+    ├── DATABASE-GUIDE.en.md
+    └── DATABASE-GUIDE.it.md
 ```
 
 ---
 
-## Stato attuale (30 Lug 2026)
+## Stato attuale (28 Ago 2026)
 
-Fase 0 completata. Fase 1 in corso (vedi STATUS.md).
-Prossima sessione: fixare il worker prezzi (Yahoo rate-limit), completare Fase 1.
+**Release v0.1.0** pubblicata su `main` (prima release ufficiale).
+
+Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
+procede su `develop` (feature branch `feat/B.8-allocation-charts`, PR #62, e `feat/B.9-fx-history`,
+PR #61, per la parte finale EPIC B). Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
+il **backfill country/ISO** (B.3), il **microservizio Python JustETF** per l'esposizione ETF e
+l'auto-resolve ISIN (B.5), le asset class con allocazione per classi (B.11/B.12), gli **endpoint di
+allocazione geo/settore a livello portafoglio** (B.6/B.7), le **chart dashboard/portafoglio** con
+universo equity-only e metadati di copertura (B.8, #14) e lo **storico FX per-data** (B.9, #44).
+Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
+di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

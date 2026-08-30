@@ -75,7 +75,7 @@ func main() {
 		price.WithRateBudget(budget),
 		price.WithHealthRecorder(healthSvc),
 	)
-	svc := service.New(repos, jwtAuth, fetcher, cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints, cfg.StalePriceDays, healthSvc)
+	svc := service.New(repos, jwtAuth, fetcher, price.NewJustETFFetcher(cfg.PythonServiceURL), cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints, cfg.StalePriceDays, healthSvc)
 
 	h := handler.New(svc, jwtAuth)
 
@@ -167,8 +167,17 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/assets/lookup", h.LookupAsset)
 			r.Get("/assets/meta", h.GetAssetMeta)
 			r.Get("/assets/{id}", h.GetAsset)
+			r.Patch("/assets/{id}", h.UpdateAsset)
+			r.Get("/assets/{id}/quote", h.GetAssetQuote)
+			r.Post("/assets/{id}/fetch-profile", h.FetchAssetProfile)
+			r.Get("/assets/{id}/exposure", h.GetAssetExposure)
+			r.Put("/assets/{id}/exposure", h.SaveAssetExposure)
+			r.Post("/assets/{id}/fetch-exposure", h.FetchAssetExposure)
+			r.Post("/assets/{id}/fetch-etf-exposure", h.FetchETFExposure)
+			r.Post("/assets/{id}/backfill-history", h.BackfillAssetHistory)
 			r.Post("/assets", h.CreateAsset)
 			r.Post("/assets/sync", h.SyncAssets)
+			r.Post("/assets/backfill-meta", h.BackfillAssetMeta)
 			r.Delete("/assets/{id}", h.DeleteAsset)
 
 			r.Get("/portfolios", h.ListPortfolios)
@@ -187,10 +196,14 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/portfolios/{id}/summary", h.GetPortfolioSummary)
 			r.Get("/portfolios/{id}/performance", h.GetPortfolioPerformance)
 			r.Get("/portfolios/{id}/allocation", h.GetPortfolioAllocation)
+			r.Get("/portfolios/{id}/allocation/class", h.GetPortfolioClassAllocation)
+			r.Get("/portfolios/{id}/allocation/geography", h.GetPortfolioGeographyAllocation)
+			r.Get("/portfolios/{id}/allocation/sector", h.GetPortfolioSectorAllocation)
 			r.Get("/portfolios/{id}/roi", h.GetPortfolioROI)
 			r.Get("/portfolios/{id}/history", h.GetPortfolioHistory)
 
 			r.Get("/dashboard", h.GetDashboard)
+			r.Get("/dashboard/allocation", h.GetDashboardAllocation)
 
 			r.Get("/settings/currencies", h.ListCurrencies)
 			r.Post("/settings/currencies", h.CreateCurrency)

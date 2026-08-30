@@ -123,7 +123,7 @@ func (r *portfolioRepo) HeldAssets(ctx context.Context, portfolioID uuid.UUID) (
 			WHERE portfolio_id = $1 AND type = 'sell'
 			GROUP BY asset_id
 		)
-		SELECT a.id, a.ticker, a.isin, a.name, a.type, a.category_id, a.country, a.currency, a.created_at, a.price_fetched_at
+		SELECT a.id, a.ticker, a.isin, a.name, a.type, a.sector, a.asset_class, a.country, a.currency, a.created_at, a.price_fetched_at
 		FROM buy b
 		LEFT JOIN sell s ON s.asset_id = b.asset_id
 		JOIN assets a ON a.id = b.asset_id
@@ -137,7 +137,7 @@ func (r *portfolioRepo) HeldAssets(ctx context.Context, portfolioID uuid.UUID) (
 	var assets []*model.Asset
 	for rows.Next() {
 		a := &model.Asset{}
-		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.Sector, &a.AssetClass, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
@@ -152,7 +152,7 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT t.portfolio_id, t.asset_id, a.ticker, a.name, a.currency,
 			COALESCE(p.close, 0) AS last_close, (p.close IS NOT NULL) AS has_price,
-			a.country, a.category_id, a.price_fetched_at
+			a.country, a.sector, a.asset_class, a.type, a.price_fetched_at
 		FROM transactions t
 		JOIN assets a ON a.id = t.asset_id
 		LEFT JOIN LATERAL (
@@ -168,7 +168,7 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 	base := make([]*model.Holding, 0)
 	for rows.Next() {
 		h := &model.Holding{}
-		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency, &h.LastClose, &h.HasPrice, &h.Country, &h.CategoryID, &h.PriceFetchedAt); err != nil {
+		if err := rows.Scan(&h.PortfolioID, &h.AssetID, &h.Ticker, &h.Name, &h.Currency, &h.LastClose, &h.HasPrice, &h.Country, &h.Sector, &h.AssetClass, &h.Type, &h.PriceFetchedAt); err != nil {
 			return nil, err
 		}
 		base = append(base, h)

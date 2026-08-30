@@ -310,6 +310,105 @@ func (h *Handler) GetPortfolioAllocation(w http.ResponseWriter, r *http.Request)
 	respond(w, http.StatusOK, allocation)
 }
 
+func (h *Handler) GetPortfolioClassAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
+		return
+	}
+
+	allocation, err := h.svc.GetPortfolioClassAllocation(r.Context(), portfolioID)
+	if err != nil {
+		log.Error().Err(err).Msg("get class allocation failed")
+		respondError(w, http.StatusInternalServerError, "class allocation failed")
+		return
+	}
+
+	respond(w, http.StatusOK, allocation)
+}
+
+func (h *Handler) GetPortfolioGeographyAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
+		return
+	}
+
+	allocation, err := h.svc.GetPortfolioGeographyAllocation(r.Context(), portfolioID)
+	if err != nil {
+		log.Error().Err(err).Msg("get geography allocation failed")
+		respondError(w, http.StatusInternalServerError, "geography allocation failed")
+		return
+	}
+
+	respond(w, http.StatusOK, allocation)
+}
+
+func (h *Handler) GetPortfolioSectorAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
+		return
+	}
+
+	allocation, err := h.svc.GetPortfolioSectorAllocation(r.Context(), portfolioID)
+	if err != nil {
+		log.Error().Err(err).Msg("get sector allocation failed")
+		respondError(w, http.StatusInternalServerError, "sector allocation failed")
+		return
+	}
+
+	respond(w, http.StatusOK, allocation)
+}
+
 func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -417,7 +516,8 @@ func (h *Handler) GetPrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prices, err := h.svc.GetPrices(r.Context(), uid)
+	full := r.URL.Query().Get("full") == "1"
+	prices, err := h.svc.GetPrices(r.Context(), uid, full)
 	if err != nil {
 		log.Error().Err(err).Msg("get prices failed")
 		respondError(w, http.StatusInternalServerError, "get prices failed")
@@ -442,6 +542,23 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, http.StatusOK, dash)
+}
+
+func (h *Handler) GetDashboardAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashAlloc, err := h.svc.GetDashboardAllocation(r.Context(), claims.UserID)
+	if err != nil {
+		log.Error().Err(err).Msg("get dashboard allocation failed")
+		respondError(w, http.StatusInternalServerError, "dashboard allocation failed")
+		return
+	}
+
+	respond(w, http.StatusOK, dashAlloc)
 }
 
 func (h *Handler) RefreshPrices(w http.ResponseWriter, r *http.Request) {

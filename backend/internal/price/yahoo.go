@@ -24,16 +24,20 @@ type HealthRecorder interface {
 }
 
 type YahooFetcher struct {
-	repos           *repository.Repository
-	client          *http.Client
-	refreshInterval time.Duration
-	minInterval     time.Duration
-	budget          RateBudget
-	historyCooldown map[uuid.UUID]time.Time
-	splitCooldown   map[uuid.UUID]time.Time
-	throttle        *throttler
-	mu              sync.Mutex
-	health          HealthRecorder
+	repos             *repository.Repository
+	client            *http.Client
+	refreshInterval   time.Duration
+	minInterval       time.Duration
+	budget            RateBudget
+	historyCooldown   map[uuid.UUID]time.Time
+	fxHistoryCooldown map[string]time.Time
+	splitCooldown     map[uuid.UUID]time.Time
+	throttle          *throttler
+	mu                sync.Mutex
+	health            HealthRecorder
+	crumbValue        string
+	crumbCookie       string
+	crumbAt           time.Time
 }
 
 type YahooFetcherOption func(*YahooFetcher)
@@ -78,12 +82,13 @@ func (f *YahooFetcher) recordHealth(ctx context.Context, eventType, status, code
 // shared throttler (400ms minimum gap, no global budget by default).
 func NewYahooFetcher(repos *repository.Repository, refreshInterval time.Duration, opts ...YahooFetcherOption) *YahooFetcher {
 	f := &YahooFetcher{
-		repos:           repos,
-		refreshInterval: refreshInterval,
-		historyCooldown: map[uuid.UUID]time.Time{},
-		splitCooldown:   map[uuid.UUID]time.Time{},
-		minInterval:     400 * time.Millisecond,
-		budget:          NoopBudget{},
+		repos:             repos,
+		refreshInterval:   refreshInterval,
+		historyCooldown:   map[uuid.UUID]time.Time{},
+		fxHistoryCooldown: map[string]time.Time{},
+		splitCooldown:     map[uuid.UUID]time.Time{},
+		minInterval:       400 * time.Millisecond,
+		budget:            NoopBudget{},
 		client: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -179,6 +184,7 @@ type HistoryAsset struct {
 	ID     uuid.UUID
 	Ticker string
 	From   time.Time
+	Full   bool // true = backfill completo dall'inizio disponibile su Yahoo
 }
 
 // FetchAll refreshes prices for every asset in the DB that is stale and keeps
@@ -210,6 +216,7 @@ func (f *YahooFetcher) FetchAll(ctx context.Context) error {
 	for _, iss := range issues {
 		log.Warn().Str("symbol", iss.Symbol).Str("code", iss.Code).Msg(iss.Message)
 	}
+	f.EnsureFXHistory(ctx)
 	return nil
 }
 
@@ -380,6 +387,10 @@ func (f *YahooFetcher) fetchChartRange(ctx context.Context, ticker string, from,
 	return bars, nil
 }
 
+// fullHistoryStart is the period1 used for full history backfills, far enough
+// back to cover every asset Yahoo has data for.
+var fullHistoryStart = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // EnsureHistory backfills daily closes from Yahoo for the given assets so the
 // portfolio history series has market values from the first transaction to now.
 func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset) error {
@@ -396,6 +407,10 @@ func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset)
 
 		var bars []historyBar
 		switch {
+		case a.Full:
+			// Explicit full backfill from the beginning of Yahoo history,
+			// regardless of any partially stored data. No cooldown.
+			bars, err = f.fetchChartRange(ctx, a.Ticker, fullHistoryStart, now)
 		case latest == nil || earliest == nil || earliest.After(a.From.Add(30*24*time.Hour)):
 			if last, ok := f.historyCooldown[a.ID]; ok && last.Add(f.refreshInterval).After(now) {
 				continue
@@ -417,8 +432,86 @@ func (f *YahooFetcher) EnsureHistory(ctx context.Context, assets []HistoryAsset)
 				log.Warn().Err(err).Str("symbol", a.Ticker).Str("date", b.Date.Format("2006-01-02")).Msg("history save failed")
 			}
 		}
+		if a.Full {
+			if err := f.repos.Asset.MarkHistoryBackfilled(ctx, a.ID); err != nil {
+				log.Warn().Err(err).Str("symbol", a.Ticker).Msg("history backfill mark failed")
+			}
+		}
 	}
 	return nil
+}
+
+// EnsureFXHistory backfills the per-date USD->X rate history from Yahoo for
+// every enabled currency referenced by a transaction, so the series engine can
+// resolve FX rates as of each portfolio day. Failures are logged and never
+// fatal: without history the resolver falls back to the latest snapshot.
+func (f *YahooFetcher) EnsureFXHistory(ctx context.Context) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	currencies, err := f.repos.Currency.ListEnabled(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("fx history: list currencies failed")
+		return
+	}
+	minByCurrency, err := f.repos.Transaction.MinDateByCurrency(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("fx history: min transaction dates failed")
+		return
+	}
+
+	now := time.Now().UTC()
+	for _, cur := range currencies {
+		quote := cur.Code
+		if quote == "" || quote == "USD" {
+			continue
+		}
+		minDate, ok := minByCurrency[quote]
+		if !ok {
+			continue
+		}
+
+		_, latest, err := f.repos.FX.MinMaxDate(ctx, "USD", quote)
+		if err != nil {
+			log.Warn().Err(err).Str("currency", quote).Msg("fx history range failed")
+			continue
+		}
+
+		var from time.Time
+		switch {
+		case latest == nil:
+			// Full backfill from the first transaction day of this currency.
+			if last, ok := f.fxHistoryCooldown[quote]; ok && last.Add(f.refreshInterval).After(now) {
+				continue
+			}
+			from = time.Date(minDate.Year(), minDate.Month(), minDate.Day(), 0, 0, 0, 0, time.UTC)
+		case now.After(latest.Add(f.refreshInterval)):
+			if last, ok := f.fxHistoryCooldown[quote]; ok && last.Add(f.refreshInterval).After(now) {
+				continue
+			}
+			from = time.Date(latest.Year(), latest.Month(), latest.Day(), 0, 0, 0, 0, time.UTC)
+		default:
+			continue
+		}
+		f.fxHistoryCooldown[quote] = now
+
+		bars, err := f.fetchChartRange(ctx, "USD"+quote+"=X", from, now)
+		if err != nil {
+			log.Warn().Err(err).Str("currency", quote).Msg("fx history fetch failed")
+			f.recordHealth(ctx, "fx_history_fetch", "failure", issueCode(err), quote+": "+err.Error(), 0)
+			continue
+		}
+		for _, b := range bars {
+			if b.Date.Before(from) {
+				continue // bars may start earlier than the requested range
+			}
+			if err := f.repos.FX.UpsertHistory(ctx, "USD", quote, b.Date, b.Close, "yahoo"); err != nil {
+				log.Warn().Err(err).Str("currency", quote).Str("date", b.Date.Format("2006-01-02")).Msg("fx history save failed")
+			}
+		}
+		f.recordHealth(ctx, "fx_history_fetch", "success", "", quote+" history updated", 0)
+		log.Info().Str("currency", quote).Int("bars", len(bars)).Msg("fx history updated")
+	}
 }
 
 func (f *YahooFetcher) fetchSplits(ctx context.Context, ticker string) ([]model.Split, error) {

@@ -5,6 +5,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { page } from '$app/state'
+  import { resolve } from '$app/paths'
   import { toast } from '$lib/stores/toast.svelte'
   import {
     portfolioApi,
@@ -17,8 +18,17 @@
     type Transaction,
     type Asset,
   } from '$lib/services/api'
-  import { formatCurrency, formatPercent } from '$lib/format'
+  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
   import PositionChart from '$lib/components/PositionChart.svelte'
+  import ExposurePie from '$lib/components/ExposurePie.svelte'
+  import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
+  import SectorChart from '$lib/components/domain/SectorChart.svelte'
+  import {
+    type ExposureRow,
+    type PortfolioClassAllocation,
+    type PortfolioGeographyAllocation,
+    type PortfolioSectorAllocation,
+  } from '$lib/services/api'
   import { Plus, Pencil, Trash2, Download } from 'lucide-svelte'
 
   const id = $derived(page.params.id as string | undefined)
@@ -49,6 +59,12 @@
   let transactions = $state<Transaction[] | null>(null)
   let assets = $state<Asset[] | null>(null)
   let history = $state<PortfolioHistory | null>(null)
+  let classAlloc = $state<PortfolioClassAllocation | null>(null)
+  let classAllocError = $state(false)
+  let geoAlloc = $state<PortfolioGeographyAllocation | null>(null)
+  let sectorAlloc = $state<PortfolioSectorAllocation | null>(null)
+  let geoAllocError = $state(false)
+  let sectorAllocError = $state(false)
   let selectedAsset = $state('')
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
@@ -58,6 +74,12 @@
   let deleting = $state(false)
 
   const currency = $derived(portfolio?.currency || 'USD')
+  const classAllocRows = $derived<ExposureRow[]>(
+    (classAlloc?.classes ?? []).map((c) => ({
+      name: ASSET_CLASS_LABELS[c.class] ?? c.class,
+      weight: c.weight,
+    })),
+  )
   const gainLossClass = $derived(
     summary && Number(summary.gain_loss) >= 0 ? 'text-green-600' : 'text-red-600',
   )
@@ -87,6 +109,28 @@
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load portfolio'
       toast.error(message)
+    }
+
+    // L'allocazione per classi è isolata: se il backend non la espone ancora
+    // (es. asset_class non popolati) non blocca il resto della pagina.
+    try {
+      classAlloc = await portfolioApi.classAllocation(id)
+    } catch {
+      classAllocError = true
+    }
+
+    // Anche geografia e settore sono isolati: un errore qui (endpoint non
+    // disponibile o dati mancanti) non deve bloccare il resto della pagina.
+    try {
+      geoAlloc = await portfolioApi.geographyAllocation(id)
+    } catch {
+      geoAllocError = true
+    }
+
+    try {
+      sectorAlloc = await portfolioApi.sectorAllocation(id)
+    } catch {
+      sectorAllocError = true
     }
 
     try {
@@ -273,7 +317,9 @@
             {#each summary.holdings as h (h.asset_id)}
               <tr class="border-b last:border-0">
                 <td class="py-2">
-                  <span class="font-medium">{h.ticker}</span>
+                  <a href={resolve(`/assets/${h.asset_id}`)} class="font-medium text-blue-600 hover:underline">
+                    {h.ticker}
+                  </a>
                   <span class="block text-xs text-gray-500">{h.name}</span>
                 </td>
                 <td class="py-2 text-right">{h.closed ? '-' : h.qty}</td>
@@ -330,6 +376,68 @@
     {:else}
       <p class="text-sm text-gray-400">No data</p>
     {/if}
+  </div>
+
+  <div class="mb-6 rounded-xl bg-white p-4 shadow">
+    <h2 class="mb-4 font-semibold">Allocazione per classi</h2>
+    {#if classAllocError}
+      <p class="text-sm text-gray-400">Allocazione per classi non disponibile</p>
+    {:else if classAlloc && classAllocRows.length > 0}
+      <div class="flex flex-col gap-4 md:flex-row">
+        <div class="w-full md:w-1/2 lg:w-1/3">
+          <ExposurePie data={classAllocRows} title="Allocazione per classi" />
+        </div>
+        <div class="flex-1 overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead>
+              <tr class="border-b text-gray-500">
+                <th class="pb-2">Classe</th>
+                <th class="pb-2 text-right">Valore</th>
+                <th class="pb-2 text-right">Peso %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each classAlloc.classes as c (c.class)}
+                <tr class="border-b last:border-0">
+                  <td class="py-2 font-medium">{ASSET_CLASS_LABELS[c.class] ?? c.class}</td>
+                  <td class="py-2 text-right">
+                    {formatCurrency(c.value, classAlloc.currency)}
+                  </td>
+                  <td class="py-2 text-right font-medium">
+                    {formatPercent(c.weight)}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {:else}
+      <p class="text-sm text-gray-400">Nessuna allocazione per classi</p>
+    {/if}
+  </div>
+
+  <div class="mb-6 flex flex-col gap-4 md:flex-row">
+    <div class="w-full md:w-1/2">
+      {#if geoAllocError}
+        <div class="rounded-xl bg-white p-4 shadow">
+          <h2 class="mb-4 font-semibold">Allocazione geografica</h2>
+          <p class="text-sm text-gray-400">Allocazione geografica non disponibile</p>
+        </div>
+      {:else}
+        <GeographyChart data={geoAlloc?.regions ?? []} {currency} covered={geoAlloc?.covered_value} excluded={geoAlloc?.excluded_value} />
+      {/if}
+    </div>
+    <div class="w-full md:w-1/2">
+      {#if sectorAllocError}
+        <div class="rounded-xl bg-white p-4 shadow">
+          <h2 class="mb-4 font-semibold">Allocazione settoriale</h2>
+          <p class="text-sm text-gray-400">Allocazione settoriale non disponibile</p>
+        </div>
+      {:else}
+        <SectorChart data={sectorAlloc?.sectors ?? []} {currency} covered={sectorAlloc?.covered_value} excluded={sectorAlloc?.excluded_value} />
+      {/if}
+    </div>
   </div>
 
   <div class="mb-4 flex items-center gap-2">

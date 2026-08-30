@@ -7,10 +7,14 @@ Track your investments, monitor asset performance, and gain insights into your f
 ## Features
 
 - **Multi-user** — Family-friendly with role-based access (owner, admin, editor, viewer)
-- **Portfolio management** — Multiple portfolios per user, shared access
-- **Asset tracking** — Stocks, ETFs, bonds, crypto, commodities with auto-complete via Yahoo Finance lookup
-- **Transaction history** — Buy, sell, dividends with multi-currency support
-- **Dashboard** — Portfolio value, gain/loss, asset allocation, performance charts, ROI by asset
+- **Portfolio management** — Multiple portfolios per user, export/import, ownership enforced on all endpoints
+- **Asset tracking** — Stocks, ETFs, bonds, crypto, commodities with auto-complete and sync via Yahoo Finance
+- **Asset detail page** — Editable metadata (exchange, ISIN), full price history with backfill, and editable geographic/sector exposure with charts
+- **ETF exposure from JustETF** — a Python microservice resolves the ISIN from a ticker and fetches full country/region + GICS sector weights (`POST /assets/{id}/fetch-etf-exposure`)
+- **Transaction history** — Buy, sell, dividends, splits, fees with multi-currency support
+- **Dashboard** — Portfolio value, gain/loss, allocation, performance charts, ROI by asset
+- **Market prices** — Yahoo Finance with Redis caching, rate-limit/backoff, series materialization, price health dashboard
+- **Data quality** — Summary exposes staleness / missing-country / missing-sector / missing-FX metrics
 - **Self-contained** — Everything runs via `podman-compose up`
 
 ## Tech Stack
@@ -18,11 +22,12 @@ Track your investments, monitor asset performance, and gain insights into your f
 | Layer | Technology |
 |-------|-----------|
 | Backend | Go 1.23, Chi router, pgx (PostgreSQL), golang-migrate |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Recharts |
+| Frontend | SvelteKit 5, TypeScript, Tailwind CSS, ECharts |
+| ETF metadata | Python microservice (FastAPI, requests, BeautifulSoup) — JustETF scraping |
 | Database | PostgreSQL 16 |
 | Cache | Redis 7 |
 | Container | Docker / Podman + Compose |
-| Auth | JWT (access + refresh tokens) |
+| Auth | JWT (access + refresh tokens, rotation) |
 
 ## Quick Start
 
@@ -34,10 +39,25 @@ Then open http://localhost:3000.
 
 > Requires Podman (or Docker) with Compose support.
 
+## Testing
+
+```bash
+make test-e2e        # End-to-end API tests on an isolated stack (no data pollution)
+make test            # Go unit tests (inside the backend container)
+cd python-service && python3 -m pytest   # ETF microservice tests
+```
+
+Manual API testing against the isolated test stack (port 8081): open
+[`tests/api-test.http`](tests/api-test.http) with the VS Code **REST Client** extension
+and send the requests in order.
+
 ## Project Status
 
-Active development — Phase 1 (core investment tracking) in progress.  
-See the [`develop`](https://github.com/alv67/vault-lab/tree/develop) branch for source code.
+Releases on [`main`](https://github.com/alv67/vault-lab/tree/main): **v0.1.0** (25 Aug 2026,
+first official release) and **v0.2.0** (30 Aug 2026, EPIC A — data correctness & security —
+and EPIC B — geographic/sector distribution, asset classes, FX history, charts).
+
+Active development on the [`develop`](https://github.com/alv67/vault-lab/tree/develop) branch — see [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md) for the roadmap.
 
 ## License
 

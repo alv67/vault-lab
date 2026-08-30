@@ -29,10 +29,13 @@
   async function fetchHealth() {
       loading = true;
       try {
-          const data = await api.get<{ summary: HealthSummary; events: HealthEvent[] }>('/health/prices');
+          const data = (await api.get('/health/prices')) as {
+              summary: HealthSummary;
+              events: HealthEvent[];
+          };
           summary = data.summary;
           events = data.events ?? [];
-      } catch (err) {
+      } catch {
           toast.error('Failed to fetch health data');
       } finally {
           loading = false;
@@ -116,7 +119,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {#each events as event}
+                        {#each events as event (event.id)}
                             <tr class="border-b last:border-0 hover:bg-gray-50">
                                 <td class="px-6 py-4 text-gray-600">
                                     {new Date(event.created_at).toLocaleString()}

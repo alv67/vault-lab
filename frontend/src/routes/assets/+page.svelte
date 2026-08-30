@@ -1,15 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { resolve } from '$app/paths'
   import { toast } from '$lib/stores/toast.svelte'
   import { assetApi, settingsApi, type Asset, type AssetLookupResult, type Currency } from '$lib/services/api'
   import { Plus, Loader2, Search, Trash2 } from 'lucide-svelte'
 
   const defaultForm = () => ({
     ticker: '',
+    isin: '',
     name: '',
     type: 'stock' as string,
     currency: 'USD',
     country: '',
+    exchange: '',
+    asset_class: '',
   })
 
   let showCreate = $state(false)
@@ -70,10 +74,13 @@
   async function selectSuggestion(result: AssetLookupResult): Promise<void> {
     form = {
       ticker: result.ticker,
+      isin: form.isin,
       name: result.name || '',
       type: result.type || 'stock',
       currency: result.currency || 'USD',
       country: '',
+      exchange: result.exchange || '',
+      asset_class: '',
     }
     selectedTicker = true
     showSuggestions = false
@@ -86,6 +93,8 @@
         type: meta.type || form.type,
         currency: meta.currency || form.currency,
         country: meta.country || form.country,
+        exchange: meta.exchange || form.exchange,
+        asset_class: meta.asset_class || '',
       }
     } catch {
       // keep lookup defaults; currency/type remain editable
@@ -198,6 +207,12 @@
           bind:value={form.name}
           class="rounded-lg border px-3 py-2 text-sm"
         />
+        <input
+          type="text"
+          placeholder="ISIN (optional)"
+          bind:value={form.isin}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
         <select
           bind:value={form.type}
           class="rounded-lg border px-3 py-2 text-sm"
@@ -217,6 +232,12 @@
             <option value={c.code}>{c.code}</option>
           {/each}
         </select>
+        <input
+          type="text"
+          placeholder="Exchange"
+          bind:value={form.exchange}
+          class="rounded-lg border px-3 py-2 text-sm"
+        />
       </div>
       <button
         onclick={createAsset}
@@ -245,7 +266,9 @@
       <tbody>
         {#each assets ?? [] as a (a.id)}
           <tr class="border-b last:border-0">
-            <td class="py-2 font-medium">{a.ticker}</td>
+            <td class="py-2 font-medium">
+              <a href={resolve(`/assets/${a.id}`)} class="text-blue-600 hover:underline">{a.ticker}</a>
+            </td>
             <td class="py-2 text-gray-600">{a.name}</td>
             <td class="py-2">
               <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs">

@@ -11,14 +11,19 @@ import (
 	"github.com/amelamela/vault-lab/internal/model"
 )
 
+const assetColumns = "id, ticker, isin, name, type, asset_class, country, currency, exchange, sector, industry, created_at, price_fetched_at, history_backfilled"
+
 type AssetRepository interface {
 	Create(ctx context.Context, asset *model.Asset) (*model.Asset, error)
+	Update(ctx context.Context, asset *model.Asset) (*model.Asset, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, error)
 	FindByTicker(ctx context.Context, ticker string) (*model.Asset, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error)
 	Search(ctx context.Context, query string) ([]*model.Asset, error)
 	List(ctx context.Context) ([]*model.Asset, error)
+	AllStocks(ctx context.Context) ([]*model.Asset, error)
 	MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error
+	MarkHistoryBackfilled(ctx context.Context, id uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	Currencies(ctx context.Context) ([]string, error)
 }
@@ -30,11 +35,27 @@ type assetRepo struct {
 func (r *assetRepo) Create(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
 	a := &model.Asset{}
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO assets (ticker, isin, name, type, category_id, country, currency)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at`,
-		asset.Ticker, asset.ISIN, asset.Name, asset.Type, asset.CategoryID, asset.Country, asset.Currency,
-	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt)
+		`INSERT INTO assets (ticker, isin, name, type, asset_class, country, currency, exchange, sector, industry)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 RETURNING `+assetColumns,
+		asset.Ticker, asset.ISIN, asset.Name, asset.Type, asset.AssetClass, asset.Country, asset.Currency,
+		asset.Exchange, asset.Sector, asset.Industry,
+	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func (r *assetRepo) Update(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	a := &model.Asset{}
+	err := r.db.QueryRow(ctx,
+		`UPDATE assets SET ticker=$1, isin=$2, name=$3, type=$4, asset_class=$5, country=$6, currency=$7, exchange=$8, sector=$9, industry=$10
+		 WHERE id=$11
+		 RETURNING `+assetColumns,
+		asset.Ticker, asset.ISIN, asset.Name, asset.Type, asset.AssetClass, asset.Country, asset.Currency,
+		asset.Exchange, asset.Sector, asset.Industry, asset.ID,
+	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled)
 	if err != nil {
 		return nil, err
 	}
@@ -44,9 +65,9 @@ func (r *assetRepo) Create(ctx context.Context, asset *model.Asset) (*model.Asse
 func (r *assetRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
 	a := &model.Asset{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at FROM assets WHERE id = $1`,
+		`SELECT `+assetColumns+` FROM assets WHERE id = $1`,
 		id,
-	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt)
+	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled)
 	if err != nil {
 		return nil, err
 	}
@@ -56,10 +77,9 @@ func (r *assetRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, e
 func (r *assetRepo) FindByTicker(ctx context.Context, ticker string) (*model.Asset, error) {
 	a := &model.Asset{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at
-		 FROM assets WHERE ticker = $1`,
+		`SELECT `+assetColumns+` FROM assets WHERE ticker = $1`,
 		ticker,
-	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt)
+	).Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
@@ -74,8 +94,7 @@ func (r *assetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.As
 		return nil, nil
 	}
 	rows, err := r.db.Query(ctx,
-		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at
-		 FROM assets WHERE id = ANY($1::uuid[])`,
+		`SELECT `+assetColumns+` FROM assets WHERE id = ANY($1::uuid[])`,
 		ids,
 	)
 	if err != nil {
@@ -86,7 +105,7 @@ func (r *assetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.As
 	var assets []*model.Asset
 	for rows.Next() {
 		a := &model.Asset{}
-		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
@@ -96,8 +115,7 @@ func (r *assetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.As
 
 func (r *assetRepo) Search(ctx context.Context, query string) ([]*model.Asset, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at
-		 FROM assets WHERE ticker ILIKE $1 OR name ILIKE $1 LIMIT 20`,
+		`SELECT `+assetColumns+` FROM assets WHERE ticker ILIKE $1 OR name ILIKE $1 LIMIT 20`,
 		"%"+query+"%",
 	)
 	if err != nil {
@@ -108,7 +126,7 @@ func (r *assetRepo) Search(ctx context.Context, query string) ([]*model.Asset, e
 	var assets []*model.Asset
 	for rows.Next() {
 		a := &model.Asset{}
-		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
@@ -118,7 +136,7 @@ func (r *assetRepo) Search(ctx context.Context, query string) ([]*model.Asset, e
 
 func (r *assetRepo) List(ctx context.Context) ([]*model.Asset, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, ticker, isin, name, type, category_id, country, currency, created_at, price_fetched_at FROM assets ORDER BY ticker`,
+		`SELECT `+assetColumns+` FROM assets ORDER BY ticker`,
 	)
 	if err != nil {
 		return nil, err
@@ -128,12 +146,34 @@ func (r *assetRepo) List(ctx context.Context) ([]*model.Asset, error) {
 	var assets []*model.Asset
 	for rows.Next() {
 		a := &model.Asset{}
-		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.CategoryID, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
 			return nil, err
 		}
 		assets = append(assets, a)
 	}
 	return assets, nil
+}
+
+// AllStocks returns every stock asset, the candidates for the metadata
+// backfill (which also corrects legacy country/sector values).
+func (r *assetRepo) AllStocks(ctx context.Context) ([]*model.Asset, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+assetColumns+` FROM assets WHERE type = 'stock' ORDER BY ticker`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var assets []*model.Asset
+	for rows.Next() {
+		a := &model.Asset{}
+		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
+			return nil, err
+		}
+		assets = append(assets, a)
+	}
+	return assets, rows.Err()
 }
 
 func (r *assetRepo) MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error {
@@ -144,6 +184,11 @@ func (r *assetRepo) MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at t
 		`UPDATE assets SET price_fetched_at = $1 WHERE id = ANY($2::uuid[])`,
 		at, ids,
 	)
+	return err
+}
+
+func (r *assetRepo) MarkHistoryBackfilled(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE assets SET history_backfilled = TRUE WHERE id = $1`, id)
 	return err
 }
 

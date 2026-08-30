@@ -6,9 +6,11 @@
   import { onMount } from 'svelte'
   import { SvelteSet } from 'svelte/reactivity'
   import { resolve } from '$app/paths'
-  import { portfolioApi, pricesApi, type Dashboard } from '$lib/services/api'
+  import { portfolioApi, pricesApi, type Dashboard, type DashboardAllocation } from '$lib/services/api'
   import { toast } from '$lib/stores/toast.svelte'
   import PortfolioLineChart from '$lib/components/PortfolioLineChart.svelte'
+  import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
+  import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { ChevronDown, ChevronRight } from 'lucide-svelte'
 
@@ -18,6 +20,7 @@
   ]
 
   let dash = $state<Dashboard | null>(null)
+  let alloc = $state<DashboardAllocation | null>(null)
   let loading = $state(true)
   let expanded = new SvelteSet<string>()
   let initialized = false
@@ -33,6 +36,14 @@
       dash = null
     } finally {
       loading = false
+    }
+
+    // L'allocazione complessiva geo/settore è isolata: se l'endpoint non è
+    // disponibile la card viene omessa senza bloccare il resto della dashboard.
+    try {
+      alloc = await portfolioApi.dashboardAllocation()
+    } catch {
+      alloc = null
     }
 
     if (!sessionRefreshed) {
@@ -107,6 +118,18 @@
           <PortfolioLineChart data={chartData} histories={dash.history} colors={COLORS} />
         {:else}
           <p class="text-sm text-gray-400">No price history yet</p>
+        {/if}
+      </div>
+
+      <div class="rounded-xl bg-white p-4 shadow">
+        <h2 class="mb-4 font-semibold">Allocazione complessiva</h2>
+        {#if alloc == null}
+          <p class="text-sm text-gray-400">Allocazione non disponibile</p>
+        {:else}
+          <div class="grid gap-4 md:grid-cols-2">
+            <GeographyChart data={alloc.regions} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
+            <SectorChart data={alloc.sectors} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
+          </div>
         {/if}
       </div>
 
@@ -220,7 +243,11 @@
                   <tbody>
                     {#each pa.assets as a (a.asset_id)}
                       <tr class="border-b last:border-0">
-                        <td class="py-2 font-medium">{a.ticker}</td>
+                        <td class="py-2 font-medium">
+                          <a href={resolve(`/assets/${a.asset_id}`)} class="text-blue-600 hover:underline">
+                            {a.ticker}
+                          </a>
+                        </td>
                         <td class="py-2 text-gray-600">{a.name}</td>
                         <td class="py-2">
                           {a.currency}
