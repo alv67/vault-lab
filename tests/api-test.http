@@ -85,3 +85,26 @@ Authorization: Bearer {{token}}
 # @name getExposure
 GET {{baseUrl}}/assets/{{assetId}}/exposure
 Authorization: Bearer {{token}}
+
+# Set this to an existing portfolio id (created manually or via the UI/DB) before
+# running requests 8-10. It must hold at least one ETF (e.g. SMEA.MI) to see the
+# stored exposure weights flow into the portfolio-level regions and sectors.
+@portfolioId = 00000000-0000-0000-0000-000000000000
+
+### 8. Portfolio class allocation (baseline to reconcile with geography/sector)
+# @name classAllocation
+GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/class
+Authorization: Bearer {{token}}
+
+### 9. NEW — Portfolio geographic allocation: 8 canonical regions zero-filled, in
+### canonical order; "Other" only when a value could not be assigned. Weights sum
+### to ~100 (FX-ok holdings are the denominator, matching /allocation/class).
+# @name geographyAllocation
+GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/geography
+Authorization: Bearer {{token}}
+
+### 10. NEW — Portfolio sector allocation: 11 canonical GICS sectors zero-filled,
+### in canonical order; "Other" only when a value could not be assigned.
+# @name sectorAllocation
+GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/sector
+Authorization: Bearer {{token}}
