@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/amelamela/vault-lab/internal/auth"
@@ -40,7 +41,17 @@ var (
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
 	ErrInvalidAssetClass  = errors.New("invalid asset class")
 	ErrNotETF             = errors.New("asset is not an ETF")
+	ErrAssetExists        = errors.New("asset with this ticker already exists")
 )
+
+// AssetExistsError reports a duplicate ticker during creation and carries
+// the already-stored asset so callers can surface its id.
+type AssetExistsError struct {
+	Existing *model.Asset
+}
+
+func (e *AssetExistsError) Error() string { return fmt.Sprintf("%s: %s", ErrAssetExists, e.Existing.Ticker) }
+func (e *AssetExistsError) Unwrap() error { return ErrAssetExists }
 
 // assetClasses is the allowed set for asset_class plus a helper to derive a
 // default class from the asset type.
@@ -257,8 +268,26 @@ func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.A
 			return nil, fmt.Errorf("%w: invalid country", ErrInvalidInput)
 		}
 	}
+	existing, err := s.repos.Asset.FindByTicker(ctx, asset.Ticker)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, &AssetExistsError{Existing: existing}
+	}
+
 	created, err := s.repos.Asset.Create(ctx, asset)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			existing, lookupErr := s.repos.Asset.FindByTicker(ctx, asset.Ticker)
+			if lookupErr != nil {
+				return nil, err
+			}
+			if existing != nil {
+				return nil, &AssetExistsError{Existing: existing}
+			}
+		}
 		return nil, err
 	}
 	s.syncAssetBackground(created.ID)

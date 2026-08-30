@@ -517,6 +517,14 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.svc.CreateAsset(r.Context(), &asset)
 	if err != nil {
+		var dup *service.AssetExistsError
+		if errors.As(err, &dup) {
+			respond(w, http.StatusConflict, map[string]interface{}{
+				"error":    dup.Error(),
+				"asset_id": dup.Existing.ID,
+			})
+			return
+		}
 		log.Error().Err(err).Msg("create asset failed")
 		respondError(w, http.StatusInternalServerError, "create failed")
 		return
