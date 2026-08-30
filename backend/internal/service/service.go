@@ -650,44 +650,29 @@ func (s *Service) resolveETFISIN(ctx context.Context, asset *model.Asset) (strin
 // canonical region and GICS sector in canonical order, overlaid with the stored
 // weights and the stock defaults when nothing is stored.
 func (s *Service) buildExposure(asset *model.Asset, regions, sectors []model.ExposureRow) *model.AssetExposure {
-	out := &model.AssetExposure{
-		Regions: make([]model.ExposureRow, 0, len(geo.Regions)),
-		Sectors: make([]model.ExposureRow, 0, len(geo.GICSSectors)),
+	return &model.AssetExposure{
+		Regions: canonicalExposureRows(geo.Regions, regions, asset.Type == model.AssetTypeStock, geo.RegionForCountry(asset.Country)),
+		Sectors: canonicalExposureRows(geo.GICSSectors, sectors, asset.Type == model.AssetTypeStock, geo.NormalizeSector(asset.Sector)),
 	}
+}
 
-	regionWeights := make(map[string]decimal.Decimal, len(regions))
-	for _, r := range regions {
-		regionWeights[r.Name] = r.Weight
+// canonicalExposureRows returns one dimension of the complete canonical
+// exposure for an asset: every canonical name in order with its stored weight
+// (zero when absent), or a single 100% default for stocks with no stored rows.
+func canonicalExposureRows(names []string, stored []model.ExposureRow, isStock bool, defaultName string) []model.ExposureRow {
+	weights := make(map[string]decimal.Decimal, len(stored))
+	for _, r := range stored {
+		weights[r.Name] = r.Weight
 	}
-	for _, name := range geo.Regions {
-		out.Regions = append(out.Regions, model.ExposureRow{Name: name, Weight: regionWeights[name]})
+	out := make([]model.ExposureRow, 0, len(names))
+	for _, name := range names {
+		out = append(out, model.ExposureRow{Name: name, Weight: weights[name]})
 	}
-
-	sectorWeights := make(map[string]decimal.Decimal, len(sectors))
-	for _, r := range sectors {
-		sectorWeights[r.Name] = r.Weight
-	}
-	for _, name := range geo.GICSSectors {
-		out.Sectors = append(out.Sectors, model.ExposureRow{Name: name, Weight: sectorWeights[name]})
-	}
-
-	if asset.Type == model.AssetTypeStock {
-		if len(regions) == 0 {
-			region := geo.RegionForCountry(asset.Country)
-			for i := range out.Regions {
-				if out.Regions[i].Name == region {
-					out.Regions[i].Weight = decimal.NewFromInt(100)
-					break
-				}
-			}
-		}
-		if len(sectors) == 0 && asset.Sector != "" {
-			sector := geo.NormalizeSector(asset.Sector)
-			for i := range out.Sectors {
-				if out.Sectors[i].Name == sector {
-					out.Sectors[i].Weight = decimal.NewFromInt(100)
-					break
-				}
+	if isStock && len(stored) == 0 && defaultName != "" {
+		for i := range out {
+			if out[i].Name == defaultName {
+				out[i].Weight = decimal.NewFromInt(100)
+				break
 			}
 		}
 	}
@@ -1224,6 +1209,132 @@ func (s *Service) GetPortfolioClassAllocation(ctx context.Context, portfolioID u
 		}
 		return &model.PortfolioClassAllocation{Currency: p.Currency, Classes: classes}, nil
 	})
+}
+
+func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioGeographyAllocation, error) {
+	return cached(s.cache, ctx, "allocation-geography", portfolioID.String(), cacheTTLStats, false, func() (*model.PortfolioGeographyAllocation, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, p.Currency)
+		if err != nil {
+			return nil, err
+		}
+		exposures, err := s.repos.Exposure.FindRegionsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+		buckets, total := buildBuckets(holdings, rates, p.Currency, geo.Regions, exposures,
+			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
+		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
+		for _, name := range geo.Regions {
+			regions = append(regions, &model.RegionAllocation{Region: name, Value: buckets[name]})
+		}
+		if buckets["Other"].IsPositive() {
+			regions = append(regions, &model.RegionAllocation{Region: "Other", Value: buckets["Other"]})
+		}
+		for _, e := range regions {
+			if total.IsPositive() {
+				e.Weight = e.Value.Div(total).Mul(decimal.NewFromInt(100))
+			}
+		}
+		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions}, nil
+	})
+}
+
+func (s *Service) GetPortfolioSectorAllocation(ctx context.Context, portfolioID uuid.UUID) (*model.PortfolioSectorAllocation, error) {
+	return cached(s.cache, ctx, "allocation-sector", portfolioID.String(), cacheTTLStats, false, func() (*model.PortfolioSectorAllocation, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, p.Currency)
+		if err != nil {
+			return nil, err
+		}
+		exposures, err := s.repos.Exposure.FindSectorsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+		buckets, total := buildBuckets(holdings, rates, p.Currency, geo.GICSSectors, exposures,
+			func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) })
+		sectors := make([]*model.SectorAllocation, 0, len(geo.GICSSectors)+1)
+		for _, name := range geo.GICSSectors {
+			sectors = append(sectors, &model.SectorAllocation{Sector: name, Value: buckets[name]})
+		}
+		if buckets["Other"].IsPositive() {
+			sectors = append(sectors, &model.SectorAllocation{Sector: "Other", Value: buckets["Other"]})
+		}
+		for _, e := range sectors {
+			if total.IsPositive() {
+				e.Weight = e.Value.Div(total).Mul(decimal.NewFromInt(100))
+			}
+		}
+		return &model.PortfolioSectorAllocation{Currency: p.Currency, Sectors: sectors}, nil
+	})
+}
+
+// holdingAssetIDs returns the parsed asset ids of the holdings, skipping any
+// that fail to parse.
+func holdingAssetIDs(holdings []*model.Holding) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(holdings))
+	for _, h := range holdings {
+		if id, err := uuid.Parse(h.AssetID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// buildBuckets aggregates the weighted value of the holdings across one
+// canonical exposure dimension. Every canonical name in order is keyed in the
+// returned map (zero when nothing maps), and any value that could not be
+// assigned lands in "Other".
+func buildBuckets(holdings []*model.Holding, rates map[string]decimal.Decimal, currency string, names []string, exposures map[string][]model.ExposureRow, defaultName func(*model.Holding) string) (map[string]decimal.Decimal, decimal.Decimal) {
+	byBucket := make(map[string]decimal.Decimal, len(names)+1)
+	for _, name := range names {
+		byBucket[name] = decimal.Zero
+	}
+	var total decimal.Decimal
+	for _, h := range holdings {
+		if !h.Qty.IsPositive() || !h.HasPrice {
+			continue
+		}
+		value := h.Qty.Mul(h.LastClose)
+		factor, ok := series.FxFactor(rates, h.Currency, currency)
+		if !ok {
+			continue
+		}
+		value = value.Mul(factor)
+		if !value.IsPositive() {
+			continue
+		}
+		total = total.Add(value)
+
+		isStock := h.Type == model.AssetTypeStock
+		rows := canonicalExposureRows(names, exposures[h.AssetID], isStock, defaultName(h))
+		var sum decimal.Decimal
+		for _, r := range rows {
+			sum = sum.Add(r.Weight)
+		}
+		if !sum.IsPositive() {
+			byBucket["Other"] = byBucket["Other"].Add(value)
+			continue
+		}
+		for _, r := range rows {
+			byBucket[r.Name] = byBucket[r.Name].Add(value.Mul(r.Weight).Div(decimal.NewFromInt(100)))
+		}
+	}
+	return byBucket, total
 }
 
 func (s *Service) GetPortfolioPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error) {
