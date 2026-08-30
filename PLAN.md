@@ -47,7 +47,7 @@
 - [ ] Report periodici (mensile/trimestrale)
 - [ ] Storico tassi di cambio (FX history, per-date nei series)
 - [x] Pagina dettaglio asset (metadati, storico prezzi, distribuzioni geo/settoriali) — **EPIC B.10 (#45)**
-- [ ] Microservizio Python per metadata ETF (JustETF scraping) — **EPIC B.5 (#11)**
+- [x] Microservizio Python per metadata ETF (JustETF scraping) — **EPIC B.5 (#11)**
 - [ ] Endpoint allocazione geografica (weighted sum by region) — **EPIC B.6 (#12)**
 - [ ] Endpoint allocazione settore (weighted sum by GICS) — **EPIC B.7 (#13)**
 
@@ -146,6 +146,14 @@ vault-lab/
 │   ├── vite.config.ts
 │   ├── Dockerfile
 │   └── package.json
+├── python-service/            # FastAPI: metadata ETF da JustETF (B.5)
+│   ├── app/                   # main.py, scraper.py, schemas.py
+│   ├── tests/                 # pytest
+│   ├── Dockerfile
+│   └── requirements.txt
+├── tests/                     # test e2e su stack isolato
+│   ├── api-test.http          # collection REST Client (VS Code)
+│   └── test-epic-a.sh
 └── docs/
     ├── BACKEND-GUIDE.en.md
     ├── BACKEND-GUIDE.it.md
@@ -160,13 +168,11 @@ vault-lab/
 **Release v0.1.0** pubblicata su `main` (prima release ufficiale).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
-procede su `develop` (feature branch `feat/B.10-asset-detail` per la parte EPIC B completata).
-Realizzate le parti di EPIC B afferenti alla **pagina dettaglio asset** (#45) e ai relativi
-layer dati/backend (asset meta, exposure geo/settore, storico prezzi completo). Restano da
-completare in EPIC B: B.5 (microservizio JustETF), B.6/B.7 (endpoint allocazione geo/settore),
-B.8 (chart dashboard/portfolio), B.9 (FX history) e il seed GICS/populate `assets.sector` (B.2/B.3).
-Fatte intanto B.11/B.12 (asset class: colonna `asset_class`, auto-detect Yahoo, endpoint e donut
-"allocazione per classi") e rimossa la vecchia classificazione `category_id`/`categories`.
+procede su `develop` (feature branch `feat/B.3-B.5-meta-backfill` per l'ultima parte EPIC B,
+PR #55 open). Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10), il **backfill
+country/ISO** (B.3), il **microservizio Python JustETF** per l'esposizione ETF e l'auto-resolve
+ISIN (B.5), e le asset class con allocazione per classi (B.11/B.12). Restano da completare in
+EPIC B: B.6/B.7 (endpoint allocazione geo/settore), B.8 (chart dashboard/portfolio), B.9 (FX history).
 Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
 di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

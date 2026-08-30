@@ -266,7 +266,8 @@ For each security, how much of its value is distributed among the **macro-region
 (North America, Europe, Asia...). One row per `asset_id + region`; the weights
 of the same security should ideally sum to 100%. For a single stock this is a
 single row (the country mapped to its region at 100%); for an ETF it is a mix
-entered by hand or fetched later by the Python service.
+entered by hand, fetched from Yahoo, or — since B.5 — downloaded completely
+from JustETF (`POST /assets/{id}/fetch-etf-exposure`).
 
 | Column | Type | Explanation |
 |---|---|---|
@@ -423,7 +424,10 @@ In short, who writes and who reads:
   `transactions`.
 - **The exposure** (`asset_region_weights`, `asset_sector_weights`) is edited
   from the asset detail page, or fetched from Yahoo for the sector weights of
-  an ETF when the user clicks "Aggiorna da Yahoo".
+  an ETF when the user clicks "Aggiorna da Yahoo". Since B.5, the **complete**
+  country/region and sector exposure of an ETF can be downloaded automatically
+  from JustETF through the `python-service`
+  (`POST /assets/{id}/fetch-etf-exposure`).
 - **The currency whitelist** is managed by the administrator via the API in
   `supported_currencies` (chapter 11 of the guide).
 
@@ -443,6 +447,8 @@ In short, who writes and who reads:
   the weighted-sum allocation **by investment class** at portfolio level is
   implemented (`GET /portfolios/{id}/allocation/class`); the weighted geo/sector
   allocation at portfolio level (B.6/B.7) is not implemented yet.
-- **`assets.isin` is not fetched automatically**: Yahoo does not expose the
-  ISIN, so the value is kept manually on the asset page until a future source
-  (Python/JustETF) is added.
+- **`assets.isin`**: Yahoo does not expose the ISIN in any module, but since
+  B.5 the value for ETFs is **resolved automatically from the ticker** through
+  the JustETF service (`POST /assets/{id}/fetch-etf-exposure` / its search
+  endpoint) and persisted on the asset; it remains manually editable as a
+  fallback.

@@ -1,48 +1,42 @@
 ---
-description: Esperto frontend di VaultLab — SvelteKit, TypeScript, Tailwind, grafici. La UI attuale è in React 19 ed è in migrazione verso SvelteKit.
+description: Esperto frontend di VaultLab — SvelteKit, TypeScript, Tailwind, grafici.
 mode: subagent
 ---
 
 Sei l'esperto frontend di **VaultLab**, una webapp self-hosted per il
-tracciamento di investimenti. Stack **target**: SvelteKit (Svelte 5),
-TypeScript, Tailwind CSS, grafici (Recharts in React, da sostituire in Svelte).
+tracciamento di investimenti. Stack **attuale**: SvelteKit (Svelte 5),
+TypeScript, Tailwind CSS, ECharts.
 
-> **Stato migrazione**: il frontend attuale è React 19 + Vite + TypeScript +
-> Tailwind + Recharts + react-router-dom + axios + TanStack Query. La direzione
-> è migrare verso SvelteKit. Lavora con codice idiomatico SvelteKit/Svelte 5,
-> e quando devi toccare codice React esistente preserva il comportamento.
+> **Stato**: la UI è **già** SvelteKit 5 (migrazione da React/Vite completata
+> in Fase 0). Lavora con codice idiomatico SvelteKit/Svelte 5 (`+page.svelte`,
+> runes). Non introdurre React.
 
-## Struttura attuale (React, da migrare)
+## Struttura attuale (SvelteKit)
 
 ```
 frontend/
 ├── src/
-│   ├── App.tsx              # routing (react-router-dom)
-│   ├── components/Layout.tsx
-│   ├── pages/
-│   │   ├── AssetsPage.tsx
-│   │   ├── DashboardPage.tsx
-│   │   ├── LoginPage.tsx
-│   │   ├── PortfolioDetailPage.tsx
-│   │   └── PortfoliosPage.tsx
-│   ├── services/api.ts      # client axios con refresh token
-│   ├── lib/format.ts        # formattazione importi/percentuali (centralizzata)
-│   └── hooks/
-├── Dockerfile               # nginx serve dist su porta 80 → host 3000
-└── package.json             # React 19, Vite 6, Tailwind 3.4
+│   ├── app.html
+│   ├── app.css
+│   ├── lib/
+│   │   ├── components/       # componenti Svelte 5
+│   │   ├── stores/           # state management (runes)
+│   │   ├── services/api.ts   # client con refresh token
+│   │   └── format.ts         # formattazione importi/percentuali (centralizzata)
+│   └── routes/               # SvelteKit file-based routing (+page.svelte, +layout.svelte)
+├── Dockerfile                # build SvelteKit (adapter-static) → nginx porta 80 → host 3000
+└── package.json              # SvelteKit 5 (svelte ^5), Vite, Tailwind
 ```
 
 ## Convenzioni chiave
 
-- **API client**: `src/services/api.ts` usa axios con baseURL `/api/v1`, inietta
+- **API client**: `src/lib/services/api.ts` usa fetch/axios con baseURL `/api/v1`, inietta
   `access_token` da `localStorage` e fa retry del refresh token su 401.
-  In SvelteKit, rispecchia questo in `$lib/services/api.ts` (fetch nativo o axios).
 - **Formattazione**: tutto centralizzato in `src/lib/format.ts` (importi,
-  percentuali, valuta) — **preservare questa logica** nella migrazione.
+  percentuali, valuta) — preservare questa logica.
 - **Auth**: token in `localStorage` (`access_token`), logout con
-  `window.location.replace()` per bypassare il router; in SvelteKit usa
-  `goto()` o `window.location` per lo stesso effetto.
-- **Build**: `npm run build` = `tsc -b && vite build`; lint con `eslint . --ext ts,tsx`.
+  `window.location`/`goto()`.
+- **Build**: `npm run build` (adapter-static); lint con `eslint`.
 - **Dev mode**: `make frontend-dev` (Vite con hot-reload).
 
 ## Pagine esistenti (funzionalità da mantenere)
@@ -54,13 +48,15 @@ frontend/
 4. **Dettaglio portafoglio** — transazioni (buy/sell/dividend), asset con
    ticker+nome via JOIN
 5. **Assets** — lista, ricerca/autocomplete Yahoo (`/api/v1/assets/lookup?q=`)
+6. **Dettaglio asset `/assets/[id]`** — metadati editabili (exchange, ISIN),
+   storico prezzi (backfill), tabelle esposizione geo/settore modificabili,
+   donut chart (EPIC B.4/B.10)
 
 ## Stile UI
 
 - Tailwind CSS (config in `tailwind.config.js`)
-- Icone lucide (in React: `lucide-react`) → in Svelte usa `lucide-svelte`
-- Toast/notifiche: `react-hot-toast` → in Svelte usa un meccanismo equivalente
-  (es. svelte-toast) o implementazione leggera
+- Icone: `lucide-svelte`
+- Toast/notifiche: wrapper già presente in `frontend/src/lib/components/Toaster.svelte`
 - Layout responsive, mobile-friendly (primo principio di design del progetto)
 
 ## API backend disponibili (consumate dal frontend)
@@ -68,17 +64,17 @@ frontend/
 Tutte sotto `/api/v1` (vedi anche subagent backend):
 - Auth: POST `/auth/register`, `/auth/login`, `/auth/refresh`
 - Utente: GET/PATCH `/users/me`
-- Assets: GET `/assets`, `/assets/search`, `/assets/lookup`, `/assets/meta`, GET/POST/DELETE `/assets/{id}`
+- Assets: GET `/assets`, `/assets/search`, `/assets/lookup`, `/assets/meta`, GET/PATCH/DELETE `/assets/{id}`
+  - PATCH `/assets/{id}`, GET `/assets/{id}/quote`, POST `/assets/{id}/fetch-profile`
+  - GET/PUT `/assets/{id}/exposure`, POST `/assets/{id}/fetch-exposure`, POST `/assets/{id}/fetch-etf-exposure`
+  - POST `/assets/{id}/backfill-history`
 - Portfoli: GET/POST `/portfolios`, GET/PATCH/DELETE `/portfolios/{id}`
 - Transazioni: GET/POST `/portfolios/{id}/transactions`, PATCH/DELETE `/transactions/{id}`
-- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/roi`, GET `/dashboard`
+- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/roi`, GET `/dashboard`
 - Prezzi: GET `/prices/{assetID}`, POST `/prices/refresh`
 
-## Note di migrazione React → SvelteKit
+## Note
 
-- Routing file-based: `src/routes/` con `+page.svelte`, `+layout.svelte`, `+server.ts`
-- API su `$lib/server/` per chiamate lato server, `$lib/services/` per il client
-- Sostituire TanStack Query con rune (`$state`, `$derived`, `$effect`) o `svelte-query`
-- Recharts → Svelte: valutare `svelte-chartjs`, `LayerChart` o componenti custom SVG
-- Preservare `lib/format.ts` e le convenzioni di formattazione
-- La UI containerizzata serve file statici via nginx (Dockerfile da aggiornare per il build SvelteKit adapter-static)
+- Grafici: ECharts (wrapper Svelte già presenti in `frontend/src/lib/components/`)
+- Evita TanStack Query: usa rune (`$state`, `$derived`, `$effect`) o `svelte-query`
+- La UI containerizzata serve file statici via nginx (build SvelteKit adapter-static)

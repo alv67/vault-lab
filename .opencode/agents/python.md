@@ -10,14 +10,21 @@ FastAPI + uvicorn, requests + BeautifulSoup per lo scraping JustETF, python:3.12
 ## Il servizio
 
 - Directory: `python-service/` (nuovo stack Python, non toccare il resto del repo).
-- Stack: FastAPI, uvicorn, requests, beautifulsoup4 (vedi `requirements.txt`).
+- Stack: FastAPI, uvicorn, requests, beautifulsoup4 (vedi `requirements.txt`), immagine `python:3.12-slim`.
 - Scraping target: `https://www.justetf.com/en/etf-profile.html?isin={ISIN}#exposure`
-  (parse delle tabelle HTML di paesi e settori con pesi percentuali).
+  (parse delle tabelle HTML di paesi e settori con pesi percentuali). Per le tabelle **complete**
+  (oltre lo snippet iniziale) replico i **behavior AJAX Wicket** "Show more":
+  `holdingsSection-countries-loadMoreCountries` / `holdingsSection-sectors-loadMoreSectors`,
+  con header `Wicket-Ajax: true`, `Wicket-Ajax-BaseURL`, `X-Requested-With`, `Accept: application/xml,...`,
+  stessa sessione della pagina profilo. Playwright serve solo in fase di discovery, MAI a runtime.
 - Container raggiunto dal backend Go via `http://python-service:8000`.
 
 ## Endpoint da mantenere
 
-- `GET /api/v1/etf/{isin}/exposure` → `{ countries: [{name, weight}], sectors: [{name, weight}] }`
+- `GET /api/v1/etf/search?q={ticker|nome}` → `[ { isin, name } ]` (JustETF quick-search).
+  Il ticker va **normalizzato** prima della query: il suffisso borsa (`.MI`, `.DE`, `.L`, ...) va
+  rimosso (`_normalize_ticker`), come richiede il sito (es. `SMEA.MI` → `SMEA`).
+- `GET /api/v1/etf/{isin}/exposure` → `{ isin, countries: [{name, weight}], sectors: [{name, weight}] }`
 - `GET /api/v1/etf/{isin}/holdings` → top holdings (stub, uso futuro)
 - `GET /healthz` → health check per docker-compose
 
@@ -39,9 +46,9 @@ FastAPI + uvicorn, requests + BeautifulSoup per lo scraping JustETF, python:3.12
 python-service/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py        # FastAPI + router
-│   ├── schemas.py     # Pydantic (Exposure, ExposureRow, Holdings)
-│   └── scraper.py     # JustETF: fetch + parse tabelle countries/sectors
+│   ├── main.py        # FastAPI + router (healthz, search, exposure, holdings)
+│   ├── schemas.py     # Pydantic (Exposure, ExposureRow, EtfSearchResult, Holdings)
+│   └── scraper.py     # JustETF: quick-search + parse tabelle countries/sectors (Wicket AJAX)
 ├── tests/             # pytest + fastapi TestClient con HTML mock
 ├── Dockerfile         # python:3.12-slim
 ├── .dockerignore
@@ -50,7 +57,7 @@ python-service/
 
 ## Test & verifica
 
-- Unit test: `cd python-service && python3 -m pytest` (o pip install -r requirements.txt -r requirements-dev.txt).
+- Unit test: `cd python-service && python3 -m pytest` (deps in `.venv/` del repo; 17 test).
 - Il container va testato SOLO sullo stack isolato: `docker-compose -p vaultlab-test -f docker-compose.test.yml up -d --build` — MAI sullo stack dev/prod (DB `vaultlab`, porta 8080).
 - Non inserire test e2e che chiamino JustETF reale in CI/automazione: usa fixture HTML mock.
 

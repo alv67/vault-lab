@@ -13,6 +13,9 @@
   data and must stay clean.
 - Delegate implementation to the dedicated subagents whenever the work fits
   their scope: `backend` for Go/Postgres/Redis/API, `frontend` for SvelteKit/
-  TypeScript/Tailwind, `finanza` for financial/statistical analysis. Use
+  TypeScript/Tailwind, `python` for the `python-service/` ETF metadata microservice
+  (FastAPI/JustETF), `finanza` for financial/statistical analysis. Use
   `explore`/`general` for research or cross-cutting tasks. Do not implement
   domain work yourself when a dedicated subagent exists.
+- For manual API testing use the isolated test stack and `tests/api-test.http`
+  (VS Code REST Client), never the dev/prod stack.

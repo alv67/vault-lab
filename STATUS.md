@@ -9,7 +9,7 @@
 | Database | PostgreSQL 16 | Con docker volume |
 | Cache | Redis 7 | Caching dashboard/series, rate-limit Yahoo |
 | Worker | Go (prezzi) | Container separato |
-| Python Service | FastAPI + uvirror + requests + bs4 | ETF metadata (JustETF) — in arrivo con EPIC B (B.5) |
+| Python Service | FastAPI + uvicorn + requests + bs4 | ETF metadata da JustETF (esposizione paesi/regioni + settori, ticker→ISIN) — EPIC B.5 |
 | Container | podman + podman-compose su macOS | |
 
 ## Release
@@ -69,9 +69,9 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 |-------|--------|------------|-------|
 | #7  | B.1 — Migration + region/sector weight model + `fx_history` + `exchange` | Backend | ✅ model + migrazioni (exchange, exposure, history) |
 | #8  | B.2 — GICS/sector backfill + Yahoo v10 fetch-profile | Backend | ✅ chiusa da design change: `category_id`/`categories` rimossi (migrazione `000012`, PR #51); fetch-profile + `assets.sector` normalizzato coperti altrove; residuo (backfill `missing_sector`) accorpato a B.3 |
-| #9  | B.3 — Country backfill (exposure via `assetProfile`) + sector backfill + ISO normalization + region mapping | Backend | ✅ implementata: country = domicilio emittente (fix cross-listing alla creazione), `geo.NormalizeCountry`/`RegionForCountry`, validazione ISO su create/update, `POST /assets/backfill-meta` che riempie E corregge i legacy (1AAPL.MI → US) (da review) |
+| #9  | B.3 — Country backfill (exposure via `assetProfile`) + sector backfill + ISO normalization + region mapping | Backend | ✅ implementata: country = domicilio emittente (fix cross-listing alla creazione), `geo.NormalizeCountry`/`RegionForCountry`, validazione ISO su create/update, `POST /assets/backfill-meta` che riempie E corregge i legacy (1AAPL.MI → US) — in PR #55 |
 | #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend | ✅ editor tabelle + pie chart sulla pagina asset; scrape differito a B.5 |
-| #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ⏳ pianificato (prefill JustETF differito) |
+| #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ✅ implementata: `python-service` (FastAPI) con search ticker/ISIN + exposure paesi/regioni e settori; backend `POST /assets/{id}/fetch-etf-exposure` con auto-resolve ISIN — in PR #55 |
 | #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
 | #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend | ⏳ pianificato (endpoint exposure asset già fatti) |
 | #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ⏳ pianificato |
@@ -102,11 +102,40 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
     GET/PUT `/assets/{id}/exposure`, POST `/assets/{id}/fetch-exposure`,
     POST `/assets/{id}/backfill-history`
 
+### B.3 + B.5 — Esposizione ETF da JustETF (branch `feat/B.3-B.5-meta-backfill`, PR #55 open)
+- **B.3 (country backfill + ISO)** — `country` degli stock = domicilio emittente (fix cross-listing
+  alla creazione, es. 1AAPL.MI → US), validazione ISO alpha-2 su create/update,
+  `POST /assets/backfill-meta` che riempie e corregge i legacy. Package `geo` esteso:
+  mappature paese→ISO (South Korea, Saudi Arabia, UAE, Thailand, Malaysia + EM comuni) e alias
+  settori JustETF→GICS (Finance→Financials, Consumer Non-Cyclicals→Consumer Staples, etc.).
+- **B.5 (python-service)** — microservizio `python-service/` (FastAPI + uvicorn + requests + bs4,
+  immagine `python:3.12-slim`):
+  - `GET /api/v1/etf/search?q={ticker|nome}` — ticker/ISIN via JustETF quick-search; rimuove il
+    suffisso borsa (`.MI/.DE/.L/...`) come richiede il sito;
+  - `GET /api/v1/etf/{isin}/exposure` — paesi/regioni e settori **completi** replicando gli AJAX
+    Wicket "Show more" di JustETF (niente browser a runtime, Playwright usato solo per discovery);
+  - `GET /api/v1/etf/{isin}/holdings` (stub) e `GET /healthz`; mai crash → errori `502` JSON.
+- **Backend Go** — interfaccia `price.ETFFetcher` + `JustETFFetcher` (client del python-service),
+  aggregazione `AggregateRegions`/`AggregateSectors` (paesi→macro-regioni + alias settori),
+  nuova rotta **`POST /assets/{id}/fetch-etf-exposure`**: se l'asset non ha ISIN lo **auto-risolve
+  dal ticker** (preferenza ticker esatto, poi similarità nome con `asset.Name`; il valore viene
+  persistito sull'asset), poi scarica paesi/regioni + settori e li salva (`asset_region_weights` /
+  `asset_sector_weights`). Config `VAULT_PYTHON_SERVICE_URL`; servizio `python-service` presente
+  sia in `docker-compose.yml` sia in `docker-compose.test.yml`.
+- **Asset duplicato** — `POST /assets` con ticker già esistente ora risponde **409 Conflict** con
+  messaggio chiaro e l'id dell'asset esistente (`asset_id` + `id`).
+- **Verifica** — pytest (`python-service/tests`, 17 test), Go `build/vet/test green`; e2e su stack
+  isolato `vaultlab-test`: XMME (14 paesi/13 settori, regioni sommano 100), VWCE e `SMEA.MI` senza
+  ISIN auto-risolti correttamente (SMEA.MI → `IE00B4K48X80` iShares Core MSCI Europe).
+  Test manuali via **`tests/api-test.http`** (estensione REST Client in VS Code) sullo stack test
+  (porta 8081).
+
 ### Decisione ISIN
 Verificato: **Yahoo non espone l'ISIN** (nessun campo in `assetProfile`/`fundProfile`/`price`).
 `investing.com` è bloccato da Cloudflare (403) e Morningstar richiede API a pagamento
-o scraping fragile token-gated. Decisione: il campo `isin` resta **editabile a mano**
-nella pagina asset; l'automazione ticker→ISIN è rimandata a **B.5** (microservizio JustETF).
+o scraping fragile token-gated. Decisione B.5: il campo `isin` resta **editabile a mano**
+nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /assets/{id}/fetch-etf-exposure`
+(anche alla creazione, se l'ISIN è vuoto) risolve ticker→ISIN e lo persiste sull'asset.
 
 ### Asset class + allocazione per classi (B.11, B.12)
 - **Rimossa la classificazione single-category** (`category_id` → tabella `categories`): inadatta agli ETF
@@ -155,6 +184,8 @@ make migrate         # Esegui migration DB
 make test            # Test Go (in container)
 make test-e2e        # Test end-to-end su stack isolato
 make frontend-dev    # Sviluppo frontend con hot-reload
+# Test manuali API (estensione REST Client in VS Code) sullo stack test:
+#   tests/api-test.http — richieste in ordine contro http://localhost:8081/api/v1
 # Per ricreare container dopo modifiche:
 podman-compose stop <service>
 podman rm <container>
