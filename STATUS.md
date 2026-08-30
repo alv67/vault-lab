@@ -74,8 +74,8 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 | #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ✅ implementata: `python-service` (FastAPI) con search ticker/ISIN + exposure paesi/regioni e settori; backend `POST /assets/{id}/fetch-etf-exposure` con auto-resolve ISIN — in PR #55 |
 | #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ✅ implementata: 8 macro-regioni + `Other`, zero-filled — in PR #60 |
 | #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend | ✅ implementata: 11 settori GICS, zero-filled — in PR #60 |
-| #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ⏳ pianificato |
-| #44 | B.9 — FX rate history + series engine per-date | Backend | ⏳ pianificato |
+| #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ✅ implementata (charts dashboard/portfolio, universo equity-only + coverage, pulsante JustETF + ISIN) — in PR #62 |
+| #44 | B.9 — FX rate history + series engine per-date | Backend | ✅ implementata — in PR #61 |
 | #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack | ✅ completa |
 | #49 | B.11 — Asset class: colonna `asset_class` + auto-detect Yahoo + override manuale | Full-stack | ✅ implementata (da validare) |
 | #50 | B.12 — Allocazione per classi: `GET /allocation/class` + donut | Full-stack | ✅ implementata (da validare) |
@@ -172,6 +172,30 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
   isolato `vaultlab-test` con **`tests/test-epic-b.sh`** (20 check PASS) usando prezzi seminati da
   **`tests/seed-prices.sql`** (Yahoo è disabilitato sullo stack test, quindi i prezzi si scrivono
   solo via SQL) e la raccolta **`tests/api-test.http`** estesa.
+
+### B.8 + B.9 — Chart dashboard/portfolio e FX history (branch `feat/B.8-allocation-charts` PR #62, `feat/B.9-fx-history` PR #61)
+- **B.8 (issue #14, PR #62)** — widget di allocazione geo/settoriale:
+  `GeographyChart` + `SectorChart` (donut a 12 colori + tabella righe complete)
+  sulla pagina portafoglio e nella card "Allocazione complessiva" della
+  dashboard, alimentati da `GET /portfolios/{id}/allocation/geography`,
+  `/allocation/sector` e `GET /dashboard/allocation` (aggregato USD).
+- **Universo equity-only (follow-up B.8)** — le allocazioni geo/settoriali
+  coprono solo l'equity (`exposureEligible`: stock sempre; etf/mutual_fund solo
+  con `asset_class` `equity`/`real_estate`). Bond, crypto, commodity, valute e
+  fondi non classificati sono **esclusi** (mai in `Other`); geography/sector/
+  dashboard espongono `covered_value`/`excluded_value` e i grafici mostrano la
+  nota di copertura.
+- **Editor asset (follow-up B.8)** — pulsante **"Carica da JustETF"**
+  (`POST /assets/{id}/fetch-etf-exposure`) che scarica regioni+settori e
+  sincronizza l'**ISIN** risolto nel form; campo ISIN anche nel form di
+  creazione asset; banner "solo asset azionari" quando l'asset non è
+  azionabile.
+- **B.9 (issue #44, PR #61)** — storico tassi di cambio per-data (`fx_history`)
+  integrato nel series engine per conversioni storiche per-date.
+- **Verifica** — Go build/vet/test green; smoke su stack isolato
+  `vaultlab-test` con `tests/test-epic-b.sh` (20 PASS; gli ETF sono creati con
+  `asset_class: equity` per rispettare l'universo strict) + esclusione bond
+  verificata end-to-end (covered=2600, excluded=10000, pesi somma 100).
 
 ### Altri EPIC Fase 2
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo

@@ -251,13 +251,13 @@ verified against the backend routes (`backend/cmd/server/main.go`).
 |---|---|---|
 | `authApi` | login, register, me, updateProfile, changePassword | `POST /auth/login`, `POST /auth/register`, `GET /users/me`, `PATCH /users/me`, `POST /users/me/password` |
 | `portfolioApi` | list, create, get, update, delete | `GET /portfolios`, `POST /portfolios`, `GET/PATCH/DELETE /portfolios/{id}` |
-| | summary, allocation, classAllocation, performance, roi, history | `GET /portfolios/{id}/summary`, `GET /portfolios/{id}/allocation`, `GET /portfolios/{id}/allocation/class`, `GET /portfolios/{id}/performance`, `GET /portfolios/{id}/roi`, `GET /portfolios/{id}/history` |
-| | dashboard | `GET /dashboard` |
+| | summary, allocation, classAllocation, geographyAllocation, sectorAllocation, performance, roi, history | `GET /portfolios/{id}/summary`, `GET /portfolios/{id}/allocation`, `GET /portfolios/{id}/allocation/class`, `GET /portfolios/{id}/allocation/geography`, `GET /portfolios/{id}/allocation/sector`, `GET /portfolios/{id}/performance`, `GET /portfolios/{id}/roi`, `GET /portfolios/{id}/history` |
+| | dashboard, dashboardAllocation | `GET /dashboard`, `GET /dashboard/allocation` |
 | | exportDoc, importDoc | `GET /portfolios/{id}/export`, `POST /portfolios/import` |
 | `assetApi` | list, search, lookup, meta | `GET /assets`, `GET /assets/search?q=`, `GET /assets/lookup?q=`, `GET /assets/meta?ticker=` |
 | | get, create, update, remove | `GET /assets/{id}`, `POST /assets`, `PATCH /assets/{id}`, `DELETE /assets/{id}` |
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
-| | exposure, saveExposure, fetchExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure` |
+| | exposure, saveExposure, fetchExposure, fetchETFExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
 | `transactionApi` | list, create | `GET/POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
@@ -273,11 +273,10 @@ The types exported alongside (`User`, `Portfolio`, `Asset`, `Transaction`,
 values arrive as **strings** (e.g. `"1234.56"`) to avoid floating-point
 rounding errors; the pages convert them with `Number()` where needed.
 
-> **Missing on purpose**: `portfolioApi` has **no** method for
-> `GET /portfolios/{id}/allocation/geography` and no method for
-> `GET /portfolios/{id}/allocation/sector`. The backend has served both since
-> EPIC B.6/B.7; the client methods are part of the open **B.8** task
-> (see chapter 11).
+> **Note**: `portfolioApi` exposes the geography and sector allocation methods
+> (`geographyAllocation(id)`, `sectorAllocation(id)` — served by the backend
+> since EPIC B.6/B.7) plus the B.8 dashboard aggregate (`dashboardAllocation()`)
+> — see the B.8 paragraph in chapter 11.
 
 ---
 
@@ -356,7 +355,7 @@ bundle); `init` (from `echarts/core`) is passed to the `<Chart>` wrapper, which
 initialises the instance on mount. Options are declared as `EChartsOption` and
 recomputed with `$derived.by`, so the chart reacts to `$props` changes.
 
-### The four wrappers
+### The chart wrappers
 
 | Component | Chart | Used for |
 |---|---|---|
@@ -364,6 +363,8 @@ recomputed with `$derived.by`, so the chart reacts to `$props` changes.
 | `PositionChart.svelte` | **three lines**: cost basis (gray, stepped), market value (green, smooth), realized (amber) + dashed split markers | the **portfolio detail** "Performance history": a dropdown switches between the whole portfolio and a single asset. Split events are drawn as a vertical dashed `markLine` on the market-value line labelled with the ratio (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **multi-series line** (one per portfolio), category x-axis of dates | the **dashboard** "Portfolio History" card. The tooltip formats each series in its own currency (the currency comes from the `DashboardHistory` payload) |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out | **three places**: asset detail "Distribuzione geografica" and "Distribuzione settoriale", and the portfolio **class-allocation donut** (B.12). Accepts `ExposureRow[]` (`{name, weight}`) |
+| `GeographyChart.svelte` (`lib/components/domain/`) | **donut** (same radius/palette as `ExposurePie`) + full-row table alongside; tooltip shows the value in the portfolio currency and the weight; the `Other` slice is muted in gray | the **portfolio detail** geography card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `RegionAllocation[]` (`{region, value, weight}`); rows with zero weight stay in the table but are not drawn. Optional `covered`/`excluded` props (decimal strings) drive a coverage note ("Copre il X% del portafoglio…") shown when the excluded value is > 0 |
+| `SectorChart.svelte` (`lib/components/domain/`) | identical structure over sectors | the **portfolio detail** sector card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `SectorAllocation[]` (`{sector, value, weight}`), plus the same optional `covered`/`excluded` coverage note as `GeographyChart` |
 
 Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
 `new Date(...).toLocaleDateString()`.
@@ -375,7 +376,15 @@ Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
 - **Portfolio detail (B.12)** — `ExposurePie` for the "Allocazione per classi"
   donut. The class rows are the `AssetClassSlice[]` returned by
   `portfolioApi.classAllocation`, mapped through `ASSET_CLASS_LABELS`.
-- **Dashboard** — `PortfolioLineChart` with the merged `chartData`.
+- **Portfolio detail and dashboard (B.8)** — `GeographyChart` + `SectorChart`
+  for the geo/sector allocation (per-portfolio endpoints and the
+  `GET /dashboard/allocation` aggregate). Allocations are computed over the
+  **equity-only universe** (stocks always, ETFs/mutual funds only when
+  `asset_class` is `equity` or `real_estate`); bonds, crypto, commodities and
+  unclassified funds are excluded and reported as `covered_value` /
+  `excluded_value`, which the charts turn into a coverage note.
+- **Dashboard** — `PortfolioLineChart` with the merged `chartData`, plus the
+  B.8 "Allocazione complessiva" widgets.
 
 ---
 
@@ -482,6 +491,12 @@ Called endpoints: `portfolioApi.dashboard()`, then the session
 `pricesApi.refresh()` + a fresh dashboard.
 
 - **Portfolio History** card: `PortfolioLineChart` (one line per portfolio).
+- **Allocazione complessiva** card: `GeographyChart` + `SectorChart` side by
+  side from `dashboardAllocation()` (`GET /dashboard/allocation`, aggregated
+  in USD across all portfolios); when the endpoint fails the card shows
+  "Allocazione non disponibile" (the call is isolated, it does not block the
+  page). Both charts receive the `covered_value`/`excluded_value` coverage
+  metadata and show a note when non-equity holdings are excluded.
 - **Performance by Currency** table, only when more than one currency is used
   (`hasMultipleCurrencies`).
 - **Portfolios** table (name, currency, assets, invested, value, realized,
@@ -515,7 +530,8 @@ Called endpoints: `portfolioApi.list()`, `settingsApi.listCurrencies()`.
 ### `/portfolios/[id]` — Portfolio detail (`routes/portfolios/[id]/+page.svelte`)
 
 Called endpoints: `portfolioApi.get`, `.summary`, `.history`,
-`.classAllocation`, `transactionApi.list`, `assetApi.list`, then the session
+`.classAllocation`, `.geographyAllocation`, `.sectorAllocation`,
+`transactionApi.list`, `assetApi.list`, then the session
 `pricesApi.refresh(id)` + fresh summary.
 
 - KPI cards: Value, Realized, Gain/Loss (open, with %), Assets.
@@ -527,6 +543,12 @@ Called endpoints: `portfolioApi.get`, `.summary`, `.history`,
   `classAllocation()`; class keys are mapped through `ASSET_CLASS_LABELS`.
   If the endpoint fails, the page shows "non disponibile" without blocking the
   rest (the call is isolated in its own try/catch).
+- **Allocazione geografica e settoriale**: two cards side by side
+  (`md:flex-row`, one per chart) with `GeographyChart` /
+  `SectorChart` from `geographyAllocation()` / `sectorAllocation()`; each
+  endpoint is isolated in its own try/catch ("non disponibile" on failure,
+  never blocking the page). Charts receive the `covered_value`/`excluded_value`
+  coverage metadata and show a note when non-equity holdings are excluded.
 - **Transactions**: table (date, asset, type badge, quantity, price, total),
   add/edit form for **buy / sell / dividend** (dividend asks the total amount
   instead of quantity × price; quantity is sent as `1`), delete with confirm.
@@ -571,10 +593,20 @@ quote/prices.
   (else the save is disabled), side by side with an `ExposurePie` donut.
   Saving sends **only the edited dimension**
   (`PUT /assets/{id}/exposure` with `{regions}` or `{sectors}` — omitting a
-  key leaves the other untouched), then reloads the canonical response.
+  key leaves the other untouched), then reloads the canonical response. The
+  two cards are rendered only when the asset is actionable for the equity
+  universe (`exposureApplicable`: stock, or etf/mutual_fund with `asset_class`
+  `equity`/`real_estate`); otherwise a hint banner explains that the
+  distribution only applies to equity assets.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, the Yahoo `topHoldings` sector weights)
   pre-fills the sector table.
+- **Carica da JustETF** — `assetApi.fetchETFExposure(id)`
+  (`POST /assets/{id}/fetch-etf-exposure`): fetches from the JustETF
+  microservice and saves both the geographic distribution (countries →
+  canonical macro-regions) and the GICS sectors; only visible for ETF assets
+  (`asset.type !== 'etf'` ⇒ button disabled). It also syncs the ISIN resolved
+  by the backend into the form's ISIN field.
 
 ### `/settings` — Settings (`routes/settings/+page.svelte`)
 
@@ -603,20 +635,35 @@ events (timestamp, type, status badge, code, message, duration), with a
 
 ## 11. Notes and open points
 
-- **B.8 is NOT implemented yet (issue #14)** — this is the standing state
-  today. The frontend widgets for the portfolio **geography** and **sector**
-  allocation do not exist:
-  - `portfolioApi` has **no** `geographyAllocation(id)` /
-    `sectorAllocation(id)` methods, and there are no client interfaces for the
-    two responses — only `classAllocation` (`/allocation/class`, B.12) exists;
-  - no `GeographyChart` / `SectorChart` components, and no dashboard/portfolio
-    widget uses `/allocation/geography` or `/allocation/sector`.
-  The **backend endpoints are ready** since B.6/B.7: weighted sum by the 8
-  macro-regions (+ `Other`) and by the 11 GICS sectors (+ `Other`), zero-filled
-  (see the backend guide, chapter 19). B.8 will add: the two client methods in
-  `api.ts` (+ response types), two donut widgets on the dashboard and/or the
-  portfolio page (reusing `ExposurePie` and the `ExposureRow` shape), exactly
-  like the existing class-allocation donut.
+- **B.8 is implemented (issue #14)** — the geography and sector allocation
+  widgets ship in this release:
+  - `portfolioApi` exposes `geographyAllocation(id)` /
+    `sectorAllocation(id)` (`GET /portfolios/{id}/allocation/geography` and
+    `/allocation/sector`: weighted sums, zero-filled, over the 8
+    macro-regions and the 11 GICS sectors, both + `Other`) and
+    `dashboardAllocation()` (`GET /dashboard/allocation`, the same rows
+    aggregated across all portfolios in USD). The response interfaces live
+    next to `PortfolioClassAllocation` in `api.ts`
+    (`RegionAllocation`, `SectorAllocation`,
+    `PortfolioGeographyAllocation`, `PortfolioSectorAllocation`,
+    `DashboardAllocation`);
+  - `GeographyChart` / `SectorChart` (`lib/components/domain/`) render a
+    12-color donut (`radius: ['45%','70%']`, legend when ≤ 6 non-empty rows)
+    with the full-row table alongside (zero-weight rows stay in the table but
+    are not drawn); the tooltip shows the value formatted in the portfolio
+    currency and the weight, and the `Other` slice is muted in gray;
+  - the portfolio detail page shows the two donuts side by side below
+    "Allocazione per classi" (`md:flex-row`, one card each), and the dashboard
+    adds an "Allocazione complessiva" card (a `md:grid-cols-2` grid) fed by
+    `GET /dashboard/allocation`;
+- **Equity-only universe (B.8 follow-up)** — the geo/sector allocations cover
+  only equity holdings (stocks always; ETFs/mutual funds only when
+  `asset_class` is `equity` or `real_estate`). Bonds, crypto, commodities and
+  unclassified funds are excluded and surfaced as `covered_value` /
+  `excluded_value` on the geography, sector and dashboard responses; the charts
+  show a "Copre il X% del portafoglio…" note when the excluded value is
+  positive, and the asset detail page renders the distribution cards only for
+  actionable equity assets (hint banner otherwise);
 - **No separate `/register` page**: registration is a toggle inside `/login`.
 - **No manual price entry in the UI**: prices only come from Yahoo (the
   session refresh, the worker, or the "Backfill storico completo" action).
@@ -632,6 +679,6 @@ events (timestamp, type, status badge, code, message, duration), with a
 - **CORS is configured on the backend but not exercised** in the standard
   setup, because the browser only talks to nginx (same origin).
 - **The pages described in this guide are the current state**: the dashboard
-  currently has no allocation donut (that is exactly what B.8 will add), and
-  the old React-era description of the frontend (React 19 / axios / Recharts)
-  is obsolete.
+  now ships the B.8 allocation widgets ("Allocazione complessiva" card, see the
+  B.8 paragraph above), and the old React-era description of the frontend
+  (React 19 / axios / Recharts) is obsolete.

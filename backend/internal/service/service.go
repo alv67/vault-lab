@@ -651,6 +651,7 @@ func (s *Service) resolveETFISIN(ctx context.Context, asset *model.Asset) (strin
 // weights and the stock defaults when nothing is stored.
 func (s *Service) buildExposure(asset *model.Asset, regions, sectors []model.ExposureRow) *model.AssetExposure {
 	return &model.AssetExposure{
+		ISIN:    asset.ISIN,
 		Regions: canonicalExposureRows(geo.Regions, regions, asset.Type == model.AssetTypeStock, geo.RegionForCountry(asset.Country)),
 		Sectors: canonicalExposureRows(geo.GICSSectors, sectors, asset.Type == model.AssetTypeStock, geo.NormalizeSector(asset.Sector)),
 	}
@@ -1229,7 +1230,7 @@ func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolio
 		if err != nil {
 			return nil, err
 		}
-		buckets, total := buildBuckets(holdings, rates, p.Currency, geo.Regions, exposures,
+		buckets, total, cov := buildBuckets(holdings, rates, p.Currency, geo.Regions, exposures,
 			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
 		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
 		for _, name := range geo.Regions {
@@ -1243,7 +1244,7 @@ func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolio
 				e.Weight = e.Value.Div(total).Mul(decimal.NewFromInt(100))
 			}
 		}
-		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions}, nil
+		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions, Covered: cov.covered, Excluded: cov.excluded}, nil
 	})
 }
 
@@ -1265,7 +1266,7 @@ func (s *Service) GetPortfolioSectorAllocation(ctx context.Context, portfolioID 
 		if err != nil {
 			return nil, err
 		}
-		buckets, total := buildBuckets(holdings, rates, p.Currency, geo.GICSSectors, exposures,
+		buckets, total, cov := buildBuckets(holdings, rates, p.Currency, geo.GICSSectors, exposures,
 			func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) })
 		sectors := make([]*model.SectorAllocation, 0, len(geo.GICSSectors)+1)
 		for _, name := range geo.GICSSectors {
@@ -1279,7 +1280,7 @@ func (s *Service) GetPortfolioSectorAllocation(ctx context.Context, portfolioID 
 				e.Weight = e.Value.Div(total).Mul(decimal.NewFromInt(100))
 			}
 		}
-		return &model.PortfolioSectorAllocation{Currency: p.Currency, Sectors: sectors}, nil
+		return &model.PortfolioSectorAllocation{Currency: p.Currency, Sectors: sectors, Covered: cov.covered, Excluded: cov.excluded}, nil
 	})
 }
 
@@ -1295,16 +1296,41 @@ func holdingAssetIDs(holdings []*model.Holding) []uuid.UUID {
 	return ids
 }
 
+// exposureEligible reports whether a holding participates in the equity
+// universe used by the geography and sector allocations. STRICT policy:
+// stocks always, ETFs and mutual funds only when their asset class is
+// equity or real estate; everything else (bonds, crypto, commodities,
+// currencies, unclassified funds) is excluded by nature.
+func exposureEligible(h *model.Holding) bool {
+	switch h.Type {
+	case model.AssetTypeStock:
+		return true
+	case model.AssetTypeETF, model.AssetTypeMutualFund:
+		return h.AssetClass == "equity" || h.AssetClass == "real_estate"
+	default:
+		return false
+	}
+}
+
+// exposureCoverage tracks the value of the eligible (equity) universe and of
+// the excluded (non-equity) holdings for the geography/sector allocations.
+type exposureCoverage struct {
+	covered  decimal.Decimal // value of the eligible (equity) holdings
+	excluded decimal.Decimal // value of the excluded (non-equity) holdings
+}
+
 // buildBuckets aggregates the weighted value of the holdings across one
 // canonical exposure dimension. Every canonical name in order is keyed in the
 // returned map (zero when nothing maps), and any value that could not be
-// assigned lands in "Other".
-func buildBuckets(holdings []*model.Holding, rates map[string]decimal.Decimal, currency string, names []string, exposures map[string][]model.ExposureRow, defaultName func(*model.Holding) string) (map[string]decimal.Decimal, decimal.Decimal) {
+// assigned lands in "Other". Only holdings eligible for the equity universe
+// participate; their value is returned as coverage metadata.
+func buildBuckets(holdings []*model.Holding, rates map[string]decimal.Decimal, currency string, names []string, exposures map[string][]model.ExposureRow, defaultName func(*model.Holding) string) (map[string]decimal.Decimal, decimal.Decimal, exposureCoverage) {
 	byBucket := make(map[string]decimal.Decimal, len(names)+1)
 	for _, name := range names {
 		byBucket[name] = decimal.Zero
 	}
 	var total decimal.Decimal
+	var cov exposureCoverage
 	for _, h := range holdings {
 		if !h.Qty.IsPositive() || !h.HasPrice {
 			continue
@@ -1318,6 +1344,11 @@ func buildBuckets(holdings []*model.Holding, rates map[string]decimal.Decimal, c
 		if !value.IsPositive() {
 			continue
 		}
+		if !exposureEligible(h) {
+			cov.excluded = cov.excluded.Add(value)
+			continue
+		}
+		cov.covered = cov.covered.Add(value)
 		total = total.Add(value)
 
 		isStock := h.Type == model.AssetTypeStock
@@ -1334,7 +1365,7 @@ func buildBuckets(holdings []*model.Holding, rates map[string]decimal.Decimal, c
 			byBucket[r.Name] = byBucket[r.Name].Add(value.Mul(r.Weight).Div(decimal.NewFromInt(100)))
 		}
 	}
-	return byBucket, total
+	return byBucket, total, cov
 }
 
 func (s *Service) GetPortfolioPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error) {
@@ -1987,6 +2018,79 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		}
 
 		return dash, nil
+	})
+}
+
+// GetDashboardAllocation returns the user's whole-vault geographic and sector
+// allocation in USD, aggregating holdings across all portfolios.
+func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) (*model.DashboardAllocation, error) {
+	return cached(s.cache, ctx, "dash-allocation", userID.String(), cacheTTLStats, false, func() (*model.DashboardAllocation, error) {
+		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if len(portfolios) == 0 {
+			return &model.DashboardAllocation{
+				Currency: "USD",
+				Regions:  []*model.RegionAllocation{},
+				Sectors:  []*model.SectorAllocation{},
+				Covered:  decimal.Zero,
+				Excluded: decimal.Zero,
+			}, nil
+		}
+
+		ids := make([]uuid.UUID, 0, len(portfolios))
+		for _, p := range portfolios {
+			ids = append(ids, p.ID)
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, "USD")
+		if err != nil {
+			return nil, err
+		}
+		geoExposures, err := s.repos.Exposure.FindRegionsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+		secExposures, err := s.repos.Exposure.FindSectorsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+
+		gBuckets, gTotal, gCov := buildBuckets(holdings, rates, "USD", geo.Regions, geoExposures,
+			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
+		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
+		for _, name := range geo.Regions {
+			regions = append(regions, &model.RegionAllocation{Region: name, Value: gBuckets[name]})
+		}
+		if gBuckets["Other"].IsPositive() {
+			regions = append(regions, &model.RegionAllocation{Region: "Other", Value: gBuckets["Other"]})
+		}
+		for _, e := range regions {
+			if gTotal.IsPositive() {
+				e.Weight = e.Value.Div(gTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
+		sBuckets, sTotal, _ := buildBuckets(holdings, rates, "USD", geo.GICSSectors, secExposures,
+			func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) })
+		sectors := make([]*model.SectorAllocation, 0, len(geo.GICSSectors)+1)
+		for _, name := range geo.GICSSectors {
+			sectors = append(sectors, &model.SectorAllocation{Sector: name, Value: sBuckets[name]})
+		}
+		if sBuckets["Other"].IsPositive() {
+			sectors = append(sectors, &model.SectorAllocation{Sector: "Other", Value: sBuckets["Other"]})
+		}
+		for _, e := range sectors {
+			if sTotal.IsPositive() {
+				e.Weight = e.Value.Div(sTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
+		return &model.DashboardAllocation{Currency: "USD", Regions: regions, Sectors: sectors, Covered: gCov.covered, Excluded: gCov.excluded}, nil
 	})
 }
 

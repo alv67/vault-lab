@@ -112,6 +112,7 @@ export interface ExposureRow {
 export interface AssetExposure {
   regions: ExposureRow[]
   sectors: ExposureRow[]
+  isin?: string
 }
 
 // Body accettato da PUT /assets/{id}/exposure. Le dimensioni sono
@@ -197,6 +198,40 @@ export interface AssetClassSlice {
 export interface PortfolioClassAllocation {
   currency: string
   classes: AssetClassSlice[]
+}
+
+export interface RegionAllocation {
+  region: string
+  value: string
+  weight: string
+}
+
+export interface SectorAllocation {
+  sector: string
+  value: string
+  weight: string
+}
+
+export interface PortfolioGeographyAllocation {
+  currency: string
+  regions: RegionAllocation[]
+  covered_value?: string
+  excluded_value?: string
+}
+
+export interface PortfolioSectorAllocation {
+  currency: string
+  sectors: SectorAllocation[]
+  covered_value?: string
+  excluded_value?: string
+}
+
+export interface DashboardAllocation {
+  currency: string
+  regions: RegionAllocation[]
+  sectors: SectorAllocation[]
+  covered_value?: string
+  excluded_value?: string
 }
 
 export interface PortfolioPerformance {
@@ -493,6 +528,11 @@ export const portfolioApi = {
   allocation: (id: string) => request<AssetAllocation[]>(`/portfolios/${id}/allocation`),
   classAllocation: (id: string) =>
     request<PortfolioClassAllocation>(`/portfolios/${id}/allocation/class`),
+  geographyAllocation: (id: string) =>
+    request<PortfolioGeographyAllocation>(`/portfolios/${id}/allocation/geography`),
+  sectorAllocation: (id: string) =>
+    request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
+  dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),
@@ -523,6 +563,8 @@ export const assetApi = {
     request<AssetExposure>(`/assets/${id}/exposure`, { method: 'PUT', body: exposure }),
   fetchExposure: (id: string) =>
     request<AssetExposure>(`/assets/${id}/fetch-exposure`, { method: 'POST' }),
+  fetchETFExposure: (id: string) =>
+    request<AssetExposure>(`/assets/${id}/fetch-etf-exposure`, { method: 'POST' }),
   backfillHistory: (id: string) =>
     request<{ status: string }>(`/assets/${id}/backfill-history`, { method: 'POST' }),
   remove: (id: string) => request<void>(`/assets/${id}`, { method: 'DELETE' }),

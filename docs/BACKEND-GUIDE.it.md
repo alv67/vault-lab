@@ -515,7 +515,10 @@ sessione a vita breve, vedi `meta.go`):
 Nota sull'**ISIN**: Yahoo non espone l'ISIN in nessun modulo. Per gli ETF il
 valore ora viene risolto automaticamente dal ticker tramite il servizio JustETF
 (B.5); il campo resta comunque modificabile a mano nella pagina asset come
-fallback.
+fallback. Le risposte di exposure (`GET/PUT /assets/{id}/exposure`,
+`fetch-exposure`, `fetch-etf-exposure`) includono il campo `isin` persistito
+(`AssetExposure.ISIN`), così il frontend può sincronizzarlo dopo un fetch
+JustETF.
 
 ### Invalidation della cache (`bumpRev`)
 
@@ -729,8 +732,15 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   allocazione pesata a livello portafoglio sono implementati:
   `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
   8 macro-regioni + `Other`, zero-filled) e `/allocation/sector` (EPIC B.7,
-  11 settori GICS + `Other`). I widget grafici dashboard/portfolio (B.8) sono
-  un task frontend futuro.
+  11 settori GICS + `Other`). I widget grafici dashboard/portfolio sono nella
+  B.8 (frontend). Dal follow-up di B.8, le allocazioni geo/settoriali sono
+  calcolate sull'universo **equity-only** (`exposureEligible`: azioni sempre;
+  ETF/fondi solo quando `asset_class` è `equity` o `real_estate`); bond, crypto,
+  commodity, valute e fondi non classificati sono esclusi e non confluiscono mai
+  in `Other`. Le tre risposte di allocazione (`/allocation/geography`,
+  `/allocation/sector` e `/dashboard/allocation`) espongono
+  `covered_value`/`excluded_value` (stringhe decimali) con il valore delle
+  holding ammissibili vs escluse.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; si usa solo attraverso il backend
   (`POST /assets/{id}/fetch-etf-exposure`) e il suo endpoint

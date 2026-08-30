@@ -104,6 +104,7 @@ type ExposureRow struct {
 
 // AssetExposure contiene la distribuzione geografica e settoriale di un asset.
 type AssetExposure struct {
+	ISIN    string        `json:"isin,omitempty"`
 	Regions []ExposureRow `json:"regions"`
 	Sectors []ExposureRow `json:"sectors"`
 }

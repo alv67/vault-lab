@@ -61,6 +61,8 @@ type RegionAllocation struct {
 type PortfolioGeographyAllocation struct {
 	Currency string              `json:"currency"`
 	Regions  []*RegionAllocation `json:"regions"`
+	Covered  decimal.Decimal     `json:"covered_value"`
+	Excluded decimal.Decimal     `json:"excluded_value"`
 }
 
 // SectorAllocation is one GICS sector bucket within a portfolio's sector
@@ -76,6 +78,8 @@ type SectorAllocation struct {
 type PortfolioSectorAllocation struct {
 	Currency string              `json:"currency"`
 	Sectors  []*SectorAllocation `json:"sectors"`
+	Covered  decimal.Decimal     `json:"covered_value"`
+	Excluded decimal.Decimal     `json:"excluded_value"`
 }
 
 type PortfolioPerformance struct {
@@ -223,4 +227,14 @@ type Dashboard struct {
 	Portfolios []PortfolioPerformanceSummary `json:"portfolios"`
 	Assets     []PortfolioAssets             `json:"assets"`
 	History    []PortfolioHistory            `json:"history"`
+}
+
+// DashboardAllocation groups the geographic and sector allocation of a user's
+// whole vault, aggregated across all portfolios and converted to USD.
+type DashboardAllocation struct {
+	Currency string              `json:"currency"`
+	Regions  []*RegionAllocation `json:"regions"`
+	Sectors  []*SectorAllocation `json:"sectors"`
+	Covered  decimal.Decimal     `json:"covered_value"`
+	Excluded decimal.Decimal     `json:"excluded_value"`
 }

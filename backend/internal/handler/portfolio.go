@@ -544,6 +544,23 @@ func (h *Handler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, dash)
 }
 
+func (h *Handler) GetDashboardAllocation(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	dashAlloc, err := h.svc.GetDashboardAllocation(r.Context(), claims.UserID)
+	if err != nil {
+		log.Error().Err(err).Msg("get dashboard allocation failed")
+		respondError(w, http.StatusInternalServerError, "dashboard allocation failed")
+		return
+	}
+
+	respond(w, http.StatusOK, dashAlloc)
+}
+
 func (h *Handler) RefreshPrices(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
