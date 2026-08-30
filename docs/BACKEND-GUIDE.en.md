@@ -108,6 +108,9 @@ The pieces that run (defined in `docker-compose.yml`):
   the allowed number of calls to Yahoo.
 - **backend** — the REST API that talks to the frontend.
 - **worker** — a separate process that updates prices in the background.
+- **python-service** — a small FastAPI service (`python-service/`) that fetches
+  ETF metadata (countries/regions and GICS sectors) and resolves ISINs from
+  tickers via JustETF. The Go backend calls it through `VAULT_PYTHON_SERVICE_URL`.
 - **frontend** — the web page.
 
 The backend is **a single Go program** that, depending on the argument passed
@@ -489,9 +492,15 @@ see `meta.go`):
   `sector` and `industry` of a single stock.
 - **Sector exposure (`FetchAssetExposure`)**: for an ETF, the `topHoldings`
   module exposes `sectorWeightings` (a fraction per sector key), which the
-  backend converts to our canonical 11 GICS sectors (percentage). The
-  countries → macro-regions exposure for an ETF is not yet scraped auto-matically:
-  it is entered by hand in the editor or via the future Python service (B.5).
+  backend converts to our canonical 11 GICS sectors (percentage).
+- **ETF exposure via JustETF (`FetchETFExposure`)**: since B.5, the backend can
+  fetch the **complete** country/region and sector exposure of an ETF from the
+  `python-service` microservice (`POST /assets/{id}/fetch-etf-exposure`). The
+  python service reads JustETF (full tables via its "Show more" AJAX), and the
+  Go `geo` package maps each country to a macro-region and normalizes sectors
+  to the GICS set. If the asset has no ISIN, it is **resolved automatically
+  from the ticker** (the `.MI/.DE/.L...` suffix is stripped, results are ranked
+  by name similarity against the asset) and persisted on the asset.
 - **Asset class (asset-info refresh / `GET /assets/meta`)**: Yahoo no longer
   exposes `assetClass` (the `quote` quoteSummary module does not exist; v7
   `/quote` does not return it). The class is derived in `FetchMeta` via
@@ -505,8 +514,10 @@ see `meta.go`):
 - **Geographic exposure**: for a single **stock**, the country (from the asset
   profile) is mapped to a macro-region at 100% (`geo.RegionForCountry`).
 
-A note on **ISIN**: Yahoo does **not** expose the ISIN in any module, so the
-field remains manually editable on the asset page.
+A note on **ISIN**: Yahoo does **not** expose the ISIN in any module. For ETFs
+the value is now resolved automatically from the ticker through the JustETF
+service (B.5); the field remains editable by hand on the asset page as a
+fallback.
 
 ### Cache invalidation (`bumpRev`)
 
@@ -719,6 +730,10 @@ otherwise continue".
   in `asset_region_weights` and `asset_sector_weights`; the weighted-sum
   allocation endpoints at portfolio level (EPIC B.6/B.7) and the dashboard
   widgets (B.8) are not implemented yet.
+- The `python-service` microservice (B.5) fetches ETF exposure and resolves
+  ISINs from tickers via JustETF; it is exercised only through the backend
+  (`POST /assets/{id}/fetch-etf-exposure`) and its `GET /api/v1/etf/search`
+  endpoint (tickers with an exchange suffix are normalized before querying).
 - There are alternative SQL methods for summaries and allocations
   (`GetSummary`, `GetAllocation`, `GetROI`) that are not used by the service
   layer: the financial calculation lives in the AVCO engine (chapter 8), not

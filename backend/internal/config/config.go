@@ -35,6 +35,8 @@ type Config struct {
 	YahooGlobalRate     int
 	YahooGlobalWindow   time.Duration
 
+	PythonServiceURL string
+
 	StalePriceDays int
 }
 
@@ -67,6 +69,8 @@ func Load() *Config {
 		YahooMinInterval:    getEnvDuration("VAULT_YAHOO_MIN_INTERVAL", 400*time.Millisecond),
 		YahooGlobalRate:     getEnvInt("VAULT_YAHOO_GLOBAL_RATE", 8),
 		YahooGlobalWindow:   getEnvDuration("VAULT_YAHOO_GLOBAL_WINDOW", 1*time.Second),
+
+		PythonServiceURL: getEnv("VAULT_PYTHON_SERVICE_URL", "http://python-service:8000"),
 
 		StalePriceDays: getEnvInt("VAULT_STALE_PRICE_DAYS", 7),
 	}

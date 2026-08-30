@@ -51,9 +51,15 @@ func (f *YahooFetcher) FetchMeta(ctx context.Context, ticker string) (*AssetMeta
 	}
 
 	// Country only makes sense for a single equity; ETFs/other types span
-	// multiple countries.
+	// multiple countries. For stocks the exposure country comes from the
+	// issuer's domicile (assetProfile.country) so cross-listings keep the
+	// issuer home market; the exchange-based derivation is only a fallback.
 	if assetType == "stock" {
-		assetMeta.Country = exchangeCountry(meta.ExchangeName)
+		if _, _, country, err := f.FetchAssetProfile(ctx, ticker); err == nil && country != "" {
+			assetMeta.Country = country
+		} else {
+			assetMeta.Country = exchangeCountry(meta.ExchangeName)
+		}
 	}
 
 	// Best-effort refinement of the class for funds from the Morningstar
@@ -72,9 +78,16 @@ func exchangeCountry(exchange string) string {
 	return exchangeCountries[strings.ToUpper(exchange)]
 }
 
+// ExchangeCountry maps a Yahoo exchange code to the ISO country code of its
+// home market. Unknown exchanges return "".
+func ExchangeCountry(exchange string) string {
+	return exchangeCountry(exchange)
+}
+
 type yahooAssetProfile struct {
 	Sector   string `json:"sector"`
 	Industry string `json:"industry"`
+	Country  string `json:"country"`
 }
 
 type yahooTopHoldings struct {
@@ -107,31 +120,32 @@ type yahooQuoteSummaryResponse struct {
 // crumb is session-bound, so keeping it too long risks 401s on stale sessions.
 const crumbTTL = 5 * time.Minute
 
-// FetchAssetProfile returns the GICS sector and industry for a ticker from the
-// Yahoo v10 quoteSummary assetProfile module. Empty strings are returned
-// without error when the profile module is absent.
-func (f *YahooFetcher) FetchAssetProfile(ctx context.Context, ticker string) (sector, industry string, err error) {
+// FetchAssetProfile returns the GICS sector, industry and issuer domicile
+// country for a ticker from the Yahoo v10 quoteSummary assetProfile module.
+// Empty strings are returned without error when the profile module is absent.
+func (f *YahooFetcher) FetchAssetProfile(ctx context.Context, ticker string) (sector, industry, country string, err error) {
 	result, err := f.fetchQuoteSummary(ctx, ticker, "assetProfile")
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if result == nil {
-		return "", "", nil
+		return "", "", "", nil
 	}
 	profile := result.QuoteSummary.Result[0].AssetProfile
-	return profile.Sector, profile.Industry, nil
+	return profile.Sector, profile.Industry, profile.Country, nil
 }
 
-// FetchAssetProfileExtended returns sector/industry (from assetProfile) and
-// the sector weightings (from topHoldings) for a ticker. sectorWeightings is
-// empty when the module is absent (e.g. single stocks).
-func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker string) (sector, industry string, sectorWeightings []model.ExposureRow, err error) {
+// FetchAssetProfileExtended returns sector/industry + issuer domicile country
+// (from assetProfile) and the sector weightings (from topHoldings) for a
+// ticker. sectorWeightings is empty when the module is absent (e.g. single
+// stocks).
+func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker string) (sector, industry, country string, sectorWeightings []model.ExposureRow, err error) {
 	result, err := f.fetchQuoteSummary(ctx, ticker, "assetProfile,topHoldings")
 	if err != nil {
-		return "", "", nil, err
+		return "", "", "", nil, err
 	}
 	if result == nil {
-		return "", "", nil, nil
+		return "", "", "", nil, nil
 	}
 
 	r := result.QuoteSummary.Result[0]
@@ -150,7 +164,7 @@ func (f *YahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker str
 		}
 	}
 
-	return r.AssetProfile.Sector, r.AssetProfile.Industry, sectorWeightings, nil
+	return r.AssetProfile.Sector, r.AssetProfile.Industry, r.AssetProfile.Country, sectorWeightings, nil
 }
 
 // FetchFundCategory returns the Morningstar-style fund category for a ticker

@@ -58,3 +58,81 @@ func TestFundClassifiable(t *testing.T) {
 		}
 	}
 }
+
+func TestRegionForCountry(t *testing.T) {
+	cases := []struct {
+		name    string
+		country string
+		want    string
+	}{
+		{"US", "US", "North America"},
+		{"us lowercase", "us", "North America"},
+		{"Canada", "CA", "North America"},
+		{"Italy", "IT", "Europe Developed"},
+		{"Italy lowercase", "it", "Europe Developed"},
+		{"Japan", "JP", "Asia Developed"},
+		{"China", "CN", "Asia Emerging"},
+		{"empty", "", "Other / Not Classified"},
+		{"unknown", "XYZ", "Other / Not Classified"},
+		{"spaces", "  US  ", "North America"},
+	}
+	for _, tc := range cases {
+		if got := RegionForCountry(tc.country); got != tc.want {
+			t.Errorf("%s: RegionForCountry(%q) = %q, want %q", tc.name, tc.country, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeCountry(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"full name", "United States", "US"},
+		{"full name lowercase", "united kingdom", "GB"},
+		{"already a code", "US", "US"},
+		{"code lowercase", "it", "IT"},
+		{"full name with spaces", "  Switzerland ", "CH"},
+		{"full name multi-word", "Hong Kong", "HK"},
+		{"unknown", "XYZ", ""},
+		{"unknown name", "Atlantis", ""},
+		{"empty", "", ""},
+		{"one letter is unknown", "U", ""},
+		{"usa alias resolved via map", "USA", "US"},
+		{"justetf name", "South Korea", "KR"},
+		{"justetf name", "Saudi Arabia", "SA"},
+		{"justetf name", "United Arab Emirates", "AE"},
+		{"justetf name", "Thailand", "TH"},
+		{"justetf name", "Malaysia", "MY"},
+	}
+	for _, tc := range cases {
+		if got := NormalizeCountry(tc.in); got != tc.want {
+			t.Errorf("%s: NormalizeCountry(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeSectorJustETF(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"Technology", "Information Technology"},
+		{"Finance", "Financials"},
+		{"Non-Energy Materials", "Materials"},
+		{"Consumer Non-Cyclicals", "Consumer Staples"},
+		{"Consumer Cyclicals", "Consumer Discretionary"},
+		{"Consumer Services", "Consumer Discretionary"},
+		{"Telecommunication", "Communication Services"},
+		{"Healthcare", "Health Care"},
+		{"Industrials", "Industrials"},
+		{"Energy", "Energy"},
+		{"Utilities", "Utilities"},
+	}
+	for _, tc := range cases {
+		if got := NormalizeSector(tc.in); got != tc.want {
+			t.Errorf("NormalizeSector(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

@@ -27,5 +27,12 @@ frontend/dist/
 frontend/tsconfig.tsbuildinfo
 *.log
 
+# Python service
+python-service/.venv/
+python-service/__pycache__/
+python-service/app/__pycache__/
+python-service/tests/__pycache__/
+python-service/.pytest_cache/
+
 # Docker
 .terraform/

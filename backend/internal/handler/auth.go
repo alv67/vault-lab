@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -448,6 +449,31 @@ func (h *Handler) FetchAssetExposure(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, exposure)
 }
 
+func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchETFExposure(r.Context(), uid)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("fetch etf exposure failed")
+			respondError(w, http.StatusBadGateway, "etf exposure fetch failed")
+		}
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
 func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	uid, err := parseUUID(id)
@@ -469,6 +495,19 @@ func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// BackfillAssetMeta fills missing country/sector metadata for every stock asset
+// and returns a report of the changes applied.
+func (h *Handler) BackfillAssetMeta(w http.ResponseWriter, r *http.Request) {
+	report, err := h.svc.BackfillAssetMeta(r.Context())
+	if err != nil {
+		log.Error().Err(err).Msg("backfill asset meta failed")
+		respondError(w, http.StatusInternalServerError, "backfill failed")
+		return
+	}
+
+	respond(w, http.StatusOK, report)
+}
+
 func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 	var asset model.Asset
 	if err := json.NewDecoder(r.Body).Decode(&asset); err != nil {
@@ -478,6 +517,17 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.svc.CreateAsset(r.Context(), &asset)
 	if err != nil {
+		var dup *service.AssetExistsError
+		if errors.As(err, &dup) {
+			respond(w, http.StatusConflict, map[string]interface{}{
+				"error":    dup.Error(),
+				"asset_id": dup.Existing.ID,
+				// Same key as a successful create, so clients that read the
+				// response body id keep working on reruns (201 vs 409).
+				"id": dup.Existing.ID,
+			})
+			return
+		}
 		log.Error().Err(err).Msg("create asset failed")
 		respondError(w, http.StatusInternalServerError, "create failed")
 		return

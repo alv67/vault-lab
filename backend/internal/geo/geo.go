@@ -141,20 +141,128 @@ func RegionForCountry(country string) string {
 	return "Other / Not Classified"
 }
 
+// countryCodeByName maps full country names (Yahoo assetProfile style, e.g.
+// "United States") to their ISO alpha-2 code. Lookups are case-insensitive.
+var countryCodeByName = map[string]string{
+	"UNITED STATES":            "US",
+	"UNITED STATES OF AMERICA": "US",
+	"USA":                      "US",
+	"CANADA":                   "CA",
+	"UNITED KINGDOM":           "GB",
+	"GREAT BRITAIN":            "GB",
+	"ENGLAND":                  "GB",
+	"FRANCE":                   "FR",
+	"GERMANY":                  "DE",
+	"ITALY":                    "IT",
+	"SPAIN":                    "ES",
+	"NETHERLANDS":              "NL",
+	"SWITZERLAND":              "CH",
+	"SWEDEN":                   "SE",
+	"DENMARK":                  "DK",
+	"NORWAY":                   "NO",
+	"FINLAND":                  "FI",
+	"BELGIUM":                  "BE",
+	"AUSTRIA":                  "AT",
+	"PORTUGAL":                 "PT",
+	"IRELAND":                  "IE",
+	"JAPAN":                    "JP",
+	"AUSTRALIA":                "AU",
+	"CHINA":                    "CN",
+	"HONG KONG":                "HK",
+	"INDIA":                    "IN",
+	"BRAZIL":                   "BR",
+	"MEXICO":                   "MX",
+	"ARGENTINA":                "AR",
+	"TAIWAN":                   "TW",
+	"KOREA":                    "KR",
+	"REPUBLIC OF KOREA":        "KR",
+	"SOUTH KOREA":              "KR",
+	"SINGAPORE":                "SG",
+	"SOUTH AFRICA":             "ZA",
+	"NEW ZEALAND":              "NZ",
+	"RUSSIA":                   "RU",
+	"POLAND":                   "PL",
+	"TURKEY":                   "TR",
+	"ISRAEL":                   "IL",
+	"LUXEMBOURG":               "LU",
+	"GREECE":                   "GR",
+	"SAUDI ARABIA":             "SA",
+	"UNITED ARAB EMIRATES":     "AE",
+	"THAILAND":                 "TH",
+	"MALAYSIA":                 "MY",
+	"INDONESIA":                "ID",
+	"VIETNAM":                  "VN",
+	"PHILIPPINES":              "PH",
+	"PAKISTAN":                 "PK",
+	"COLOMBIA":                 "CO",
+	"CHILE":                    "CL",
+	"PERU":                     "PE",
+	"CZECH REPUBLIC":           "CZ",
+	"CZECHIA":                  "CZ",
+	"HUNGARY":                  "HU",
+	"ROMANIA":                  "RO",
+	"QATAR":                    "QA",
+	"KUWAIT":                   "KW",
+	"EGYPT":                    "EG",
+	"NIGERIA":                  "NG",
+	"KENYA":                    "KE",
+	"BANGLADESH":               "BD",
+}
+
+// NormalizeCountry trims and upper-cases the input, returning the ISO alpha-2
+// code. An input that is already a two-letter code is returned unchanged; other
+// values are resolved against the full-name map. Unknown values return "".
+func NormalizeCountry(codeOrName string) string {
+	s := strings.ToUpper(strings.TrimSpace(codeOrName))
+	if s == "" {
+		return ""
+	}
+	if isISOCode(s) {
+		return s
+	}
+	return countryCodeByName[s]
+}
+
+// isISOCode reports whether s is a two-letter ASCII code.
+func isISOCode(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 'A' || s[i] > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// IsValidCountry reports whether s is a recognizable country value: either an
+// ISO alpha-2 code or a resolvable full name.
+func IsValidCountry(s string) bool {
+	return NormalizeCountry(s) != ""
+}
+
 var sectorAliases = map[string]string{
 	"Technology":             "Information Technology",
 	"Information Technology": "Information Technology",
 	"Financial Services":     "Financials",
+	"Finance":                "Financials",
 	"Financials":             "Financials",
 	"Healthcare":             "Health Care",
 	"Health Care":            "Health Care",
 	"Consumer Cyclical":      "Consumer Discretionary",
+	"Consumer Cyclicals":     "Consumer Discretionary",
+	"Consumer Services":      "Consumer Discretionary",
 	"Consumer Discretionary": "Consumer Discretionary",
 	"Consumer Defensive":     "Consumer Staples",
+	"Consumer Non-Cyclicals": "Consumer Staples",
 	"Consumer Staples":       "Consumer Staples",
-	"Communication Services": "Communication Services",
+	"Non-Energy Materials":   "Materials",
 	"Basic Materials":        "Materials",
 	"Materials":              "Materials",
+	"Communication Services": "Communication Services",
+	"Telecommunication":      "Communication Services",
+	"Telecommunications":     "Communication Services",
 }
 
 // NormalizeSector maps a provider sector name to the canonical GICS name.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/amelamela/vault-lab/internal/auth"
@@ -39,7 +40,18 @@ var (
 	ErrCurrencyProtected  = errors.New("currency cannot be removed")
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
 	ErrInvalidAssetClass  = errors.New("invalid asset class")
+	ErrNotETF             = errors.New("asset is not an ETF")
+	ErrAssetExists        = errors.New("asset with this ticker already exists")
 )
+
+// AssetExistsError reports a duplicate ticker during creation and carries
+// the already-stored asset so callers can surface its id.
+type AssetExistsError struct {
+	Existing *model.Asset
+}
+
+func (e *AssetExistsError) Error() string { return fmt.Sprintf("%s: %s", ErrAssetExists, e.Existing.Ticker) }
+func (e *AssetExistsError) Unwrap() error { return ErrAssetExists }
 
 // assetClasses is the allowed set for asset_class plus a helper to derive a
 // default class from the asset type.
@@ -75,6 +87,7 @@ type Service struct {
 	repos           *repository.Repository
 	jwtAuth         *auth.JWTAuth
 	fetcher         *price.YahooFetcher
+	etfFetcher      price.ETFFetcher
 	lookupCacheTTL  time.Duration
 	cache           *cache.Cache
 	seriesMaxPoints int
@@ -82,14 +95,14 @@ type Service struct {
 	Health          *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, etfFetcher price.ETFFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
 	if stalePriceDays <= 0 {
 		stalePriceDays = 7
 	}
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, etfFetcher: etfFetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
 }
 
 // cached implements the read-through cache pattern: it reads the current data
@@ -249,8 +262,32 @@ func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.A
 	if asset.AssetClass == "" {
 		asset.AssetClass = defaultAssetClassForType(asset.Type)
 	}
+	if asset.Country != "" {
+		asset.Country = geo.NormalizeCountry(asset.Country)
+		if asset.Country == "" {
+			return nil, fmt.Errorf("%w: invalid country", ErrInvalidInput)
+		}
+	}
+	existing, err := s.repos.Asset.FindByTicker(ctx, asset.Ticker)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, &AssetExistsError{Existing: existing}
+	}
+
 	created, err := s.repos.Asset.Create(ctx, asset)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			existing, lookupErr := s.repos.Asset.FindByTicker(ctx, asset.Ticker)
+			if lookupErr != nil {
+				return nil, err
+			}
+			if existing != nil {
+				return nil, &AssetExistsError{Existing: existing}
+			}
+		}
 		return nil, err
 	}
 	s.syncAssetBackground(created.ID)
@@ -293,7 +330,12 @@ func (s *Service) UpdateAsset(ctx context.Context, id uuid.UUID, patch *model.As
 		existing.AssetClass = *patch.AssetClass
 	}
 	if patch.Country != nil {
-		existing.Country = *patch.Country
+		existing.Country = geo.NormalizeCountry(*patch.Country)
+		// Non-empty values must resolve to an ISO alpha-2 code; an explicit
+		// empty string clears the field (ETF without a country).
+		if *patch.Country != "" && existing.Country == "" {
+			return nil, fmt.Errorf("%w: invalid country", ErrInvalidInput)
+		}
 	}
 	if patch.Currency != nil && *patch.Currency != "" {
 		existing.Currency = *patch.Currency
@@ -376,9 +418,9 @@ func (s *Service) GetAssetQuote(ctx context.Context, id uuid.UUID) (*model.Asset
 	return quote, nil
 }
 
-// FetchAssetProfile resolves sector and industry from Yahoo and persists them
-// on the asset. The Yahoo error is propagated to the caller when the profile
-// cannot be fetched.
+// FetchAssetProfile resolves sector, industry and issuer domicile country from
+// Yahoo and persists them on the asset. The Yahoo error is propagated to the
+// caller when the profile cannot be fetched.
 func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -388,12 +430,17 @@ func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.A
 		return nil, err
 	}
 
-	sector, industry, err := s.fetcher.FetchAssetProfile(ctx, asset.Ticker)
+	sector, industry, country, err := s.fetcher.FetchAssetProfile(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
 	asset.Sector = sector
 	asset.Industry = industry
+	// Only stock assets expose a single issuer country; keep existing values
+	// when Yahoo does not report one.
+	if asset.Type == model.AssetTypeStock && country != "" {
+		asset.Country = geo.NormalizeCountry(country)
+	}
 
 	updated, err := s.repos.Asset.Update(ctx, asset)
 	if err != nil {
@@ -493,7 +540,7 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	sector, industry, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	sector, industry, country, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -518,6 +565,9 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	if industry != "" {
 		asset.Industry = industry
 	}
+	if asset.Type == model.AssetTypeStock && country != "" {
+		asset.Country = geo.NormalizeCountry(country)
+	}
 
 	regions, err := s.repos.Exposure.FindRegions(ctx, id)
 	if err != nil {
@@ -535,6 +585,65 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	}
 	s.bumpRev(ctx)
 	return s.buildExposure(asset, regions, sectors), nil
+}
+
+// FetchETFExposure fetches the country and sector exposure of an ETF from the
+// python-service, maps countries to macro-regions and sectors to canonical GICS
+// names, then persists and returns the complete exposure.
+func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+	if asset.Type != model.AssetTypeETF {
+		return nil, ErrNotETF
+	}
+	if strings.TrimSpace(asset.ISIN) == "" {
+		isin, err := s.resolveETFISIN(ctx, asset)
+		if err != nil {
+			return nil, err
+		}
+		asset.ISIN = isin
+		if _, err := s.repos.Asset.Update(ctx, asset); err != nil {
+			return nil, err
+		}
+	}
+
+	raw, err := s.etfFetcher.FetchExposure(ctx, asset.ISIN)
+	if err != nil {
+		return nil, err
+	}
+
+	mapped := &model.AssetExposure{}
+	if regions := price.AggregateRegions(raw.Regions); len(regions) > 0 {
+		mapped.Regions = regions
+	}
+	if sectors := price.AggregateSectors(raw.Sectors); len(sectors) > 0 {
+		mapped.Sectors = sectors
+	}
+	return s.SaveAssetExposure(ctx, id, mapped)
+}
+
+// resolveETFISIN looks up the ISIN of an ETF from its ticker through the
+// python-service (which strips the exchange suffix before querying JustETF) and
+// picks the best result via price.BestMatch.
+func (s *Service) resolveETFISIN(ctx context.Context, asset *model.Asset) (string, error) {
+	ticker := strings.TrimSpace(asset.Ticker)
+	if ticker == "" {
+		return "", fmt.Errorf("%w: asset has no ticker to resolve an ISIN", ErrInvalidInput)
+	}
+	results, err := s.etfFetcher.SearchTicker(ctx, ticker)
+	if err != nil {
+		return "", err
+	}
+	best, ok := price.BestMatch(results, ticker, asset.Name)
+	if !ok {
+		return "", fmt.Errorf("%w: no ETF found for ticker %s", ErrNotFound, ticker)
+	}
+	return best.ISIN, nil
 }
 
 // buildExposure assembles the complete exposure output for an asset: every
@@ -1547,6 +1656,73 @@ func (s *Service) BackfillAssetHistory(ctx context.Context, id uuid.UUID) error 
 	}
 	s.bumpRev(ctx)
 	return nil
+}
+
+// BackfillAssetMeta reconciles issuer country and GICS sector for every stock
+// asset. For stocks the Yahoo assetProfile.country is the source of truth for
+// the exposure country (the issuer's domicile), so it is applied whenever Yahoo
+// reports a recognizable value — filling empty fields and correcting legacy
+// values derived from the old exchange-based logic. A manual override stays
+// possible via PATCH, but a subsequent backfill restores the issuer domicile.
+// Sector is normalized to its canonical GICS form, so legacy non-canonical
+// values are corrected too. Failures are reported per asset without aborting.
+func (s *Service) BackfillAssetMeta(ctx context.Context) (*model.MetaBackfillReport, error) {
+	assets, err := s.repos.Asset.AllStocks(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &model.MetaBackfillReport{
+		Processed: len(assets),
+		Errors:    []string{},
+	}
+	for _, a := range assets {
+		sector, industry, country, err := s.fetcher.FetchAssetProfile(ctx, a.Ticker)
+		if err != nil {
+			report.Failed++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %v", a.Ticker, err))
+			continue
+		}
+
+		changed := false
+
+		// Country: Yahoo is the source of truth when it recognizes the issuer
+		// domicile. Only when Yahoo reports no country do we fall back to the
+		// exchange-derived value for stocks that have none stored.
+		if c := geo.NormalizeCountry(country); c != "" {
+			if a.Country != c {
+				a.Country = c
+				report.UpdatedCountry++
+				changed = true
+			}
+		} else if a.Country == "" {
+			if c := price.ExchangeCountry(a.Exchange); c != "" {
+				a.Country = c
+				report.UpdatedCountry++
+				changed = true
+			}
+		}
+
+		if sec := geo.NormalizeSector(sector); sec != "" && a.Sector != sec {
+			a.Sector = sec
+			report.UpdatedSector++
+			changed = true
+		}
+		if industry != "" && a.Industry != industry {
+			a.Industry = industry
+			changed = true
+		}
+
+		if !changed {
+			continue
+		}
+		if _, err := s.repos.Asset.Update(ctx, a); err != nil {
+			report.Failed++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %v", a.Ticker, err))
+		}
+	}
+	s.bumpRev(ctx)
+	return report, nil
 }
 
 func (s *Service) syncAssetBackground(assetID uuid.UUID) {

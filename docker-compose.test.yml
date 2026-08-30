@@ -49,12 +49,24 @@ services:
       VAULT_SERVER_PORT: 8080
       VAULT_LOG_LEVEL: debug
       VAULT_YAHOO_FINANCE_ENABLED: "false"
+      VAULT_PYTHON_SERVICE_URL: "http://python-service:8000"
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
     command: >
       sh -c "sleep 3 && /server migrate && /server"
+
+  python-service:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   pgdata_test:
