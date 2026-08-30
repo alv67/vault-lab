@@ -51,11 +51,12 @@ Content-Type: application/json
   "currency": "EUR"
 }
 
-# If the asset was already created, this returns 409 with a clear message and the
-# existing asset id (asset_id field). The id below then picks up that response.
+# On a fresh stack this creates the asset (201, body has id).
+# If the ticker already exists it returns 409 — the body carries the same id in
+# both "id" and "asset_id", so {{assetId}} resolves on reruns too.
 @assetId = {{createAsset.response.body.id}}
 
-### 4. Duplicate create — expected: 409 Conflict with {"error": "...already exists...", "asset_id": "<existing id>"}
+### 4. Duplicate create — expected: 409 Conflict with {"error": "...already exists...", "id": "<existing id>", "asset_id": "<existing id>"}
 POST {{baseUrl}}/assets
 Authorization: Bearer {{token}}
 Content-Type: application/json

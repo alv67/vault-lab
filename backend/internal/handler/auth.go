@@ -522,6 +522,9 @@ func (h *Handler) CreateAsset(w http.ResponseWriter, r *http.Request) {
 			respond(w, http.StatusConflict, map[string]interface{}{
 				"error":    dup.Error(),
 				"asset_id": dup.Existing.ID,
+				// Same key as a successful create, so clients that read the
+				// response body id keep working on reruns (201 vs 409).
+				"id": dup.Existing.ID,
 			})
 			return
 		}
