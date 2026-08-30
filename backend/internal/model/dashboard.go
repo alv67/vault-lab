@@ -48,6 +48,36 @@ type PortfolioClassAllocation struct {
 	Classes  []*ClassAllocation `json:"classes"`
 }
 
+// RegionAllocation is one macro-region bucket within a portfolio's geographic
+// allocation. Weight is in percentage (sum over all buckets = 100).
+type RegionAllocation struct {
+	Region string          `json:"region"`
+	Value  decimal.Decimal `json:"value"`
+	Weight decimal.Decimal `json:"weight"`
+}
+
+// PortfolioGeographyAllocation groups the geographic allocation of a portfolio
+// in its reference currency.
+type PortfolioGeographyAllocation struct {
+	Currency string              `json:"currency"`
+	Regions  []*RegionAllocation `json:"regions"`
+}
+
+// SectorAllocation is one GICS sector bucket within a portfolio's sector
+// allocation. Weight is in percentage (sum over all buckets = 100).
+type SectorAllocation struct {
+	Sector string          `json:"sector"`
+	Value  decimal.Decimal `json:"value"`
+	Weight decimal.Decimal `json:"weight"`
+}
+
+// PortfolioSectorAllocation groups the sector allocation of a portfolio in its
+// reference currency.
+type PortfolioSectorAllocation struct {
+	Currency string              `json:"currency"`
+	Sectors  []*SectorAllocation `json:"sectors"`
+}
+
 type PortfolioPerformance struct {
 	Date  time.Time       `json:"date"`
 	Value decimal.Decimal `json:"value"`
@@ -82,6 +112,7 @@ type Holding struct {
 	Country         string          `json:"country"`
 	Sector          string          `json:"sector,omitempty"`
 	AssetClass      string          `json:"asset_class,omitempty"`
+	Type            AssetType       `json:"-"`
 	PriceFetchedAt  *time.Time      `json:"price_fetched_at,omitempty"`
 }
 

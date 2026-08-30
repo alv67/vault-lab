@@ -70,7 +70,7 @@ Tutte sotto `/api/v1` (vedi anche subagent backend):
   - POST `/assets/{id}/backfill-history`
 - Portfoli: GET/POST `/portfolios`, GET/PATCH/DELETE `/portfolios/{id}`
 - Transazioni: GET/POST `/portfolios/{id}/transactions`, PATCH/DELETE `/transactions/{id}`
-- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/roi`, GET `/dashboard`
+- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/allocation/geography`, `/allocation/sector`, `/roi`, GET `/dashboard`
 - Prezzi: GET `/prices/{assetID}`, POST `/prices/refresh`
 
 ## Note

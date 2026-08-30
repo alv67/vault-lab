@@ -728,8 +728,11 @@ otherwise continue".
   yet.
 - The asset detail page and the exposure endpoints store **per-asset weights**
   in `asset_region_weights` and `asset_sector_weights`; the weighted-sum
-  allocation endpoints at portfolio level (EPIC B.6/B.7) and the dashboard
-  widgets (B.8) are not implemented yet.
+  allocation endpoints at portfolio level are implemented:
+  `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
+  8 macro-regions + `Other`, zero-filled) and `/allocation/sector` (EPIC B.7,
+  11 GICS sectors + `Other`). The dashboard/portfolio chart widgets (B.8) are
+  an upcoming frontend task.
 - The `python-service` microservice (B.5) fetches ETF exposure and resolves
   ISINs from tickers via JustETF; it is exercised only through the backend
   (`POST /assets/{id}/fetch-etf-exposure`) and its `GET /api/v1/etf/search`
