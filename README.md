@@ -53,7 +53,9 @@ and send the requests in order.
 
 ## Project Status
 
-First official release: **v0.1.0** on [`main`](https://github.com/alv67/vault-lab/tree/main).
+Releases on [`main`](https://github.com/alv67/vault-lab/tree/main): **v0.1.0** (25 Aug 2026,
+first official release) and **v0.2.0** (30 Aug 2026, EPIC A — data correctness & security —
+and EPIC B — geographic/sector distribution, asset classes, FX history, charts).
 
 Active development on the [`develop`](https://github.com/alv67/vault-lab/tree/develop) branch — see [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md) for the roadmap.
 

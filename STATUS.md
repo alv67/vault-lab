@@ -15,6 +15,8 @@
 ## Release
 
 **v0.1.0** — prima release ufficiale su `main` (25 Ago 2026).
+**v0.2.0** — seconda release su `main` (30 Ago 2026): EPIC A (data correctness & security)
+e EPIC B completo (distribuzione geo/settoriale, asset class, FX history, charts).
 Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0` su `main`.
 
 ## Fase 0 — ✅ Completata
