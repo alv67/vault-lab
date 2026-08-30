@@ -15,8 +15,9 @@ import (
 )
 
 type fakePortfolioRepo struct {
-	portfolio *model.Portfolio
-	holdings  []*model.Holding
+	portfolio  *model.Portfolio
+	portfolios []*model.Portfolio
+	holdings   []*model.Holding
 }
 
 func (f *fakePortfolioRepo) Create(ctx context.Context, p *model.Portfolio) (*model.Portfolio, error) {
@@ -26,7 +27,7 @@ func (f *fakePortfolioRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.
 	return f.portfolio, nil
 }
 func (f *fakePortfolioRepo) FindByUser(ctx context.Context, userID uuid.UUID) ([]*model.Portfolio, error) {
-	return nil, nil
+	return f.portfolios, nil
 }
 func (f *fakePortfolioRepo) Update(ctx context.Context, p *model.Portfolio) error { return nil }
 func (f *fakePortfolioRepo) Delete(ctx context.Context, id uuid.UUID) error       { return nil }
@@ -358,5 +359,101 @@ func TestGetPortfolioGeographyAllocation_OtherBucket(t *testing.T) {
 	}
 	if !equalDecimal(sOther.Value, decimal.NewFromInt(1000)) {
 		t.Fatalf("sector Other value = %v, want 1000", sOther.Value)
+	}
+}
+
+func regionByName(t *testing.T, regions []*model.RegionAllocation, name string) *model.RegionAllocation {
+	t.Helper()
+	for _, r := range regions {
+		if r.Region == name {
+			return r
+		}
+	}
+	t.Fatalf("region %q not found", name)
+	return nil
+}
+
+func sectorByName(t *testing.T, sectors []*model.SectorAllocation, name string) *model.SectorAllocation {
+	t.Helper()
+	for _, s := range sectors {
+		if s.Sector == name {
+			return s
+		}
+	}
+	t.Fatalf("sector %q not found", name)
+	return nil
+}
+
+func assertDecimalInDelta(t *testing.T, got, want decimal.Decimal, delta, what string) {
+	t.Helper()
+	if got.Sub(want).Abs().GreaterThan(decimal.RequireFromString(delta)) {
+		t.Fatalf("%s = %v, want %v ± %s", what, got, want, delta)
+	}
+}
+
+func TestGetDashboardAllocation_AggregatesAcrossPortfolios(t *testing.T) {
+	etfID := uuid.New()
+	stockID := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{
+			{Currency: "USD"},
+			{Currency: "EUR"},
+		},
+		holdings: []*model.Holding{
+			holding(etfID.String(), "EUR", "", "", model.AssetTypeETF, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+			holding(stockID.String(), "USD", "IT", "Financials", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+		},
+	}
+	ex := &fakeExposureRepo{
+		regions: map[string][]model.ExposureRow{
+			etfID.String(): {{Name: "North America", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.9")}}
+	svc := newTestService(t, pf, ex, fx)
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency = %q, want USD", got.Currency)
+	}
+
+	na := regionByName(t, got.Regions, "North America")
+	assertDecimalInDelta(t, na.Value, decimal.RequireFromString("111.11"), "0.01", "North America value")
+	assertDecimalInDelta(t, na.Weight, decimal.RequireFromString("52.63"), "0.01", "North America weight")
+
+	eu := regionByName(t, got.Regions, "Europe Developed")
+	assertDecimalInDelta(t, eu.Value, decimal.NewFromInt(100), "0.01", "Europe value")
+	assertDecimalInDelta(t, eu.Weight, decimal.RequireFromString("47.37"), "0.01", "Europe weight")
+
+	weightSum := decimal.Zero
+	for _, r := range got.Regions {
+		weightSum = weightSum.Add(r.Weight)
+	}
+	assertDecimalInDelta(t, weightSum, decimal.NewFromInt(100), "0.01", "regions weight sum")
+
+	fin := sectorByName(t, got.Sectors, "Financials")
+	if !fin.Value.IsPositive() {
+		t.Fatalf("Financials value = %v, want positive", fin.Value)
+	}
+}
+
+func TestGetDashboardAllocation_EmptyUser(t *testing.T) {
+	svc := newTestService(t, &fakePortfolioRepo{}, &fakeExposureRepo{}, &fakeFXRepo{})
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "USD" {
+		t.Fatalf("currency = %q, want USD", got.Currency)
+	}
+	if got.Regions == nil || len(got.Regions) != 0 {
+		t.Fatalf("regions = %v, want empty non-nil slice", got.Regions)
+	}
+	if got.Sectors == nil || len(got.Sectors) != 0 {
+		t.Fatalf("sectors = %v, want empty non-nil slice", got.Sectors)
 	}
 }

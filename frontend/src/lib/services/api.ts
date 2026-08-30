@@ -199,6 +199,34 @@ export interface PortfolioClassAllocation {
   classes: AssetClassSlice[]
 }
 
+export interface RegionAllocation {
+  region: string
+  value: string
+  weight: string
+}
+
+export interface SectorAllocation {
+  sector: string
+  value: string
+  weight: string
+}
+
+export interface PortfolioGeographyAllocation {
+  currency: string
+  regions: RegionAllocation[]
+}
+
+export interface PortfolioSectorAllocation {
+  currency: string
+  sectors: SectorAllocation[]
+}
+
+export interface DashboardAllocation {
+  currency: string
+  regions: RegionAllocation[]
+  sectors: SectorAllocation[]
+}
+
 export interface PortfolioPerformance {
   date: string
   value: string
@@ -493,6 +521,11 @@ export const portfolioApi = {
   allocation: (id: string) => request<AssetAllocation[]>(`/portfolios/${id}/allocation`),
   classAllocation: (id: string) =>
     request<PortfolioClassAllocation>(`/portfolios/${id}/allocation/class`),
+  geographyAllocation: (id: string) =>
+    request<PortfolioGeographyAllocation>(`/portfolios/${id}/allocation/geography`),
+  sectorAllocation: (id: string) =>
+    request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
+  dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),

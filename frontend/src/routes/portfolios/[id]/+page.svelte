@@ -21,9 +21,13 @@
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
   import PositionChart from '$lib/components/PositionChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
+  import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
+  import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import {
     type ExposureRow,
     type PortfolioClassAllocation,
+    type PortfolioGeographyAllocation,
+    type PortfolioSectorAllocation,
   } from '$lib/services/api'
   import { Plus, Pencil, Trash2, Download } from 'lucide-svelte'
 
@@ -57,6 +61,10 @@
   let history = $state<PortfolioHistory | null>(null)
   let classAlloc = $state<PortfolioClassAllocation | null>(null)
   let classAllocError = $state(false)
+  let geoAlloc = $state<PortfolioGeographyAllocation | null>(null)
+  let sectorAlloc = $state<PortfolioSectorAllocation | null>(null)
+  let geoAllocError = $state(false)
+  let sectorAllocError = $state(false)
   let selectedAsset = $state('')
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
@@ -109,6 +117,20 @@
       classAlloc = await portfolioApi.classAllocation(id)
     } catch {
       classAllocError = true
+    }
+
+    // Anche geografia e settore sono isolati: un errore qui (endpoint non
+    // disponibile o dati mancanti) non deve bloccare il resto della pagina.
+    try {
+      geoAlloc = await portfolioApi.geographyAllocation(id)
+    } catch {
+      geoAllocError = true
+    }
+
+    try {
+      sectorAlloc = await portfolioApi.sectorAllocation(id)
+    } catch {
+      sectorAllocError = true
     }
 
     try {
@@ -393,6 +415,29 @@
     {:else}
       <p class="text-sm text-gray-400">Nessuna allocazione per classi</p>
     {/if}
+  </div>
+
+  <div class="mb-6 flex flex-col gap-4 md:flex-row">
+    <div class="w-full md:w-1/2">
+      {#if geoAllocError}
+        <div class="rounded-xl bg-white p-4 shadow">
+          <h2 class="mb-4 font-semibold">Allocazione geografica</h2>
+          <p class="text-sm text-gray-400">Allocazione geografica non disponibile</p>
+        </div>
+      {:else}
+        <GeographyChart data={geoAlloc?.regions ?? []} {currency} />
+      {/if}
+    </div>
+    <div class="w-full md:w-1/2">
+      {#if sectorAllocError}
+        <div class="rounded-xl bg-white p-4 shadow">
+          <h2 class="mb-4 font-semibold">Allocazione settoriale</h2>
+          <p class="text-sm text-gray-400">Allocazione settoriale non disponibile</p>
+        </div>
+      {:else}
+        <SectorChart data={sectorAlloc?.sectors ?? []} {currency} />
+      {/if}
+    </div>
   </div>
 
   <div class="mb-4 flex items-center gap-2">

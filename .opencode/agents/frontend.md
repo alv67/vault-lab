@@ -51,6 +51,10 @@ frontend/
 6. **Dettaglio asset `/assets/[id]`** — metadati editabili (exchange, ISIN),
    storico prezzi (backfill), tabelle esposizione geo/settore modificabili,
    donut chart (EPIC B.4/B.10)
+7. **Widget B.8** — donut geografia/settore in `src/lib/components/domain/`
+   (`GeographyChart.svelte` / `SectorChart.svelte`): card nella pagina
+   portfolio e card "Allocazione complessiva" nella dashboard (aggregato
+   `GET /dashboard/allocation` in USD su tutti i portafogli)
 
 ## Stile UI
 
@@ -70,7 +74,7 @@ Tutte sotto `/api/v1` (vedi anche subagent backend):
   - POST `/assets/{id}/backfill-history`
 - Portfoli: GET/POST `/portfolios`, GET/PATCH/DELETE `/portfolios/{id}`
 - Transazioni: GET/POST `/portfolios/{id}/transactions`, PATCH/DELETE `/transactions/{id}`
-- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/allocation/geography`, `/allocation/sector`, `/roi`, GET `/dashboard`
+- Statistiche: GET `/portfolios/{id}/summary`, `/performance`, `/allocation`, `/allocation/class`, `/allocation/geography`, `/allocation/sector`, `/roi`, GET `/dashboard`, `/dashboard/allocation`
 - Prezzi: GET `/prices/{assetID}`, POST `/prices/refresh`
 
 ## Note

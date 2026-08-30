@@ -1990,6 +1990,77 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 	})
 }
 
+// GetDashboardAllocation returns the user's whole-vault geographic and sector
+// allocation in USD, aggregating holdings across all portfolios.
+func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) (*model.DashboardAllocation, error) {
+	return cached(s.cache, ctx, "dash-allocation", userID.String(), cacheTTLStats, false, func() (*model.DashboardAllocation, error) {
+		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if len(portfolios) == 0 {
+			return &model.DashboardAllocation{
+				Currency: "USD",
+				Regions:  []*model.RegionAllocation{},
+				Sectors:  []*model.SectorAllocation{},
+			}, nil
+		}
+
+		ids := make([]uuid.UUID, 0, len(portfolios))
+		for _, p := range portfolios {
+			ids = append(ids, p.ID)
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, "USD")
+		if err != nil {
+			return nil, err
+		}
+		geoExposures, err := s.repos.Exposure.FindRegionsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+		secExposures, err := s.repos.Exposure.FindSectorsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+
+		gBuckets, gTotal := buildBuckets(holdings, rates, "USD", geo.Regions, geoExposures,
+			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
+		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
+		for _, name := range geo.Regions {
+			regions = append(regions, &model.RegionAllocation{Region: name, Value: gBuckets[name]})
+		}
+		if gBuckets["Other"].IsPositive() {
+			regions = append(regions, &model.RegionAllocation{Region: "Other", Value: gBuckets["Other"]})
+		}
+		for _, e := range regions {
+			if gTotal.IsPositive() {
+				e.Weight = e.Value.Div(gTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
+		sBuckets, sTotal := buildBuckets(holdings, rates, "USD", geo.GICSSectors, secExposures,
+			func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) })
+		sectors := make([]*model.SectorAllocation, 0, len(geo.GICSSectors)+1)
+		for _, name := range geo.GICSSectors {
+			sectors = append(sectors, &model.SectorAllocation{Sector: name, Value: sBuckets[name]})
+		}
+		if sBuckets["Other"].IsPositive() {
+			sectors = append(sectors, &model.SectorAllocation{Sector: "Other", Value: sBuckets["Other"]})
+		}
+		for _, e := range sectors {
+			if sTotal.IsPositive() {
+				e.Weight = e.Value.Div(sTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
+		return &model.DashboardAllocation{Currency: "USD", Regions: regions, Sectors: sectors}, nil
+	})
+}
+
 func mustUUID(s string) uuid.UUID {
 	id, _ := uuid.Parse(s)
 	return id

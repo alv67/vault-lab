@@ -203,6 +203,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/portfolios/{id}/history", h.GetPortfolioHistory)
 
 			r.Get("/dashboard", h.GetDashboard)
+			r.Get("/dashboard/allocation", h.GetDashboardAllocation)
 
 			r.Get("/settings/currencies", h.ListCurrencies)
 			r.Post("/settings/currencies", h.CreateCurrency)

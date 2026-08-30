@@ -224,3 +224,11 @@ type Dashboard struct {
 	Assets     []PortfolioAssets             `json:"assets"`
 	History    []PortfolioHistory            `json:"history"`
 }
+
+// DashboardAllocation groups the geographic and sector allocation of a user's
+// whole vault, aggregated across all portfolios and converted to USD.
+type DashboardAllocation struct {
+	Currency string              `json:"currency"`
+	Regions  []*RegionAllocation `json:"regions"`
+	Sectors  []*SectorAllocation `json:"sectors"`
+}
