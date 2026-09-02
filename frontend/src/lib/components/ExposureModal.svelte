@@ -18,8 +18,9 @@
     saveSectors,
     prefilling = false,
     fetchingETF = false,
-    prefillExposure,
-    fetchETFExposure,
+    prefillRegionsFromETF,
+    prefillSectorsFromETF,
+    prefillSectorsFromYahoo,
     assetType = 'stock',
   }: {
     open: boolean
@@ -36,8 +37,9 @@
     saveSectors: () => void
     prefilling: boolean
     fetchingETF: boolean
-    prefillExposure: () => void
-    fetchETFExposure: () => void
+    prefillRegionsFromETF: () => void
+    prefillSectorsFromETF: () => void
+    prefillSectorsFromYahoo: () => void
     assetType: string
   } = $props()
 
@@ -71,41 +73,33 @@
     >
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-lg font-semibold">Modifica distribuzione</h2>
-        <div class="flex items-center gap-2">
-          <button
-            onclick={fetchETFExposure}
-            disabled={fetchingETF || assetType !== 'etf'}
-            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {#if fetchingETF}
-              <Loader2 class="h-4 w-4 animate-spin" />
-            {/if}
-            Carica da JustETF
-          </button>
-          <button
-            onclick={prefillExposure}
-            disabled={prefilling}
-            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {#if prefilling}
-              <Loader2 class="h-4 w-4 animate-spin" />
-            {/if}
-            Prefill da Yahoo
-          </button>
-          <button
-            onclick={onClose}
-            class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            aria-label="Chiudi"
-          >
-            <X class="h-5 w-5" />
-          </button>
-        </div>
+        <button
+          onclick={onClose}
+          class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          aria-label="Chiudi"
+        >
+          <X class="h-5 w-5" />
+        </button>
       </div>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <!-- Regions -->
         <div>
-          <h3 class="mb-3 font-medium">Distribuzione geografica</h3>
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <h3 class="font-medium">Distribuzione geografica</h3>
+            <button
+              onclick={prefillRegionsFromETF}
+              disabled={fetchingETF || assetType !== 'etf'}
+              title="Prefill da JustETF"
+              aria-label="Prefill geografico da JustETF"
+              class="flex items-center gap-1 rounded-lg bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {#if fetchingETF}
+                <Loader2 class="h-3 w-3 animate-spin" />
+              {/if}
+              Prefill JustETF
+            </button>
+          </div>
           <div class="flex flex-col gap-4 md:flex-row">
             <div class="flex-1 overflow-x-auto">
               <table class="w-full text-left text-sm">
@@ -161,7 +155,35 @@
 
         <!-- Sectors -->
         <div>
-          <h3 class="mb-3 font-medium">Distribuzione settoriale</h3>
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <h3 class="font-medium">Distribuzione settoriale</h3>
+            <div class="flex items-center gap-1.5">
+              <button
+                onclick={prefillSectorsFromETF}
+                disabled={fetchingETF || assetType !== 'etf'}
+                title="Prefill settori da JustETF"
+                aria-label="Prefill settori da JustETF"
+                class="flex items-center gap-1 rounded-lg bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {#if fetchingETF}
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                {/if}
+                Prefill JustETF
+              </button>
+              <button
+                onclick={prefillSectorsFromYahoo}
+                disabled={prefilling}
+                title="Prefill settori da Yahoo"
+                aria-label="Prefill settori da Yahoo"
+                class="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+              >
+                {#if prefilling}
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                {/if}
+                Prefill Yahoo
+              </button>
+            </div>
+          </div>
           <div class="flex flex-col gap-4 md:flex-row">
             <div class="flex-1 overflow-x-auto">
               <table class="w-full text-left text-sm">

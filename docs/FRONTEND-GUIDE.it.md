@@ -615,11 +615,20 @@ freschi.
   caricamento reindirizza a `/assets`.
 - **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/YTD/MAX (zoom in-place).
 - **Distribuzione geografica** e **Distribuzione settoriale**: sulla pagina
-  restano solo i due donut `ExposurePie`; la **modifica** è spostata in una
-  modale `ExposureModal` (attivata dal pulsante "Modifica"). La modale
-  contiene le tabelle di pesi modificabili con somma dal vivo, validata a 100
-  ± 0,5 (altrimenti il salvataggio è disabilitato). Il salvataggio invia
-  **solo la dimensione modificata**
+  resta solo l'header "Distribuzione" con il pulsante "Modifica" (icona
+  matita) e i due donut `ExposurePie`; tutto l'editing avviene in una modale
+  `ExposureModal`. La modale è **divisa in due parti affiancate**: a sinistra
+  la geografica, a destra la settoriale, ognuna con le tabelle dei pesi
+  modificabili, la somma dal vivo validata a 100 ± 0,5 (altrimenti il
+  salvataggio è disabilitato) e il proprio donut. I pulsanti di **prefill
+  vivono solo nella modale**, accanto al titolo di ciascuna parte, e popolano
+  **solo la rispettiva dimensione**:
+  - geografica: un solo pulsante **"Prefill JustETF"** (`fetchETFExposure`,
+    applica solo `regions`);
+  - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
+    `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
+    applica solo `sectors`).
+  Il salvataggio invia **solo la dimensione modificata**
   (`PUT /assets/{id}/exposure` con `{regions}` o `{sectors}` — omettere una
   chiave lascia l'altra intatta), poi ricarica la risposta canonica. La
   sezione è renderizzata solo quando l'asset è azionabile per l'universo

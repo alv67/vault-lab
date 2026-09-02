@@ -297,17 +297,52 @@
     }
   }
 
-  // Precompila la distribuzione (settori per ETF da topHoldings, settore unico
-  // al 100% per le azioni). Il backend persiste anche settore/industria.
-  async function prefillExposure(): Promise<void> {
+  // Prefill da JustETF: popola SOLO la distribuzione geografica (regioni).
+  async function prefillRegionsFromETF(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const saved = await assetApi.fetchETFExposure(id)
+      exposure = saved
+      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Distribuzione geografica precompilata da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
+    }
+  }
+
+  // Prefill da JustETF: popola SOLO la distribuzione settoriale.
+  async function prefillSectorsFromETF(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const saved = await assetApi.fetchETFExposure(id)
+      exposure = saved
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Distribuzione settoriale precompilata da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
+    }
+  }
+
+  // Prefill da Yahoo: popola SOLO la distribuzione settoriale (topHoldings). Per
+  // le azioni singole ricade sul settore unico al 100% (assetProfile).
+  async function prefillSectorsFromYahoo(): Promise<void> {
     if (!id) return
     prefilling = true
     try {
       const saved = await assetApi.fetchExposure(id)
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
-      toast.success('Settori precompilati da Yahoo')
+      toast.success('Distribuzione settoriale precompilata da Yahoo')
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status
       const message =
@@ -319,24 +354,6 @@
       toast.error(message)
     } finally {
       prefilling = false
-    }
-  }
-
-  async function fetchETFExposure(): Promise<void> {
-    if (!id || !asset) return
-    fetchingETF = true
-    try {
-      const saved = await assetApi.fetchETFExposure(id)
-      exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
-      if (saved.isin) form.isin = saved.isin
-      toast.success('Distribuzione geografica e ISIN caricati da JustETF')
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
-      toast.error(message)
-    } finally {
-      fetchingETF = false
     }
   }
 
@@ -595,26 +612,6 @@
           <h2 class="font-semibold">Distribuzione</h2>
           <div class="flex items-center gap-2">
             <button
-              onclick={fetchETFExposure}
-              disabled={fetchingETF || asset.type !== 'etf'}
-              class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {#if fetchingETF}
-                <Loader2 class="h-4 w-4 animate-spin" />
-              {/if}
-              Carica da JustETF
-            </button>
-            <button
-              onclick={prefillExposure}
-              disabled={prefilling}
-              class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {#if prefilling}
-                <Loader2 class="h-4 w-4 animate-spin" />
-              {/if}
-              Prefill da Yahoo
-            </button>
-            <button
               onclick={() => (exposureModalOpen = true)}
               aria-label="Modifica distribuzione"
               class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
@@ -649,8 +646,9 @@
         {saveSectors}
         {prefilling}
         {fetchingETF}
-        {prefillExposure}
-        {fetchETFExposure}
+        {prefillRegionsFromETF}
+        {prefillSectorsFromETF}
+        {prefillSectorsFromYahoo}
         assetType={asset.type}
       />
     {:else if exposureApplicable === false && asset}

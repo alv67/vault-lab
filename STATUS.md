@@ -211,8 +211,10 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
     fanno zoom in-place (coppia `start`/`end` percentuali) senza ricaricare dati.
   - Uno zoom/spostamento manuale deseleziona il pulsante attivo e preserva la vista.
 - F.10 (#64) — Pagina asset: solo pie chart + modale di modifica esposizione
-  - `ExposureModal.svelte`: le tabelle dei pesi geo/settore si modificano in una
-    modale; sulla pagina restano i due donut `ExposurePie`.
+  - `ExposureModal.svelte`: modale divisa in due parti affiancate (geo/settore);
+    sulla pagina restano i due donut `ExposurePie`. I prefill vivono solo nella
+    modale e popolano una dimensione alla volta: JustETF → regioni; JustETF e
+    Yahoo → settori.
 - Splits sul chart asset — nuovi `GET /assets/{id}/splits` (service `AssetSplits`,
   handler) e `markLine` viola etichettati con il rapporto sul `PriceChart`,
   come nel `PositionChart` del portafoglio.

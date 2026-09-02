@@ -593,10 +593,19 @@ quote/prices.
   redirects to `/assets`.
 - **Storico prezzo**: `PriceChart` with the 1M/3M/1Y/YTD/MAX selector (in-place zoom).
 - **Distribuzione geografica** and **Distribuzione settoriale**: the page
-  shows only the two `ExposurePie` donuts; the editing moved into an
-  `ExposureModal` (triggered by the "Modifica" button). The modal contains the
-  editable weight tables with a live sum, validated to 100 ± 0.5
-  (else the save is disabled). Saving sends **only the edited dimension**
+  keeps only the "Distribuzione" header with the "Modifica" button (pencil
+  icon) and the two `ExposurePie` donuts; all editing happens inside an
+  `ExposureModal`. The modal is **split into two side-by-side parts** (region
+  on the left, sector on the right), each with its editable weight table, the
+  live sum validated to 100 ± 0.5 (else the save is disabled) and its own
+  donut. The **prefill buttons live only inside the modal**, next to each
+  part's title, and fill **only the respective dimension**:
+  - region: a single **"Prefill JustETF"** button (`fetchETFExposure`, applies
+    `regions` only);
+  - sector: **"Prefill JustETF"** (`fetchETFExposure`, applies `sectors`
+    only) and **"Prefill Yahoo"** (`fetchExposure`, Yahoo `topHoldings`,
+    applies `sectors` only).
+  Saving sends **only the edited dimension**
   (`PUT /assets/{id}/exposure` with `{regions}` or `{sectors}` — omitting a
   key leaves the other untouched), then reloads the canonical response. The
   exposure section is rendered only when the asset is actionable for the
