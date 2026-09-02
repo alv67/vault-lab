@@ -66,7 +66,8 @@
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
-  let range = $state<RangeKey>('1Y')
+  let range = $state<RangeKey | null>('1Y')
+  let programmaticallyZooming = $state(false)
 
   let form = $state({
     ticker: '',
@@ -109,16 +110,20 @@
       .map((p) => ({ date: p.date, close: p.close }))
   })
 
-  const zoomStartDate = $derived.by(() => {
-    if (range === 'MAX') return null
+  const zoomSpec = $derived.by(() => {
+    if (!range) return null
+    if (range === 'MAX') return 'MAX' as const
     if (range === 'YTD') {
       const now = new Date()
       const ytd = new Date(now.getFullYear(), 0, 1)
-      return ytd.toISOString().slice(0, 10)
+      return { type: 'startValue', startValue: ytd.toISOString().slice(0, 10) } as const
     }
     const days = RANGES.find((r) => r.key === range)?.days ?? 365
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-    return new Date(cutoff).toISOString().slice(0, 10)
+    return {
+      type: 'startValue' as const,
+      startValue: new Date(cutoff).toISOString().slice(0, 10),
+    }
   })
 
   const sumRegions = $derived(
@@ -134,6 +139,18 @@
     const n = Number(value ?? 0)
     if (n === 0) return 'text-gray-500'
     return n > 0 ? 'text-green-600' : 'text-red-600'
+  }
+
+  function selectRange(r: RangeKey): void {
+    programmaticallyZooming = true
+    range = r
+    setTimeout(() => (programmaticallyZooming = false), 300)
+  }
+
+  function handleChartZoom(): void {
+    if (!programmaticallyZooming) {
+      range = null
+    }
   }
 
   function fillForm(a: Asset): void {
@@ -550,7 +567,7 @@
         <div class="flex gap-1">
           {#each RANGES as r (r.key)}
             <button
-              onclick={() => (range = r.key)}
+              onclick={() => selectRange(r.key)}
               class="rounded-lg px-3 py-1.5 text-sm {range === r.key
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-600 hover:bg-gray-100'}"
@@ -560,7 +577,12 @@
           {/each}
         </div>
       </div>
-      <PriceChart series={chartSeries} {currency} zoomStart={zoomStartDate} />
+      <PriceChart
+        series={chartSeries}
+        {currency}
+        zoomSpec={zoomSpec}
+        onDataZoom={handleChartZoom}
+      />
     </div>
 
     {#if exposureApplicable && exposure}

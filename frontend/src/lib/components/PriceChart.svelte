@@ -21,7 +21,23 @@
     axisValue?: string | number
   }
 
-  let { series = [] as PricePoint[], currency = 'USD', zoomStart = null as string | null } = $props()
+  type ZoomSpec =
+    | { type: 'startValue'; startValue: string }
+    | 'MAX'
+    | null
+
+  let {
+    series = [] as PricePoint[],
+    currency = 'USD',
+    zoomSpec = null as ZoomSpec,
+    onDataZoom = null as (() => void) | null,
+  } = $props()
+
+  const zoomOption = $derived.by(() => {
+    if (zoomSpec === 'MAX') return { start: 0, end: 100 }
+    if (zoomSpec && zoomSpec.type === 'startValue') return { startValue: zoomSpec.startValue }
+    return {}
+  })
 
   const options = $derived.by((): EChartsOption => ({
     color: ['#2563eb'],
@@ -46,13 +62,13 @@
       {
         type: 'inside',
         xAxisIndex: 0,
-        ...(zoomStart ? { startValue: zoomStart } : {}),
+        ...zoomOption,
       },
       {
         type: 'slider',
         xAxisIndex: 0,
         bottom: 0,
-        ...(zoomStart ? { startValue: zoomStart } : {}),
+        ...zoomOption,
       },
     ],
     xAxis: {
@@ -86,6 +102,6 @@
   </div>
 {:else}
   <div class="h-[340px] w-full">
-    <Chart {init} {options} />
+    <Chart {init} {options} notMerge={false} ondatazoom={() => onDataZoom?.()} />
   </div>
 {/if}
