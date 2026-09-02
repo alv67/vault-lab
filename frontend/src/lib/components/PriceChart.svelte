@@ -3,11 +3,17 @@
   import { Chart } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
   import { LineChart } from 'echarts/charts'
-  import { DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components'
+  import {
+    DataZoomComponent,
+    GridComponent,
+    MarkLineComponent,
+    TooltipComponent,
+  } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency } from '$lib/format'
+  import type { SplitInfo } from '$lib/services/api'
 
-  use([LineChart, DataZoomComponent, GridComponent, TooltipComponent, CanvasRenderer])
+  use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
   interface PricePoint {
     date: string
@@ -31,6 +37,7 @@
     currency = 'USD',
     zoomSpec = null as ZoomSpec,
     onDataZoom = null as (() => void) | null,
+    splits = [] as SplitInfo[],
   } = $props()
 
   const zoomOption = $derived.by(() => {
@@ -91,6 +98,26 @@
         symbol: 'none',
         sampling: 'lttb',
         lineStyle: { width: 2 },
+        ...(splits.length > 0
+          ? {
+              markLine: {
+                symbol: 'none',
+                silent: true,
+                lineStyle: { type: 'dashed', color: '#7c3aed', width: 1 },
+                label: {
+                  show: true,
+                  position: 'insideEndTop',
+                  formatter: '{b}',
+                  color: '#7c3aed',
+                  fontSize: 10,
+                },
+                data: splits.map((s) => ({
+                  xAxis: new Date(s.date).getTime(),
+                  name: `Split ${s.ratio}`,
+                })),
+              },
+            }
+          : {}),
       },
     ],
   }))

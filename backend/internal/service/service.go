@@ -311,6 +311,34 @@ func (s *Service) GetAsset(ctx context.Context, id uuid.UUID) (*model.Asset, err
 	return s.repos.Asset.FindByID(ctx, id)
 }
 
+// AssetSplits returns the stock split events for a single asset, sorted by date
+// ascending. Missing assets yield ErrAssetNotFound; assets without splits yield
+// an empty (non-nil) slice.
+func (s *Service) AssetSplits(ctx context.Context, id uuid.UUID) ([]model.SplitInfo, error) {
+	_, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+
+	splitRows, err := s.repos.Split.FindByAssets(ctx, []uuid.UUID{id})
+	if err != nil {
+		return nil, err
+	}
+
+	splits := []model.SplitInfo{}
+	for _, sp := range splitRows {
+		splits = append(splits, model.SplitInfo{
+			Date:  series.DayOf(sp.Date),
+			Ratio: fmt.Sprintf("%s:%s", sp.Numerator.String(), sp.Denominator.String()),
+		})
+	}
+	sort.Slice(splits, func(i, j int) bool { return splits[i].Date.Before(splits[j].Date) })
+	return splits, nil
+}
+
 // UpdateAsset merges the editable asset fields from the patch into the stored
 // asset and persists the result. Only fields explicitly present in the patch
 // are applied; for the required fields an empty value keeps the current one,

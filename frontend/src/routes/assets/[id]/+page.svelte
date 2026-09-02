@@ -17,6 +17,7 @@
     type AssetQuote,
     type ExposureRow,
     type Price,
+    type SplitInfo,
   } from '$lib/services/api'
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
   import PriceChart from '$lib/components/PriceChart.svelte'
@@ -55,6 +56,7 @@
   let asset = $state<Asset | null>(null)
   let quote = $state<AssetQuote | null>(null)
   let prices = $state<Price[]>([])
+  let splits = $state<SplitInfo[]>([])
   let exposure = $state<AssetExposure | null>(null)
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
@@ -171,16 +173,18 @@
   async function load(): Promise<void> {
     if (!id) return
     try {
-      const [a, q, ps, ex] = await Promise.all([
+      const [a, q, ps, ex, sp] = await Promise.all([
         assetApi.get(id),
         assetApi.quote(id),
         pricesApi.byAsset(id),
         assetApi.exposure(id),
+        assetApi.splits(id),
       ])
       asset = a
       quote = q
       prices = ps
       exposure = ex
+      splits = sp
       regionsEdit = ex.regions.map((r) => ({ ...r }))
       sectorsEdit = ex.sectors.map((r) => ({ ...r }))
       fillForm(a)
@@ -581,6 +585,7 @@
         series={chartSeries}
         {currency}
         zoomSpec={zoomSpec}
+        splits={splits}
         onDataZoom={handleChartZoom}
       />
     </div>
