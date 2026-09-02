@@ -631,7 +631,9 @@ freschi.
   Nella modale i pulsanti di prefill sono **icone-favicon** piccole (JustETF
   e Yahoo) con tooltip, e le tabelle dei pesi hanno **un quadratino colorato
   prima di ogni nome**, con lo stesso colore usato nel chart (palette a 12
-  colori in ordine); i grafici stessi **non sono riprodotti nella modale**.
+  colori in ordine); i grafici sono **muti** (`mute` su `ExposurePie`:
+  nessuna etichetta di valore né tooltip sulle fette), per riepilogare le
+  proporzioni senza testo sovrapposto.
   La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
   a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
   grafico settoriale con la **sua legenda sotto**. La paletta della legenda è

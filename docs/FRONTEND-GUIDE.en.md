@@ -608,7 +608,9 @@ quote/prices.
   Inside the modal the prefill buttons are **small favicon icons** (JustETF
   and Yahoo) with a tooltip, and the weight tables show **a coloured square
   before each name** using the same colour as the chart (12-colour palette in
-  order); the charts themselves are **not reproduced in the modal**.
+  order); the charts are **mute** (`mute` on `ExposurePie`: no value labels
+  and no tooltip on the slices), to summarise proportions without overlaid
+  text.
   The "Distribuzione" card contains **two side-by-side boxes** (gray, with a
   border): on the left the geographic chart with **its legend underneath**, on
   the right the sector chart with **its legend underneath**. The legend

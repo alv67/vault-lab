@@ -20,6 +20,7 @@
     data = [] as ExposureRow[],
     title = 'Distribuzione',
     showLegend = false,
+    mute = false,
   } = $props()
 
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
@@ -30,13 +31,15 @@
       '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
       '#06b6d4', '#a855f7',
     ],
-    tooltip: {
-      trigger: 'item',
-      formatter: (params: unknown) => {
-        const p = params as TooltipItem
-        return `${p.marker}${p.name}: <b>${formatPercent(Number(p.value))}</b>`
-      },
-    },
+    tooltip: mute
+      ? { show: false }
+      : {
+          trigger: 'item',
+          formatter: (params: unknown) => {
+            const p = params as TooltipItem
+            return `${p.marker}${p.name}: <b>${formatPercent(Number(p.value))}</b>`
+          },
+        },
     series: [
       {
         name: title,
@@ -44,11 +47,8 @@
         radius: ['45%', '70%'],
         center: ['50%', '50%'],
         avoidLabelOverlap: true,
-        label: {
-          formatter: '{b}: {d}%',
-          fontSize: 11,
-        },
-        labelLine: { length: 10, length2: 10 },
+        label: mute ? { show: false } : { formatter: '{b}: {d}%', fontSize: 11 },
+        labelLine: mute ? { show: false } : { length: 10, length2: 10 },
         data: rows.map((r) => ({ name: r.name, value: Number(r.weight) })),
       },
     ],

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Loader2, X } from 'lucide-svelte'
   import type { ExposureRow } from '$lib/services/api'
+  import ExposurePie from './ExposurePie.svelte'
 
   const PALETTE = [
     '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -110,6 +111,7 @@
               {/if}
             </button>
           </div>
+          <div class="flex flex-col gap-4 md:flex-row">
           <div class="flex-1">
             <table class="w-full text-left text-sm">
               <thead>
@@ -164,6 +166,10 @@
               {savingRegions ? 'Salvataggio...' : 'Salva'}
             </button>
           </div>
+          <div class="w-40 shrink-0 md:w-44">
+            <ExposurePie data={regionsEdit} title="Distribuzione geografica" mute />
+          </div>
+          </div>
         </div>
 
         <!-- Sectors -->
@@ -207,6 +213,7 @@
               </button>
             </div>
           </div>
+          <div class="flex flex-col gap-4 md:flex-row">
           <div class="flex-1">
             <table class="w-full text-left text-sm">
               <thead>
@@ -260,6 +267,10 @@
             >
               {savingSectors ? 'Salvataggio...' : 'Salva'}
             </button>
+          </div>
+          <div class="w-40 shrink-0 md:w-44">
+            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" mute />
+          </div>
           </div>
         </div>
       </div>
