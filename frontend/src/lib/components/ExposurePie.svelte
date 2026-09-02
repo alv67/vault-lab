@@ -3,12 +3,12 @@
   import { Chart } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
   import { PieChart } from 'echarts/charts'
-  import { LegendComponent, TooltipComponent } from 'echarts/components'
+  import { TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatPercent } from '$lib/format'
   import type { ExposureRow } from '$lib/services/api'
 
-  use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
+  use([PieChart, TooltipComponent, CanvasRenderer])
 
   interface TooltipItem {
     marker: string
@@ -16,7 +16,11 @@
     value: unknown
   }
 
-  let { data = [] as ExposureRow[], title = 'Distribuzione' } = $props()
+  let {
+    data = [] as ExposureRow[],
+    title = 'Distribuzione',
+    showLegend = false,
+  } = $props()
 
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
 
@@ -33,9 +37,6 @@
         return `${p.marker}${p.name}: <b>${formatPercent(Number(p.value))}</b>`
       },
     },
-    legend: rows.length > 0 && rows.length <= 6
-      ? { bottom: 0, type: 'scroll', textStyle: { fontSize: 11 } }
-      : undefined,
     series: [
       {
         name: title,
@@ -52,6 +53,12 @@
       },
     ],
   }))
+
+  const palette = [
+    '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+    '#06b6d4', '#a855f7',
+  ]
 </script>
 
 {#if rows.length === 0}
@@ -59,7 +66,21 @@
     Nessuna distribuzione
   </div>
 {:else}
-  <div class="h-[280px] w-full">
+  <div class="h-[240px] w-full">
     <Chart {init} {options} />
   </div>
+  {#if showLegend}
+    <div class="mt-2 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
+      {#each rows as r, i (r.name)}
+        <div class="flex items-center gap-2 text-xs">
+          <span
+            class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+            style="background-color: {palette[i % palette.length]};"
+          ></span>
+          <span class="truncate">{r.name}</span>
+          <span class="ml-auto text-gray-500">{formatPercent(Number(r.weight))}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
 {/if}
