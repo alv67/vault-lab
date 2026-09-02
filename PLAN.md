@@ -52,6 +52,9 @@
 - [x] Chart dashboard/portafoglio geo & settore (GeographyChart + SectorChart, universo equity-only + coverage) — **EPIC B.8 (#14)**
 - [x] Storico tassi di cambio (FX history, per-date nei series) — **EPIC B.9 (#44)**
 - [x] Asset con ticker non-Yahoo: price_source (yahoo/manual/none) — **EPIC G.7 (#53)**
+- [x] Chart storico asset: zoom in-place + selettore YTD — **EPIC F.9 (#52)**
+- [x] Pagina asset: solo pie chart + modale di modifica esposizione — **EPIC F.10 (#64)**
+- [x] Split come marcatori sul chart storico asset (`GET /assets/{id}/splits` + markLine)
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)

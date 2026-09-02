@@ -22,7 +22,8 @@
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
-  import { EllipsisVertical, Loader2 } from 'lucide-svelte'
+  import { EllipsisVertical, Loader2, Pencil } from 'lucide-svelte'
+  import ExposureModal from '$lib/components/ExposureModal.svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -68,6 +69,7 @@
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
+  let exposureModalOpen = $state(false)
   let range = $state<RangeKey | null>('1Y')
   let programmaticallyZooming = $state(false)
 
@@ -590,137 +592,67 @@
     {#if exposureApplicable && exposure}
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="font-semibold">Distribuzione geografica</h2>
-          <button
-            onclick={fetchETFExposure}
-            disabled={fetchingETF || asset.type !== 'etf'}
-            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {#if fetchingETF}
-              <Loader2 class="h-4 w-4 animate-spin" />
-            {/if}
-            Carica da JustETF
-          </button>
-        </div>
-        <div class="flex flex-col gap-4 md:flex-row">
-          <div class="flex-1 overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b text-gray-500">
-                  <th class="pb-2">Area geografica</th>
-                  <th class="pb-2 text-right">Peso %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each regionsEdit as r (r.name)}
-                  <tr class="border-b last:border-0">
-                    <td class="py-2">{r.name}</td>
-                    <td class="py-2 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={r.weight}
-                        oninput={(e) => (r.weight = e.currentTarget.value)}
-                        class="w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
-                      />
-                    </td>
-                  </tr>
-                {/each}
-                <tr class="border-t font-semibold">
-                  <td class="py-2">Totale</td>
-                  <td class="py-2 text-right {regionsValid ? 'text-green-600' : 'text-red-600'}">
-                    {sumRegions.toFixed(2)}%
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {#if !regionsValid}
-              <p class="mt-2 text-sm text-red-600">
-                La somma dei pesi deve essere 100 (±0.5) — attuale: {sumRegions.toFixed(2)}%
-              </p>
-            {/if}
+          <h2 class="font-semibold">Distribuzione</h2>
+          <div class="flex items-center gap-2">
             <button
-              onclick={saveRegions}
-              disabled={!regionsValid || savingRegions}
-              class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              onclick={fetchETFExposure}
+              disabled={fetchingETF || asset.type !== 'etf'}
+              class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {savingRegions ? 'Salvataggio...' : 'Salva'}
+              {#if fetchingETF}
+                <Loader2 class="h-4 w-4 animate-spin" />
+              {/if}
+              Carica da JustETF
+            </button>
+            <button
+              onclick={prefillExposure}
+              disabled={prefilling}
+              class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {#if prefilling}
+                <Loader2 class="h-4 w-4 animate-spin" />
+              {/if}
+              Prefill da Yahoo
+            </button>
+            <button
+              onclick={() => (exposureModalOpen = true)}
+              aria-label="Modifica distribuzione"
+              class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              <Pencil class="h-4 w-4" />
+              Modifica
             </button>
           </div>
-          <div class="w-full md:w-1/3">
+        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
             <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
           </div>
-        </div>
-      </div>
-
-      <div class="mb-6 rounded-xl bg-white p-4 shadow">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="font-semibold">Distribuzione settoriale</h2>
-          <button
-            onclick={prefillExposure}
-            disabled={prefilling}
-            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {#if prefilling}
-              <Loader2 class="h-4 w-4 animate-spin" />
-            {/if}
-            Prefill da Yahoo
-          </button>
-        </div>
-        <div class="flex flex-col gap-4 md:flex-row">
-          <div class="flex-1 overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b text-gray-500">
-                  <th class="pb-2">Settore GICS</th>
-                  <th class="pb-2 text-right">Peso %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each sectorsEdit as s (s.name)}
-                  <tr class="border-b last:border-0">
-                    <td class="py-2">{s.name}</td>
-                    <td class="py-2 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={s.weight}
-                        oninput={(e) => (s.weight = e.currentTarget.value)}
-                        class="w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
-                      />
-                    </td>
-                  </tr>
-                {/each}
-                <tr class="border-t font-semibold">
-                  <td class="py-2">Totale</td>
-                  <td class="py-2 text-right {sectorsValid ? 'text-green-600' : 'text-red-600'}">
-                    {sumSectors.toFixed(2)}%
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {#if !sectorsValid}
-              <p class="mt-2 text-sm text-red-600">
-                La somma dei pesi deve essere 100 (±0.5) — attuale: {sumSectors.toFixed(2)}%
-              </p>
-            {/if}
-            <button
-              onclick={saveSectors}
-              disabled={!sectorsValid || savingSectors}
-              class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingSectors ? 'Salvataggio...' : 'Salva'}
-            </button>
-          </div>
-          <div class="w-full md:w-1/3">
+          <div>
             <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
           </div>
         </div>
       </div>
+
+      <ExposureModal
+        bind:open={exposureModalOpen}
+        onClose={() => (exposureModalOpen = false)}
+        bind:regionsEdit
+        bind:sectorsEdit
+        {sumRegions}
+        {sumSectors}
+        {regionsValid}
+        {sectorsValid}
+        {savingRegions}
+        {savingSectors}
+        {saveRegions}
+        {saveSectors}
+        {prefilling}
+        {fetchingETF}
+        {prefillExposure}
+        {fetchETFExposure}
+        assetType={asset.type}
+      />
     {:else if exposureApplicable === false && asset}
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <h2 class="mb-2 font-semibold">Distribuzione geografica e settoriale</h2>

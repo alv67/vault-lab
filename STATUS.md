@@ -206,6 +206,16 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
   - Il worker e `RefreshStale` filtrano solo asset `yahoo`; gli asset `manual`/
     `none` sono saltati del tutto (nessuna chiamata Yahoo, nessun errore di health).
   - Implementata: backend (model, repo, service, handler, price fetcher, docs).
+- F.9 (#52) — Chart storico asset: zoom in-place + selettore YTD
+  - `PriceChart` carica sempre tutto lo storico; i selettori 1M/3M/1Y/YTD/MAX
+    fanno zoom in-place (coppia `start`/`end` percentuali) senza ricaricare dati.
+  - Uno zoom/spostamento manuale deseleziona il pulsante attivo e preserva la vista.
+- F.10 (#64) — Pagina asset: solo pie chart + modale di modifica esposizione
+  - `ExposureModal.svelte`: le tabelle dei pesi geo/settore si modificano in una
+    modale; sulla pagina restano i due donut `ExposurePie`.
+- Splits sul chart asset — nuovi `GET /assets/{id}/splits` (service `AssetSplits`,
+  handler) e `markLine` viola etichettati con il rapporto sul `PriceChart`,
+  come nel `PositionChart` del portafoglio.
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo
 - EPIC E (#38) — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
 - EPIC D (#37) — Design system & dark mode
