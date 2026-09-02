@@ -1,14 +1,7 @@
 <script lang="ts">
   import { Loader2, X } from 'lucide-svelte'
-  import { formatPercent } from '$lib/format'
   import type { ExposureRow } from '$lib/services/api'
   import ExposurePie from './ExposurePie.svelte'
-
-  const PALETTE = [
-    '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-    '#06b6d4', '#a855f7',
-  ]
 
   let {
     open = $bindable(false),
@@ -241,43 +234,6 @@
             <div class="w-full md:w-1/3">
               <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-gray-50 p-4">
-        <div>
-          <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Distribuzione geografica
-          </p>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1">
-            {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
-              <div class="flex items-center gap-1.5 text-xs">
-                <span
-                  class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style="background-color: {PALETTE[i % PALETTE.length]};"
-                ></span>
-                <span class="truncate">{r.name}</span>
-                <span class="ml-auto text-gray-500">{formatPercent(Number(r.weight))}</span>
-              </div>
-            {/each}
-          </div>
-        </div>
-        <div>
-          <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Distribuzione settoriale
-          </p>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1">
-            {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
-              <div class="flex items-center gap-1.5 text-xs">
-                <span
-                  class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style="background-color: {PALETTE[i % PALETTE.length]};"
-                ></span>
-                <span class="truncate">{s.name}</span>
-                <span class="ml-auto text-gray-500">{formatPercent(Number(s.weight))}</span>
-              </div>
-            {/each}
           </div>
         </div>
       </div>

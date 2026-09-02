@@ -605,10 +605,11 @@ quote/prices.
   - sector: **"Prefill JustETF"** (`fetchETFExposure`, applies `sectors`
     only) and **"Prefill Yahoo"** (`fetchExposure`, Yahoo `topHoldings`,
     applies `sectors` only).
-  At the bottom of the modal the two **legends** are gathered in a **single
-  two-column box** (region on the left, sectors on the right) with a palette
-  matching the pie charts, so all entries (e.g. the 11 GICS sectors) are
-  always visible even when the pie chart cannot render an inline legend.
+  At the bottom of the card **on the main page** the two **legends** are
+  gathered in a **single two-column box** (region on the left, sectors on the
+  right) with a palette matching the pie charts, so all entries (e.g. the 11
+  GICS sectors) are always visible even when the pie chart cannot render an
+  inline legend.
   Saving sends **only the edited dimension**
   (`PUT /assets/{id}/exposure` with `{regions}` or `{sectors}` — omitting a
   key leaves the other untouched), then reloads the canonical response. The
