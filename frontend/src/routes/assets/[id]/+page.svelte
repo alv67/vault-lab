@@ -46,6 +46,7 @@
     { key: '1M', days: 30 },
     { key: '3M', days: 90 },
     { key: '1Y', days: 365 },
+    { key: 'YTD', days: -1 },
     { key: 'MAX', days: Infinity },
   ] as const
   type RangeKey = (typeof RANGES)[number]['key']
@@ -103,12 +104,21 @@
   })
 
   const chartSeries = $derived.by(() => {
-    const days = RANGES.find((r) => r.key === range)?.days ?? 365
-    const cutoff = days === Infinity ? null : Date.now() - days * 24 * 60 * 60 * 1000
     return [...prices]
-      .filter((p) => (cutoff === null ? true : new Date(p.date).getTime() >= cutoff))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map((p) => ({ date: p.date, close: p.close }))
+  })
+
+  const zoomStartDate = $derived.by(() => {
+    if (range === 'MAX') return null
+    if (range === 'YTD') {
+      const now = new Date()
+      const ytd = new Date(now.getFullYear(), 0, 1)
+      return ytd.toISOString().slice(0, 10)
+    }
+    const days = RANGES.find((r) => r.key === range)?.days ?? 365
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    return new Date(cutoff).toISOString().slice(0, 10)
   })
 
   const sumRegions = $derived(
@@ -550,7 +560,7 @@
           {/each}
         </div>
       </div>
-      <PriceChart series={chartSeries} {currency} />
+      <PriceChart series={chartSeries} {currency} zoomStart={zoomStartDate} />
     </div>
 
     {#if exposureApplicable && exposure}

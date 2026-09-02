@@ -21,7 +21,7 @@
     axisValue?: string | number
   }
 
-  let { series = [] as PricePoint[], currency = 'USD' } = $props()
+  let { series = [] as PricePoint[], currency = 'USD', zoomStart = null as string | null } = $props()
 
   const options = $derived.by((): EChartsOption => ({
     color: ['#2563eb'],
@@ -43,8 +43,17 @@
     },
     grid: { left: 48, right: 16, top: 24, bottom: 52 },
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0 },
-      { type: 'slider', xAxisIndex: 0, bottom: 0 },
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        ...(zoomStart ? { startValue: zoomStart } : {}),
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        bottom: 0,
+        ...(zoomStart ? { startValue: zoomStart } : {}),
+      },
     ],
     xAxis: {
       type: 'time',
