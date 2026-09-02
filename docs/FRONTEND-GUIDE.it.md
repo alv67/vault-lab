@@ -628,6 +628,10 @@ freschi.
   - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
     `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
     applica solo `sectors`).
+  Nella modale i pulsanti di prefill sono **icone-favicon** piccole (JustETF
+  e Yahoo) con tooltip, e le tabelle dei pesi hanno **un quadratino colorato
+  prima di ogni nome**, con lo stesso colore usato nel chart (palette a 12
+  colori in ordine); i grafici stessi **non sono riprodotti nella modale**.
   La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
   a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
   grafico settoriale con la **sua legenda sotto**. La paletta della legenda è
