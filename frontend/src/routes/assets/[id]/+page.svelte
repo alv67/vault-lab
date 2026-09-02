@@ -628,19 +628,10 @@
           </div>
         </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Distribuzione geografica</h3>
             <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
-          </div>
-          <div>
-            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
-          </div>
-        </div>
-        <div class="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-gray-50 p-4">
-          <div>
-            <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Distribuzione geografica
-            </p>
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
               {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
                 <div class="flex items-center gap-1.5 text-xs">
                   <span
@@ -653,11 +644,10 @@
               {/each}
             </div>
           </div>
-          <div>
-            <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Distribuzione settoriale
-            </p>
-            <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Distribuzione settoriale</h3>
+            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
+            <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
               {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
                 <div class="flex items-center gap-1.5 text-xs">
                   <span

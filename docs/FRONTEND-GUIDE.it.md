@@ -628,11 +628,12 @@ freschi.
   - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
     `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
     applica solo `sectors`).
-  In fondo alla card **sulla pagina principale** le due **legende** sono
-  raccolte in **un unico box su due colonne** (geo a sinistra, settori a
-  destra), con paletta allineata ai pie chart, così che tutti i valori (es.
-  gli 11 settori GICS) siano sempre visibili anche quando il pie chart non
-  può mostrare la legenda inline.
+  La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
+  a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
+  grafico settoriale con la **sua legenda sotto**. La paletta della legenda è
+  allineata ai pie chart, così che tutti i valori (es. gli 11 settori GICS)
+  siano sempre visibili anche quando il pie chart non può mostrare la legenda
+  inline.
   Il salvataggio invia **solo la dimensione modificata**
   (`PUT /assets/{id}/exposure` con `{regions}` o `{sectors}` — omettere una
   chiave lascia l'altra intatta), poi ricarica la risposta canonica. La
