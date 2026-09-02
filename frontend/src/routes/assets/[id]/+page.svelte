@@ -112,20 +112,17 @@
       .map((p) => ({ date: p.date, close: p.close }))
   })
 
-  const zoomSpec = $derived.by(() => {
+  const zoomStart = $derived.by(() => {
     if (!range) return null
     if (range === 'MAX') return 'MAX' as const
     if (range === 'YTD') {
       const now = new Date()
       const ytd = new Date(now.getFullYear(), 0, 1)
-      return { type: 'startValue', startValue: ytd.toISOString().slice(0, 10) } as const
+      return ytd.toISOString().slice(0, 10)
     }
     const days = RANGES.find((r) => r.key === range)?.days ?? 365
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-    return {
-      type: 'startValue' as const,
-      startValue: new Date(cutoff).toISOString().slice(0, 10),
-    }
+    return new Date(cutoff).toISOString().slice(0, 10)
   })
 
   const sumRegions = $derived(
@@ -584,7 +581,7 @@
       <PriceChart
         series={chartSeries}
         {currency}
-        zoomSpec={zoomSpec}
+        zoomStart={zoomStart}
         splits={splits}
         onDataZoom={handleChartZoom}
       />

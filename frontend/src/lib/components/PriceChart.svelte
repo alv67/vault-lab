@@ -27,22 +27,25 @@
     axisValue?: string | number
   }
 
-  type ZoomSpec =
-    | { type: 'startValue'; startValue: string }
-    | 'MAX'
-    | null
-
   let {
     series = [] as PricePoint[],
     currency = 'USD',
-    zoomSpec = null as ZoomSpec,
+    zoomStart = null as string | 'MAX' | null,
     onDataZoom = null as (() => void) | null,
     splits = [] as SplitInfo[],
   } = $props()
 
   const zoomOption = $derived.by(() => {
-    if (zoomSpec === 'MAX') return { start: 0, end: 100 }
-    if (zoomSpec && zoomSpec.type === 'startValue') return { startValue: zoomSpec.startValue }
+    if (zoomStart === 'MAX') return { start: 0, end: 100 }
+    if (zoomStart && series.length > 0) {
+      const times = series.map((p) => new Date(p.date).getTime())
+      const min = Math.min(...times)
+      const max = Math.max(...times)
+      const start = new Date(zoomStart).getTime()
+      const startPct =
+        max === min ? 0 : Math.max(0, Math.min(100, ((start - min) / (max - min)) * 100))
+      return { start: startPct, end: 100 }
+    }
     return {}
   })
 
