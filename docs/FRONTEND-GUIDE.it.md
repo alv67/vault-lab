@@ -628,12 +628,14 @@ freschi.
   - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
     `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
     applica solo `sectors`).
-  Nella modale i pulsanti di prefill sono **icone-favicon** piccole (JustETF
-  e Yahoo) con tooltip, e le tabelle dei pesi hanno **un quadratino colorato
-  prima di ogni nome**, con lo stesso colore usato nel chart (palette a 12
-  colori in ordine); i grafici sono **muti** (`mute` su `ExposurePie`:
-  nessuna etichetta di valore né tooltip sulle fette), per riepilogare le
-  proporzioni senza testo sovrapposto.
+  Nella modale i pulsanti di prefill sono **icone-favicon boxate** (JustETF e
+  Yahoo, con bordo) con tooltip. La **palette dei colori è condivisa**
+  (`$lib/chartPalette.ts`): i quadratini colorati prima di ogni nome usano
+  `colorForRow`, che restituisce esattamente il colore della fetta nel chart
+  (i colori ECharts sono assegnati per indice sulle righe con peso > 0), quindi
+  quadratino e grafico combaciano sempre. I grafici nella modale sono **muti**
+  (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip sulle
+  fette), per riepilogare le proporzioni senza testo sovrapposto.
   La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
   a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
   grafico settoriale con la **sua legenda sotto**. La paletta della legenda è

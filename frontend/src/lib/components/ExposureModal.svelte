@@ -2,12 +2,7 @@
   import { Loader2, X } from 'lucide-svelte'
   import type { ExposureRow } from '$lib/services/api'
   import ExposurePie from './ExposurePie.svelte'
-
-  const PALETTE = [
-    '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-    '#06b6d4', '#a855f7',
-  ]
+  import { colorForRow } from '$lib/chartPalette'
 
   let {
     open = $bindable(false),
@@ -75,7 +70,7 @@
     tabindex="-1"
   >
     <div
-      class="relative mx-4 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      class="relative mx-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
     >
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-lg font-semibold">Modifica distribuzione</h2>
@@ -90,7 +85,7 @@
 
       <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <!-- Regions -->
-        <div>
+        <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div class="mb-3 flex items-center justify-between gap-2">
             <h3 class="font-medium">Distribuzione geografica</h3>
             <button
@@ -98,7 +93,7 @@
               disabled={fetchingETF || assetType !== 'etf'}
               title="Prefill da JustETF"
               aria-label="Prefill geografico da JustETF"
-              class="rounded-lg p-1.5 hover:bg-gray-100 disabled:opacity-40"
+              class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if fetchingETF}
                 <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
@@ -111,8 +106,8 @@
               {/if}
             </button>
           </div>
-          <div class="flex flex-col gap-4 md:flex-row">
-          <div class="flex-1">
+          <div class="flex flex-1 flex-col gap-4 md:flex-row">
+            <div class="flex-1">
             <table class="w-full text-left text-sm">
               <thead>
                 <tr class="border-b text-gray-500">
@@ -121,13 +116,13 @@
                 </tr>
               </thead>
               <tbody>
-                {#each regionsEdit as r, i (r.name)}
+                {#each regionsEdit as r (r.name)}
                   <tr class="border-b last:border-0">
                     <td class="py-2">
                       <span class="flex items-center gap-2">
                         <span
                           class="inline-block h-3 w-3 shrink-0 rounded"
-                          style="background-color: {PALETTE[i % PALETTE.length]};"
+                          style="background-color: {colorForRow(r, regionsEdit)};"
                         ></span>
                         {r.name}
                       </span>
@@ -158,22 +153,24 @@
                 La somma dei pesi deve essere 100 (±0.5) — attuale: {sumRegions.toFixed(2)}%
               </p>
             {/if}
-            <button
-              onclick={saveRegions}
-              disabled={!regionsValid || savingRegions}
-              class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingRegions ? 'Salvataggio...' : 'Salva'}
-            </button>
           </div>
-          <div class="w-40 shrink-0 md:w-44">
+          <div class="w-48 shrink-0 md:w-56">
             <ExposurePie data={regionsEdit} title="Distribuzione geografica" mute />
           </div>
-          </div>
         </div>
+        <div class="mt-auto flex justify-end pt-4">
+          <button
+            onclick={saveRegions}
+            disabled={!regionsValid || savingRegions}
+            class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {savingRegions ? 'Salvataggio...' : 'Salva'}
+          </button>
+        </div>
+      </div>
 
         <!-- Sectors -->
-        <div>
+        <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div class="mb-3 flex items-center justify-between gap-2">
             <h3 class="font-medium">Distribuzione settoriale</h3>
             <div class="flex items-center gap-1.5">
@@ -182,7 +179,7 @@
                 disabled={fetchingETF || assetType !== 'etf'}
                 title="Prefill da JustETF"
                 aria-label="Prefill settori da JustETF"
-                class="rounded-lg p-1.5 hover:bg-gray-100 disabled:opacity-40"
+                class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingETF}
                   <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
@@ -199,7 +196,7 @@
                 disabled={prefilling}
                 title="Prefill da Yahoo"
                 aria-label="Prefill settori da Yahoo"
-                class="rounded-lg p-1.5 hover:bg-gray-100 disabled:opacity-40"
+                class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if prefilling}
                   <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
@@ -213,8 +210,8 @@
               </button>
             </div>
           </div>
-          <div class="flex flex-col gap-4 md:flex-row">
-          <div class="flex-1">
+          <div class="flex flex-1 flex-col gap-4 md:flex-row">
+            <div class="flex-1">
             <table class="w-full text-left text-sm">
               <thead>
                 <tr class="border-b text-gray-500">
@@ -223,13 +220,13 @@
                 </tr>
               </thead>
               <tbody>
-                {#each sectorsEdit as s, i (s.name)}
+                {#each sectorsEdit as s (s.name)}
                   <tr class="border-b last:border-0">
                     <td class="py-2">
                       <span class="flex items-center gap-2">
                         <span
                           class="inline-block h-3 w-3 shrink-0 rounded"
-                          style="background-color: {PALETTE[i % PALETTE.length]};"
+                          style="background-color: {colorForRow(s, sectorsEdit)};"
                         ></span>
                         {s.name}
                       </span>
@@ -260,19 +257,21 @@
                 La somma dei pesi deve essere 100 (±0.5) — attuale: {sumSectors.toFixed(2)}%
               </p>
             {/if}
-            <button
-              onclick={saveSectors}
-              disabled={!sectorsValid || savingSectors}
-              class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingSectors ? 'Salvataggio...' : 'Salva'}
-            </button>
           </div>
-          <div class="w-40 shrink-0 md:w-44">
+          <div class="w-48 shrink-0 md:w-56">
             <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" mute />
           </div>
-          </div>
         </div>
+        <div class="mt-auto flex justify-end pt-4">
+          <button
+            onclick={saveSectors}
+            disabled={!sectorsValid || savingSectors}
+            class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {savingSectors ? 'Salvataggio...' : 'Salva'}
+          </button>
+        </div>
+      </div>
       </div>
     </div>
   </div>

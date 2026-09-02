@@ -605,12 +605,14 @@ quote/prices.
   - sector: **"Prefill JustETF"** (`fetchETFExposure`, applies `sectors`
     only) and **"Prefill Yahoo"** (`fetchExposure`, Yahoo `topHoldings`,
     applies `sectors` only).
-  Inside the modal the prefill buttons are **small favicon icons** (JustETF
-  and Yahoo) with a tooltip, and the weight tables show **a coloured square
-  before each name** using the same colour as the chart (12-colour palette in
-  order); the charts are **mute** (`mute` on `ExposurePie`: no value labels
-  and no tooltip on the slices), to summarise proportions without overlaid
-  text.
+  Inside the modal the prefill buttons are **boxed favicon icons** (JustETF
+  and Yahoo, with a border) with a tooltip. The **colour palette is shared**
+  (`$lib/chartPalette.ts`): the coloured squares before each name use
+  `colorForRow`, which returns exactly the slice colour in the chart (ECharts
+  assigns colours by index over the weight > 0 rows), so square and chart
+  always match. The charts inside the modal are **mute** (`mute` on
+  `ExposurePie`: no value labels and no tooltip on the slices), to summarise
+  proportions without overlaid text.
   The "Distribuzione" card contains **two side-by-side boxes** (gray, with a
   border): on the left the geographic chart with **its legend underneath**, on
   the right the sector chart with **its legend underneath**. The legend

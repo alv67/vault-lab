@@ -7,6 +7,7 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatPercent } from '$lib/format'
   import type { ExposureRow } from '$lib/services/api'
+  import { CHART_PALETTE } from '$lib/chartPalette'
 
   use([PieChart, TooltipComponent, CanvasRenderer])
 
@@ -26,20 +27,14 @@
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
 
   const options = $derived.by((): EChartsOption => ({
-    color: [
-      '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-      '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-      '#06b6d4', '#a855f7',
-    ],
-    tooltip: mute
-      ? { show: false }
-      : {
-          trigger: 'item',
-          formatter: (params: unknown) => {
-            const p = params as TooltipItem
-            return `${p.marker}${p.name}: <b>${formatPercent(Number(p.value))}</b>`
-          },
-        },
+    color: CHART_PALETTE,
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: unknown) => {
+        const p = params as TooltipItem
+        return `${p.marker}${p.name}: <b>${formatPercent(Number(p.value))}</b>`
+      },
+    },
     series: [
       {
         name: title,
@@ -54,11 +49,7 @@
     ],
   }))
 
-  const palette = [
-    '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-    '#06b6d4', '#a855f7',
-  ]
+  const palette = CHART_PALETTE
 </script>
 
 {#if rows.length === 0}
