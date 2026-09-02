@@ -322,6 +322,10 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if err == service.ErrInvalidPriceSource {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		log.Error().Err(err).Msg("update asset failed")
 		respondError(w, http.StatusInternalServerError, "update failed")
 		return
@@ -350,6 +354,28 @@ func (h *Handler) GetAssetQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, http.StatusOK, quote)
+}
+
+func (h *Handler) AssetSplits(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	splits, err := h.svc.AssetSplits(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("get asset splits failed")
+		respondError(w, http.StatusInternalServerError, "splits failed")
+		return
+	}
+
+	respond(w, http.StatusOK, splits)
 }
 
 func (h *Handler) FetchAssetProfile(w http.ResponseWriter, r *http.Request) {

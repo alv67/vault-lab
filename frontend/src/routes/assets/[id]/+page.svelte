@@ -17,13 +17,21 @@
     type AssetQuote,
     type ExposureRow,
     type Price,
+    type SplitInfo,
   } from '$lib/services/api'
-  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
+  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
-  import { EllipsisVertical, Loader2 } from 'lucide-svelte'
+  import { EllipsisVertical, Loader2, Pencil } from 'lucide-svelte'
+  import ExposureModal from '$lib/components/ExposureModal.svelte'
 
   const id = $derived(page.params.id as string | undefined)
+
+  const LEGEND_PALETTE = [
+    '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+    '#06b6d4', '#a855f7',
+  ]
 
   const ASSET_TYPES = [
     { value: 'stock', label: 'Stock' },
@@ -46,6 +54,7 @@
     { key: '1M', days: 30 },
     { key: '3M', days: 90 },
     { key: '1Y', days: 365 },
+    { key: 'YTD', days: -1 },
     { key: 'MAX', days: Infinity },
   ] as const
   type RangeKey = (typeof RANGES)[number]['key']
@@ -54,6 +63,7 @@
   let asset = $state<Asset | null>(null)
   let quote = $state<AssetQuote | null>(null)
   let prices = $state<Price[]>([])
+  let splits = $state<SplitInfo[]>([])
   let exposure = $state<AssetExposure | null>(null)
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
@@ -65,7 +75,9 @@
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
-  let range = $state<RangeKey>('1Y')
+  let exposureModalOpen = $state(false)
+  let range = $state<RangeKey | null>('1Y')
+  let programmaticallyZooming = $state(false)
 
   let form = $state({
     ticker: '',
@@ -75,6 +87,7 @@
     currency: 'USD',
     exchange: '',
     asset_class: 'other',
+    price_source: 'yahoo',
   })
 
   const currency = $derived(asset?.currency || 'USD')
@@ -96,17 +109,28 @@
       form.type !== asset.type ||
       form.currency !== asset.currency ||
       form.exchange !== (asset.exchange || '') ||
-      form.asset_class !== (asset.asset_class || 'other')
+      form.asset_class !== (asset.asset_class || 'other') ||
+      form.price_source !== (asset.price_source || 'yahoo')
     )
   })
 
   const chartSeries = $derived.by(() => {
-    const days = RANGES.find((r) => r.key === range)?.days ?? 365
-    const cutoff = days === Infinity ? null : Date.now() - days * 24 * 60 * 60 * 1000
     return [...prices]
-      .filter((p) => (cutoff === null ? true : new Date(p.date).getTime() >= cutoff))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .map((p) => ({ date: p.date, close: p.close }))
+  })
+
+  const zoomStart = $derived.by(() => {
+    if (!range) return null
+    if (range === 'MAX') return 'MAX' as const
+    if (range === 'YTD') {
+      const now = new Date()
+      const ytd = new Date(now.getFullYear(), 0, 1)
+      return ytd.toISOString().slice(0, 10)
+    }
+    const days = RANGES.find((r) => r.key === range)?.days ?? 365
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+    return new Date(cutoff).toISOString().slice(0, 10)
   })
 
   const sumRegions = $derived(
@@ -124,6 +148,18 @@
     return n > 0 ? 'text-green-600' : 'text-red-600'
   }
 
+  function selectRange(r: RangeKey): void {
+    programmaticallyZooming = true
+    range = r
+    setTimeout(() => (programmaticallyZooming = false), 300)
+  }
+
+  function handleChartZoom(): void {
+    if (!programmaticallyZooming) {
+      range = null
+    }
+  }
+
   function fillForm(a: Asset): void {
     form = {
       ticker: a.ticker,
@@ -133,6 +169,7 @@
       currency: a.currency,
       exchange: a.exchange || '',
       asset_class: a.asset_class || 'other',
+      price_source: a.price_source || 'yahoo',
     }
   }
 
@@ -141,16 +178,18 @@
   async function load(): Promise<void> {
     if (!id) return
     try {
-      const [a, q, ps, ex] = await Promise.all([
+      const [a, q, ps, ex, sp] = await Promise.all([
         assetApi.get(id),
         assetApi.quote(id),
         pricesApi.byAsset(id),
         assetApi.exposure(id),
+        assetApi.splits(id),
       ])
       asset = a
       quote = q
       prices = ps
       exposure = ex
+      splits = sp
       regionsEdit = ex.regions.map((r) => ({ ...r }))
       sectorsEdit = ex.sectors.map((r) => ({ ...r }))
       fillForm(a)
@@ -202,6 +241,7 @@
       currency: form.currency.trim(),
       exchange: form.exchange.trim(),
       asset_class: form.asset_class,
+      price_source: form.price_source,
     }
     try {
       const updated = await assetApi.update(id, patch)
@@ -263,17 +303,52 @@
     }
   }
 
-  // Precompila la distribuzione (settori per ETF da topHoldings, settore unico
-  // al 100% per le azioni). Il backend persiste anche settore/industria.
-  async function prefillExposure(): Promise<void> {
+  // Prefill da JustETF: popola SOLO la distribuzione geografica (regioni).
+  async function prefillRegionsFromETF(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const saved = await assetApi.fetchETFExposure(id)
+      exposure = saved
+      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Distribuzione geografica precompilata da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
+    }
+  }
+
+  // Prefill da JustETF: popola SOLO la distribuzione settoriale.
+  async function prefillSectorsFromETF(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const saved = await assetApi.fetchETFExposure(id)
+      exposure = saved
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Distribuzione settoriale precompilata da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
+    }
+  }
+
+  // Prefill da Yahoo: popola SOLO la distribuzione settoriale (topHoldings). Per
+  // le azioni singole ricade sul settore unico al 100% (assetProfile).
+  async function prefillSectorsFromYahoo(): Promise<void> {
     if (!id) return
     prefilling = true
     try {
       const saved = await assetApi.fetchExposure(id)
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
-      toast.success('Settori precompilati da Yahoo')
+      toast.success('Distribuzione settoriale precompilata da Yahoo')
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status
       const message =
@@ -285,24 +360,6 @@
       toast.error(message)
     } finally {
       prefilling = false
-    }
-  }
-
-  async function fetchETFExposure(): Promise<void> {
-    if (!id || !asset) return
-    fetchingETF = true
-    try {
-      const saved = await assetApi.fetchETFExposure(id)
-      exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
-      if (saved.isin) form.isin = saved.isin
-      toast.success('Distribuzione geografica e ISIN caricati da JustETF')
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
-      toast.error(message)
-    } finally {
-      fetchingETF = false
     }
   }
 
@@ -357,6 +414,11 @@
       <div>
         <h1 class="text-2xl font-bold">{asset.name}</h1>
         <p class="text-sm text-gray-500">{asset.ticker}</p>
+        {#if asset.price_source && asset.price_source !== 'yahoo'}
+          <span class="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+            {PRICE_SOURCE_LABELS[asset.price_source] ?? asset.price_source} — nessun sync automatico
+          </span>
+        {/if}
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -485,6 +547,18 @@
             {/each}
           </select>
         </div>
+        <div>
+          <label for="asset-price-source" class="mb-1 block text-xs font-medium text-gray-500">Fonte prezzo</label>
+          <select
+            id="asset-price-source"
+            bind:value={form.price_source}
+            class="w-full rounded-lg border px-3 py-2 text-sm"
+          >
+            <option value="yahoo">Yahoo Finance</option>
+            <option value="manual">Prezzo manuale</option>
+            <option value="none">Nessun prezzo</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -519,7 +593,7 @@
         <div class="flex gap-1">
           {#each RANGES as r (r.key)}
             <button
-              onclick={() => (range = r.key)}
+              onclick={() => selectRange(r.key)}
               class="rounded-lg px-3 py-1.5 text-sm {range === r.key
                 ? 'bg-blue-600 text-white'
                 : 'text-gray-600 hover:bg-gray-100'}"
@@ -529,143 +603,86 @@
           {/each}
         </div>
       </div>
-      <PriceChart series={chartSeries} {currency} />
+      <PriceChart
+        series={chartSeries}
+        {currency}
+        zoomStart={zoomStart}
+        splits={splits}
+        onDataZoom={handleChartZoom}
+      />
     </div>
 
     {#if exposureApplicable && exposure}
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="font-semibold">Distribuzione geografica</h2>
-          <button
-            onclick={fetchETFExposure}
-            disabled={fetchingETF || asset.type !== 'etf'}
-            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {#if fetchingETF}
-              <Loader2 class="h-4 w-4 animate-spin" />
-            {/if}
-            Carica da JustETF
-          </button>
-        </div>
-        <div class="flex flex-col gap-4 md:flex-row">
-          <div class="flex-1 overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b text-gray-500">
-                  <th class="pb-2">Area geografica</th>
-                  <th class="pb-2 text-right">Peso %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each regionsEdit as r (r.name)}
-                  <tr class="border-b last:border-0">
-                    <td class="py-2">{r.name}</td>
-                    <td class="py-2 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={r.weight}
-                        oninput={(e) => (r.weight = e.currentTarget.value)}
-                        class="w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
-                      />
-                    </td>
-                  </tr>
-                {/each}
-                <tr class="border-t font-semibold">
-                  <td class="py-2">Totale</td>
-                  <td class="py-2 text-right {regionsValid ? 'text-green-600' : 'text-red-600'}">
-                    {sumRegions.toFixed(2)}%
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {#if !regionsValid}
-              <p class="mt-2 text-sm text-red-600">
-                La somma dei pesi deve essere 100 (±0.5) — attuale: {sumRegions.toFixed(2)}%
-              </p>
-            {/if}
+          <h2 class="font-semibold">Distribuzione</h2>
+          <div class="flex items-center gap-2">
             <button
-              onclick={saveRegions}
-              disabled={!regionsValid || savingRegions}
-              class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+              onclick={() => (exposureModalOpen = true)}
+              aria-label="Modifica distribuzione"
+              class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
             >
-              {savingRegions ? 'Salvataggio...' : 'Salva'}
+              <Pencil class="h-4 w-4" />
+              Modifica
             </button>
           </div>
-          <div class="w-full md:w-1/3">
+        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Distribuzione geografica</h3>
             <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
+            <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
+              {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
+                <div class="flex items-center gap-1.5 text-xs">
+                  <span
+                    class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                  ></span>
+                  <span class="truncate">{r.name}</span>
+                  <span class="ml-auto text-gray-500">{formatPercent(Number(r.weight))}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Distribuzione settoriale</h3>
+            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
+            <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
+              {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
+                <div class="flex items-center gap-1.5 text-xs">
+                  <span
+                    class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                  ></span>
+                  <span class="truncate">{s.name}</span>
+                  <span class="ml-auto text-gray-500">{formatPercent(Number(s.weight))}</span>
+                </div>
+              {/each}
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="mb-6 rounded-xl bg-white p-4 shadow">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="font-semibold">Distribuzione settoriale</h2>
-          <button
-            onclick={prefillExposure}
-            disabled={prefilling}
-            class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {#if prefilling}
-              <Loader2 class="h-4 w-4 animate-spin" />
-            {/if}
-            Prefill da Yahoo
-          </button>
-        </div>
-        <div class="flex flex-col gap-4 md:flex-row">
-          <div class="flex-1 overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b text-gray-500">
-                  <th class="pb-2">Settore GICS</th>
-                  <th class="pb-2 text-right">Peso %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each sectorsEdit as s (s.name)}
-                  <tr class="border-b last:border-0">
-                    <td class="py-2">{s.name}</td>
-                    <td class="py-2 text-right">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        value={s.weight}
-                        oninput={(e) => (s.weight = e.currentTarget.value)}
-                        class="w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
-                      />
-                    </td>
-                  </tr>
-                {/each}
-                <tr class="border-t font-semibold">
-                  <td class="py-2">Totale</td>
-                  <td class="py-2 text-right {sectorsValid ? 'text-green-600' : 'text-red-600'}">
-                    {sumSectors.toFixed(2)}%
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            {#if !sectorsValid}
-              <p class="mt-2 text-sm text-red-600">
-                La somma dei pesi deve essere 100 (±0.5) — attuale: {sumSectors.toFixed(2)}%
-              </p>
-            {/if}
-            <button
-              onclick={saveSectors}
-              disabled={!sectorsValid || savingSectors}
-              class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {savingSectors ? 'Salvataggio...' : 'Salva'}
-            </button>
-          </div>
-          <div class="w-full md:w-1/3">
-            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
-          </div>
-        </div>
-      </div>
+      <ExposureModal
+        bind:open={exposureModalOpen}
+        onClose={() => (exposureModalOpen = false)}
+        bind:regionsEdit
+        bind:sectorsEdit
+        {sumRegions}
+        {sumSectors}
+        {regionsValid}
+        {sectorsValid}
+        {savingRegions}
+        {savingSectors}
+        {saveRegions}
+        {saveSectors}
+        {prefilling}
+        {fetchingETF}
+        {prefillRegionsFromETF}
+        {prefillSectorsFromETF}
+        {prefillSectorsFromYahoo}
+        assetType={asset.type}
+      />
     {:else if exposureApplicable === false && asset}
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <h2 class="mb-2 font-semibold">Distribuzione geografica e settoriale</h2>

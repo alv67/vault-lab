@@ -199,13 +199,13 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000013`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000015`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
 | `users` | gli utenti | email, nome, hash della password, ruolo |
-| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, valuta, exchange, settore, industria |
+| `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, fonte prezzi, valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
 | `transactions` | le operazioni | compra/vendita/dividendo/split/commissione, quantità, prezzo, data |
@@ -429,6 +429,10 @@ tre criteri:
 2. l'ultimo aggiornamento è molto recente → salta (throttle);
 3. l'ultimo prezzo di chiusura è già quello del giorno lavorativo atteso →
    salta.
+
+Solo gli asset con `price_source = 'yahoo'` (o vuoto, per sicurezza) vengono
+inviati a Yahoo; gli asset con `price_source = 'manual'` o `'none'` vengono
+saltati del tutto e non appaiono tra gli asset obsoleti.
 
 Quando bisogna aggiornare, le quotazioni correnti e i tassi di cambio vengono
 presi **in batch** tramite l'endpoint `spark` di Yahoo: una sola chiamata per
@@ -746,6 +750,10 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   (`POST /assets/{id}/fetch-etf-exposure`) e il suo endpoint
   `GET /api/v1/etf/search` (i ticker con suffisso borsa vengono normalizzati
   prima della query).
+- Gli asset possono avere `price_source` impostato su `'yahoo'` (default),
+  `'manual'` o `'none'`. Solo gli asset con prezzo Yahoo vengono elaborati dal
+  worker e da `RefreshStale`; gli asset manual/none vengono saltati del tutto
+  (nessuna chiamata Yahoo, nessun errore di health).
 - Esistono metodi SQL alternativi per riepiloghi e allocazioni
   (`GetSummary`, `GetAllocation`, `GetROI`) che non vengono usati dal livello
   service: il calcolo finanziario vive nel motore AVCO (capitolo 8), non in

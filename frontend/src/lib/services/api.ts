@@ -62,6 +62,7 @@ export interface Asset {
   exchange?: string
   sector?: string
   industry?: string
+  price_source?: string
 }
 
 export interface AssetQuote {
@@ -89,6 +90,7 @@ export interface AssetPatch {
   exchange?: string
   sector?: string
   industry?: string
+  price_source?: string
 }
 
 export interface Price {
@@ -556,6 +558,7 @@ export const assetApi = {
   update: (id: string, patch: AssetPatch) =>
     request<Asset>(`/assets/${id}`, { method: 'PATCH', body: patch }),
   quote: (id: string) => request<AssetQuote>(`/assets/${id}/quote`),
+  splits: (id: string) => request<SplitInfo[]>(`/assets/${id}/splits`),
   fetchProfile: (id: string) =>
     request<Asset>(`/assets/${id}/fetch-profile`, { method: 'POST' }),
   exposure: (id: string) => request<AssetExposure>(`/assets/${id}/exposure`),

@@ -190,7 +190,7 @@ type HistoryAsset struct {
 // FetchAll refreshes prices for every asset in the DB that is stale and keeps
 // the USD->X FX rates fresh. Used by the worker.
 func (f *YahooFetcher) FetchAll(ctx context.Context) error {
-	assets, err := f.repos.Asset.List(ctx)
+	assets, err := f.repos.Asset.ListYahoo(ctx)
 	if err != nil {
 		return fmt.Errorf("list assets: %w", err)
 	}
@@ -573,6 +573,9 @@ func (f *YahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) 
 
 	now := time.Now().UTC()
 	for _, a := range assets {
+		if a.PriceSource != "" && a.PriceSource != "yahoo" {
+			continue
+		}
 		if last, ok := f.splitCooldown[a.ID]; ok && last.Add(f.refreshInterval).After(now) {
 			continue
 		}
@@ -610,6 +613,16 @@ func (f *YahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) 
 	report := RefreshReport{Refreshed: []string{}, Issues: []FetchIssue{}}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	// Only Yahoo-priced assets are ever queried; non-Yahoo assets (manual quotes,
+	// unsupported tickers) are skipped entirely and never reported as stale.
+	yahoo := make([]*model.Asset, 0, len(assets))
+	for _, a := range assets {
+		if a.PriceSource == "" || a.PriceSource == "yahoo" {
+			yahoo = append(yahoo, a)
+		}
+	}
+	assets = yahoo
 
 	if len(assets) == 0 {
 		return report, nil

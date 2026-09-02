@@ -359,7 +359,7 @@ recomputed with `$derived.by`, so the chart reacts to `$props` changes.
 
 | Component | Chart | Used for |
 |---|---|---|
-| `PriceChart.svelte` | single **line** (close prices), time x-axis, `inside` + `slider` dataZoom | the **asset detail** page (B.10): historical price with the 1M/3M/1Y/MAX selector. Empty state → "Nessun dato prezzi disponibile" |
+| `PriceChart.svelte` | single **line** (close prices), time x-axis, `inside` + `slider` dataZoom | the **asset detail** page (B.10): historical price with the 1M/3M/1Y/YTD/MAX selector. Always loads the full history: the selectors apply an **in-place zoom** (a `start`/`end` percentage pair, `end`=100) without re-fetching; a manual zoom/pan **deselects** the active button and preserves the view. **Splits** are drawn as a dashed purple `markLine` labelled with the ratio (`Split 4:1`), like in `PositionChart`. Empty state → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **three lines**: cost basis (gray, stepped), market value (green, smooth), realized (amber) + dashed split markers | the **portfolio detail** "Performance history": a dropdown switches between the whole portfolio and a single asset. Split events are drawn as a vertical dashed `markLine` on the market-value line labelled with the ratio (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **multi-series line** (one per portfolio), category x-axis of dates | the **dashboard** "Portfolio History" card. The tooltip formats each series in its own currency (the currency comes from the `DashboardHistory` payload) |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out | **three places**: asset detail "Distribuzione geografica" and "Distribuzione settoriale", and the portfolio **class-allocation donut** (B.12). Accepts `ExposureRow[]` (`{name, weight}`) |
@@ -371,8 +371,12 @@ Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
 
 ### Where they are used
 
-- **Asset detail (B.10)** — `PriceChart` for the price history; `ExposurePie`
-  twice, for the two editable exposure tables.
+- **Asset detail (B.10)** — `PriceChart` for the price history (in-place
+  zoom + split markers); `ExposurePie` twice for the geo/sector distribution.
+  Since EPIC F.10 (#64) the **editing** of the exposure happens in a **modal**
+  (`ExposureModal`): the page shows only the two pie charts; the "Modifica"
+  button (pencil icon, with `aria-label`) opens the modal with the weight
+  grids, the sum=100 validation and the independent region/sector saves.
 - **Portfolio detail (B.12)** — `ExposurePie` for the "Allocazione per classi"
   donut. The class rows are the `AssetClassSlice[]` returned by
   `portfolioApi.classAllocation`, mapped through `ASSET_CLASS_LABELS`.
@@ -587,15 +591,39 @@ quote/prices.
 - **Metriche quote**: "Ultima chiusura" + the 5 change percentages
   (1G/1S/1M/1Y/YTD) from `AssetQuote`, green/gray/red coloring; a 404 on load
   redirects to `/assets`.
-- **Storico prezzo**: `PriceChart` with the 1M/3M/1Y/MAX selector.
-- **Distribuzione geografica** and **Distribuzione settoriale**: two editable
-  weight tables (one card each) with a live sum, validated to 100 ± 0.5
-  (else the save is disabled), side by side with an `ExposurePie` donut.
+- **Storico prezzo**: `PriceChart` with the 1M/3M/1Y/YTD/MAX selector (in-place zoom).
+- **Distribuzione geografica** and **Distribuzione settoriale**: the page
+  keeps only the "Distribuzione" header with the "Modifica" button (pencil
+  icon) and the two `ExposurePie` donuts; all editing happens inside an
+  `ExposureModal`. The modal is **split into two side-by-side parts** (region
+  on the left, sector on the right), each with its editable weight table, the
+  live sum validated to 100 ± 0.5 (else the save is disabled) and its own
+  donut. The **prefill buttons live only inside the modal**, next to each
+  part's title, and fill **only the respective dimension**:
+  - region: a single **"Prefill JustETF"** button (`fetchETFExposure`, applies
+    `regions` only);
+  - sector: **"Prefill JustETF"** (`fetchETFExposure`, applies `sectors`
+    only) and **"Prefill Yahoo"** (`fetchExposure`, Yahoo `topHoldings`,
+    applies `sectors` only).
+  Inside the modal the prefill buttons are **boxed favicon icons** (JustETF
+  and Yahoo, with a border) with a tooltip. The **colour palette is shared**
+  (`$lib/chartPalette.ts`): the coloured squares before each name use
+  `colorForRow`, which returns exactly the slice colour in the chart (ECharts
+  assigns colours by index over the weight > 0 rows), so square and chart
+  always match. The charts inside the modal are **mute** (`mute` on
+  `ExposurePie`: no value labels and no tooltip on the slices), to summarise
+  proportions without overlaid text.
+  The "Distribuzione" card contains **two side-by-side boxes** (gray, with a
+  border): on the left the geographic chart with **its legend underneath**, on
+  the right the sector chart with **its legend underneath**. The legend
+  palette matches the pie charts, so all entries (e.g. the 11 GICS sectors)
+  are always visible even when the pie chart cannot render an inline legend.
   Saving sends **only the edited dimension**
   (`PUT /assets/{id}/exposure` with `{regions}` or `{sectors}` — omitting a
   key leaves the other untouched), then reloads the canonical response. The
-  two cards are rendered only when the asset is actionable for the equity
-  universe (`exposureApplicable`: stock, or etf/mutual_fund with `asset_class`
+  exposure section is rendered only when the asset is actionable for the
+  equity universe (`exposureApplicable`: stock, or etf/mutual_fund with
+  `asset_class`
   `equity`/`real_estate`); otherwise a hint banner explains that the
   distribution only applies to equity assets.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`

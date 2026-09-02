@@ -375,7 +375,7 @@ cambiamenti di `$props`.
 
 | Componente | Grafico | Usato per |
 |---|---|---|
-| `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/MAX. Stato vuoto → "Nessun dato prezzi disponibile" |
+| `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/YTD/MAX. Carica sempre tutto lo storico: i selettori fanno uno **zoom in-place** (coppia `start`/`end` percentuali, `end`=100) senza ricaricare dati; uno zoom/spostamento manuale **deseleziona** il pulsante attivo e preserva la vista. Gli **split** sono disegnati come `markLine` tratteggiata viola etichettata con il rapporto (`Split 4:1`), come in `PositionChart`. Stato vuoto → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la **storico performance** del dettaglio portafoglio: un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio), asse x a categorie di date | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`) |
 | `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate | in **tre punti**: "Distribuzione geografica" e "Distribuzione settoriale" del dettaglio asset, e il donut **"Allocazione per classi"** del portafoglio (B.12). Accetta `ExposureRow[]` (`{name, weight}`) |
@@ -387,8 +387,13 @@ date con `new Date(...).toLocaleDateString()`.
 
 ### Dove vengono usati
 
-- **Dettaglio asset (B.10)** — `PriceChart` per lo storico prezzi; `ExposurePie`
-  due volte, per le due tabelle di esposizione modificabili.
+- **Dettaglio asset (B.10)** — `PriceChart` per lo storico prezzi (con
+  zoom in-place e marcatori {@code split}); `ExposurePie` due volte per la
+  distribuzione geo/settoriale. Dall'EPIC F.10 (#64) la **modifica**
+  dell'esposizione avviene in una **modale** (`ExposureModal`): sulla pagina
+  restano solo i due pie chart; il pulsante "Modifica" (icona matita, opz.
+  → il controllo di editing) apre la modale con le griglie dei pesi, la
+  validazione somma=100 e i salvataggi indipendenti per regione/settore.
 - **Dettaglio portafoglio (B.12)** — `ExposurePie` per il donut "Allocazione
   per classi". Le righe sono gli `AssetClassSlice[]` restituiti da
   `portfolioApi.classAllocation`, mappati con `ASSET_CLASS_LABELS`.
@@ -608,14 +613,39 @@ freschi.
 - **Metriche quote**: "Ultima chiusura" + le 5 variazioni percentuali
   (1G/1S/1M/1Y/YTD) da `AssetQuote`, colorate verde/grigio/rosso; un 404 in
   caricamento reindirizza a `/assets`.
-- **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/MAX.
-- **Distribuzione geografica** e **Distribuzione settoriale**: due tabelle di
-  pesi modificabili (una card ciascuna) con somma dal vivo, validata a 100 ±
-  0,5 (altrimenti il salvataggio è disabilitato), affiancate da un donut
-  `ExposurePie`. Il salvataggio invia **solo la dimensione modificata**
+- **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/YTD/MAX (zoom in-place).
+- **Distribuzione geografica** e **Distribuzione settoriale**: sulla pagina
+  resta solo l'header "Distribuzione" con il pulsante "Modifica" (icona
+  matita) e i due donut `ExposurePie`; tutto l'editing avviene in una modale
+  `ExposureModal`. La modale è **divisa in due parti affiancate**: a sinistra
+  la geografica, a destra la settoriale, ognuna con le tabelle dei pesi
+  modificabili, la somma dal vivo validata a 100 ± 0,5 (altrimenti il
+  salvataggio è disabilitato) e il proprio donut. I pulsanti di **prefill
+  vivono solo nella modale**, accanto al titolo di ciascuna parte, e popolano
+  **solo la rispettiva dimensione**:
+  - geografica: un solo pulsante **"Prefill JustETF"** (`fetchETFExposure`,
+    applica solo `regions`);
+  - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
+    `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
+    applica solo `sectors`).
+  Nella modale i pulsanti di prefill sono **icone-favicon boxate** (JustETF e
+  Yahoo, con bordo) con tooltip. La **palette dei colori è condivisa**
+  (`$lib/chartPalette.ts`): i quadratini colorati prima di ogni nome usano
+  `colorForRow`, che restituisce esattamente il colore della fetta nel chart
+  (i colori ECharts sono assegnati per indice sulle righe con peso > 0), quindi
+  quadratino e grafico combaciano sempre. I grafici nella modale sono **muti**
+  (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip sulle
+  fette), per riepilogare le proporzioni senza testo sovrapposto.
+  La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
+  a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
+  grafico settoriale con la **sua legenda sotto**. La paletta della legenda è
+  allineata ai pie chart, così che tutti i valori (es. gli 11 settori GICS)
+  siano sempre visibili anche quando il pie chart non può mostrare la legenda
+  inline.
+  Il salvataggio invia **solo la dimensione modificata**
   (`PUT /assets/{id}/exposure` con `{regions}` o `{sectors}` — omettere una
-  chiave lascia l'altra intatta), poi ricarica la risposta canonica. Le due
-  card sono renderizzate solo quando l'asset è azionabile per l'universo
+  chiave lascia l'altra intatta), poi ricarica la risposta canonica. La
+  sezione è renderizzata solo quando l'asset è azionabile per l'universo
   equity (`exposureApplicable`: stock, oppure etf/mutual_fund con
   `asset_class` `equity`/`real_estate`); altrimenti compare un banner che
   spiega che la distribuzione vale solo per gli asset azionari.

@@ -166,6 +166,7 @@ downloaded (see below).
 | `name` | TEXT | name of the security |
 | `type` | TEXT (CHECK) | `stock`, `etf`, `bond`, `mutual_fund`, `crypto`, `commodity`, `cash` |
 | `asset_class` | TEXT (CHECK) | investment class: `equity`, `bond`, `commodity`, `currency`, `crypto`, `real_estate`, `mixed`, `other` (default `other`) |
+| `price_source` | TEXT (CHECK) | how prices are obtained: `yahoo` (automatic fetch, default), `manual` (managed by the user), `none` (not priced) |
 | `country` | TEXT | country of origin |
 | `currency` | TEXT | currency it is quoted in (default `USD`) |
 | `exchange` | TEXT | stock exchange / venue (may be empty) |
@@ -378,6 +379,7 @@ saved here for a few days, so the same search does not call Yahoo again.
 
 - `users.role` — only `owner`, `admin`, `editor`, `viewer`
 - `assets.type` — only the allowed security types
+- `assets.price_source` — only `yahoo`, `manual`, `none`
 - `transactions.type` — only `buy`, `sell`, `dividend`, `split`, `fee`
 - `portfolio_shares.role` — only `admin`, `editor`, `viewer`
 
