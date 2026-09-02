@@ -168,6 +168,7 @@ prezzi completo è già stato scaricato (vedi sotto).
 | `name` | TEXT | nome del titolo |
 | `type` | TEXT (CHECK) | `stock`, `etf`, `bond`, `mutual_fund`, `crypto`, `commodity`, `cash` |
 | `asset_class` | TEXT (CHECK) | classe di investimento: `equity`, `bond`, `commodity`, `currency`, `crypto`, `real_estate`, `mixed`, `other` (default `other`) |
+| `price_source` | TEXT (CHECK) | come si ottengono i prezzi: `yahoo` (fetch automatico, default), `manual` (gestito dall'utente), `none` (senza quotazione) |
 | `country` | TEXT | paese di origine |
 | `currency` | TEXT | valuta in cui è quotato (default `USD`) |
 | `exchange` | TEXT | borsa / mercato di quotazione (può essere vuoto) |
@@ -380,6 +381,7 @@ qui per qualche giorno, così la stessa ricerca non rifà la chiamata a Yahoo.
 
 - `users.role` — solo `owner`, `admin`, `editor`, `viewer`
 - `assets.type` — solo i tipi di titolo ammessi
+- `assets.price_source` — solo `yahoo`, `manual`, `none`
 - `transactions.type` — solo `buy`, `sell`, `dividend`, `split`, `fee`
 - `portfolio_shares.role` — solo `admin`, `editor`, `viewer`
 

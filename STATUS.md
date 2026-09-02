@@ -200,6 +200,12 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
   verificata end-to-end (covered=2600, excluded=10000, pesi somma 100).
 
 ### Altri EPIC Fase 2
+- EPIC G.7 (#53) — Asset con ticker non-Yahoo: no richiesta prezzo e no errori
+  - Campo `price_source` su `assets` (`yahoo`/`manual`/`none`, default `yahoo`):
+    migrazione `000015`, modello, repo, validazione service, handler PATCH.
+  - Il worker e `RefreshStale` filtrano solo asset `yahoo`; gli asset `manual`/
+    `none` sono saltati del tutto (nessuna chiamata Yahoo, nessun errore di health).
+  - Implementata: backend (model, repo, service, handler, price fetcher, docs).
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo
 - EPIC E (#38) — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
 - EPIC D (#37) — Design system & dark mode

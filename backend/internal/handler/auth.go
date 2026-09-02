@@ -322,6 +322,10 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if err == service.ErrInvalidPriceSource {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		log.Error().Err(err).Msg("update asset failed")
 		respondError(w, http.StatusInternalServerError, "update failed")
 		return

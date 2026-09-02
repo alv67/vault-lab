@@ -18,7 +18,7 @@
     type ExposureRow,
     type Price,
   } from '$lib/services/api'
-  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
+  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import { EllipsisVertical, Loader2 } from 'lucide-svelte'
@@ -75,6 +75,7 @@
     currency: 'USD',
     exchange: '',
     asset_class: 'other',
+    price_source: 'yahoo',
   })
 
   const currency = $derived(asset?.currency || 'USD')
@@ -96,7 +97,8 @@
       form.type !== asset.type ||
       form.currency !== asset.currency ||
       form.exchange !== (asset.exchange || '') ||
-      form.asset_class !== (asset.asset_class || 'other')
+      form.asset_class !== (asset.asset_class || 'other') ||
+      form.price_source !== (asset.price_source || 'yahoo')
     )
   })
 
@@ -133,6 +135,7 @@
       currency: a.currency,
       exchange: a.exchange || '',
       asset_class: a.asset_class || 'other',
+      price_source: a.price_source || 'yahoo',
     }
   }
 
@@ -202,6 +205,7 @@
       currency: form.currency.trim(),
       exchange: form.exchange.trim(),
       asset_class: form.asset_class,
+      price_source: form.price_source,
     }
     try {
       const updated = await assetApi.update(id, patch)
@@ -357,6 +361,11 @@
       <div>
         <h1 class="text-2xl font-bold">{asset.name}</h1>
         <p class="text-sm text-gray-500">{asset.ticker}</p>
+        {#if asset.price_source && asset.price_source !== 'yahoo'}
+          <span class="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+            {PRICE_SOURCE_LABELS[asset.price_source] ?? asset.price_source} — nessun sync automatico
+          </span>
+        {/if}
       </div>
       <div class="flex items-center gap-2">
         <button
@@ -483,6 +492,18 @@
             {#each Object.entries(ASSET_CLASS_LABELS) as [value, label] (value)}
               <option value={value}>{label}</option>
             {/each}
+          </select>
+        </div>
+        <div>
+          <label for="asset-price-source" class="mb-1 block text-xs font-medium text-gray-500">Fonte prezzo</label>
+          <select
+            id="asset-price-source"
+            bind:value={form.price_source}
+            class="w-full rounded-lg border px-3 py-2 text-sm"
+          >
+            <option value="yahoo">Yahoo Finance</option>
+            <option value="manual">Prezzo manuale</option>
+            <option value="none">Nessun prezzo</option>
           </select>
         </div>
       </div>

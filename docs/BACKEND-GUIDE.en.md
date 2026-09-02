@@ -204,12 +204,12 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 ## 6. The database
 
 The migrations (`backend/migrations/`, files numbered from `000001` to
-`000013`) build the schema. The main tables:
+`000015`) build the schema. The main tables:
 
 | Table | Contains | Explanation |
 |---|---|---|
 | `users` | the users | email, name, password hash, role |
-| `assets` | the securities | ticker, name, type (stock, ETF, crypto...), investment class, currency, exchange, sector, industry |
+| `assets` | the securities | ticker, name, type (stock, ETF, crypto...), investment class, price source, currency, exchange, sector, industry |
 | `portfolios` | the portfolios | a portfolio belongs to a user and has a currency |
 | `portfolio_shares` | the sharing | who else can see a portfolio (and with what role) |
 | `transactions` | the operations | buy/sell/dividend/split/fee, quantity, price, date |
@@ -430,6 +430,10 @@ criteria:
 2. the last update is very recent → skip (throttle);
 3. the last closing price is already the one of the expected business day →
    skip.
+
+Only assets with `price_source = 'yahoo'` (or empty, for safety) are ever
+sent to Yahoo; assets with `price_source = 'manual'` or `'none'` are
+skipped entirely and never reported as stale.
 
 When updates are needed, current quotes and exchange rates are fetched **in
 batch** using Yahoo's `spark` endpoint: a single call for groups of 50
@@ -746,6 +750,10 @@ otherwise continue".
   ISINs from tickers via JustETF; it is exercised only through the backend
   (`POST /assets/{id}/fetch-etf-exposure`) and its `GET /api/v1/etf/search`
   endpoint (tickers with an exchange suffix are normalized before querying).
+- Assets can have `price_source` set to `'yahoo'` (default), `'manual'` or
+  `'none'`. Only Yahoo-priced assets are fetched by the worker and
+  `RefreshStale`; manual/none assets are skipped entirely (no Yahoo request,
+  no health errors).
 - There are alternative SQL methods for summaries and allocations
   (`GetSummary`, `GetAllocation`, `GetROI`) that are not used by the service
   layer: the financial calculation lives in the AVCO engine (chapter 8), not

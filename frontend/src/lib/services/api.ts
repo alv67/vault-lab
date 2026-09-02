@@ -62,6 +62,7 @@ export interface Asset {
   exchange?: string
   sector?: string
   industry?: string
+  price_source?: string
 }
 
 export interface AssetQuote {
@@ -89,6 +90,7 @@ export interface AssetPatch {
   exchange?: string
   sector?: string
   industry?: string
+  price_source?: string
 }
 
 export interface Price {

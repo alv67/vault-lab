@@ -14,6 +14,7 @@
     country: '',
     exchange: '',
     asset_class: '',
+    price_source: 'yahoo',
   })
 
   let showCreate = $state(false)
@@ -81,6 +82,7 @@
       country: '',
       exchange: result.exchange || '',
       asset_class: '',
+      price_source: 'yahoo',
     }
     selectedTicker = true
     showSuggestions = false
@@ -238,6 +240,14 @@
           bind:value={form.exchange}
           class="rounded-lg border px-3 py-2 text-sm"
         />
+        <select
+          bind:value={form.price_source}
+          class="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="yahoo">Yahoo Finance</option>
+          <option value="manual">Prezzo manuale</option>
+          <option value="none">Nessun prezzo</option>
+        </select>
       </div>
       <button
         onclick={createAsset}

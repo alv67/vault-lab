@@ -40,6 +40,7 @@ var (
 	ErrCurrencyProtected  = errors.New("currency cannot be removed")
 	ErrCurrencyNotManaged = errors.New("currency conversion not available")
 	ErrInvalidAssetClass  = errors.New("invalid asset class")
+	ErrInvalidPriceSource = errors.New("invalid price source")
 	ErrNotETF             = errors.New("asset is not an ETF")
 	ErrAssetExists        = errors.New("asset with this ticker already exists")
 )
@@ -76,6 +77,12 @@ func defaultAssetClassForType(t model.AssetType) string {
 	default:
 		return "other"
 	}
+}
+
+// priceSources is the allowed set for price_source, which controls how an
+// asset's price data is obtained (Yahoo fetcher or manual/none).
+var priceSources = map[string]bool{
+	"yahoo": true, "manual": true, "none": true,
 }
 
 const (
@@ -262,6 +269,12 @@ func (s *Service) CreateAsset(ctx context.Context, asset *model.Asset) (*model.A
 	if asset.AssetClass == "" {
 		asset.AssetClass = defaultAssetClassForType(asset.Type)
 	}
+	if asset.PriceSource == "" {
+		asset.PriceSource = "yahoo"
+	}
+	if !priceSources[asset.PriceSource] {
+		return nil, ErrInvalidPriceSource
+	}
 	if asset.Country != "" {
 		asset.Country = geo.NormalizeCountry(asset.Country)
 		if asset.Country == "" {
@@ -328,6 +341,12 @@ func (s *Service) UpdateAsset(ctx context.Context, id uuid.UUID, patch *model.As
 			return nil, ErrInvalidAssetClass
 		}
 		existing.AssetClass = *patch.AssetClass
+	}
+	if patch.PriceSource != nil {
+		if *patch.PriceSource != "" && !priceSources[*patch.PriceSource] {
+			return nil, ErrInvalidPriceSource
+		}
+		existing.PriceSource = *patch.PriceSource
 	}
 	if patch.Country != nil {
 		existing.Country = geo.NormalizeCountry(*patch.Country)
@@ -781,7 +800,7 @@ func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) (pr
 		report, err = s.fetcher.RefreshStaleForPortfolio(ctx, *portfolioID)
 	} else {
 		var assets []*model.Asset
-		assets, err = s.repos.Asset.List(ctx)
+		assets, err = s.repos.Asset.ListYahoo(ctx)
 		if err != nil {
 			return report, err
 		}

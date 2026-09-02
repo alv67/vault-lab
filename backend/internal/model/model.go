@@ -55,6 +55,7 @@ type Asset struct {
 	Name              string     `json:"name"`
 	Type              AssetType  `json:"type"`
 	AssetClass        string     `json:"asset_class"`
+	PriceSource       string     `json:"price_source"`
 	Country           string     `json:"country,omitempty"`
 	Currency          string     `json:"currency"`
 	Exchange          string     `json:"exchange,omitempty"`
@@ -86,9 +87,10 @@ type AssetPatch struct {
 	Ticker     *string    `json:"ticker"`
 	ISIN       *string    `json:"isin"`
 	Name       *string    `json:"name"`
-	Type       *AssetType `json:"type"`
-	AssetClass *string    `json:"asset_class"`
-	Country    *string    `json:"country"`
+	Type        *AssetType `json:"type"`
+	AssetClass  *string    `json:"asset_class"`
+	PriceSource *string    `json:"price_source"`
+	Country     *string    `json:"country"`
 	Currency   *string    `json:"currency"`
 	Exchange   *string    `json:"exchange"`
 	Sector     *string    `json:"sector"`
