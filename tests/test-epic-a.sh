@@ -78,7 +78,7 @@ done
 # --- A.3: metric di data-quality nel summary ---------------------------------
 note "A.3 — Campi data-quality presenti nel summary"
 SUM=$(curl -s "$API/portfolios/$PID/summary" -H "Authorization: Bearer $TOK_A")
-for f in fx_missing_count fx_missing_value missing_country missing_category stale_count; do
+for f in fx_missing_count fx_missing_value missing_country missing_sector stale_count; do
   if jq -e "has(\"$f\")" <<<"$SUM" >/dev/null 2>&1; then
     ok "summary contiene '$f'"
   else
