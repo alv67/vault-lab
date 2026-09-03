@@ -497,11 +497,11 @@ func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.A
 	return updated, nil
 }
 
-// GetAssetExposure returns the region and sector weight distribution of an
-// asset. The output always contains every canonical region and GICS sector, in
-// canonical order, with zero weight when not stored. When no weights are stored
-// for a dimension, stocks fall back to a single 100% entry derived from the
-// asset country and sector.
+// GetAssetExposure returns the country, region and sector weight distribution
+// of an asset. The output always contains every canonical country, region and
+// GICS sector, in canonical order, with zero weight when not stored. When no
+// weights are stored for a dimension, stocks fall back to a single 100% entry
+// derived from the asset country and sector.
 func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -519,14 +519,22 @@ func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.As
 	if err != nil {
 		return nil, err
 	}
-	return s.buildExposure(asset, regions, sectors), nil
+	countries, err := s.repos.Exposure.FindCountries(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildExposure(asset, regions, sectors, countries), nil
 }
 
 // SaveAssetExposure validates and persists the weight distribution for an
 // asset. Each dimension is validated and saved independently: a dimension that
 // is absent from the body (nil slice) is left untouched. Present dimensions
 // must sum to ~100 (tolerance 0.5); rows with an empty name or a non-positive
-// weight are ignored. Returns the complete output built from the stored state.
+// weight are ignored. Country rows must come from the canonical geo.Countries
+// list; non-canonical names are skipped. When countries are provided, the
+// regions are re-derived from the stored countries and persisted so the two
+// dimensions stay consistent. Returns the complete output built from the
+// stored state.
 func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure *model.AssetExposure) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -536,7 +544,7 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 		return nil, err
 	}
 
-	var regions, sectors []model.ExposureRow
+	var regions, sectors, countries []model.ExposureRow
 	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
 		if exposure.Regions != nil {
 			regions = normalizeExposureRows(exposure.Regions)
@@ -553,6 +561,33 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 				return err
 			}
 			if err := rx.Exposure.ReplaceSectors(ctx, id, sectors); err != nil {
+				return err
+			}
+		}
+		if exposure.Countries != nil {
+			countries = normalizeExposureRows(exposure.Countries)
+			// Only keep rows whose name resolves to a canonical country; drop
+			// anything else rather than failing hard. Country weights are
+			// informational and used to derive regions, so a sum that is not
+			// exactly 100 is accepted (the residual lands in the region
+			// "Other / Not Classified").
+			kept := countries[:0]
+			for _, row := range countries {
+				code := geo.NormalizeCountry(row.Name)
+				if !geo.IsValidCountry(code) || !isCanonicalCountry(code) {
+					continue
+				}
+				row.Name = code
+				kept = append(kept, row)
+			}
+			countries = kept
+			if err := rx.Exposure.ReplaceCountries(ctx, id, countries); err != nil {
+				return err
+			}
+			// Countries overrode the region dimension: re-derive regions from
+			// the stored countries so the two stay consistent.
+			regions = price.AggregateRegions(countries)
+			if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
 				return err
 			}
 		}
@@ -573,7 +608,11 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 	if err != nil {
 		return nil, err
 	}
-	return s.buildExposure(asset, storedRegions, storedSectors), nil
+	storedCountries, err := s.repos.Exposure.FindCountries(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildExposure(asset, storedRegions, storedSectors, storedCountries), nil
 }
 
 // FetchAssetExposure fetches sector/industry + sector weights from Yahoo,
@@ -620,6 +659,10 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 	if err != nil {
 		return nil, err
 	}
+	countries, err := s.repos.Exposure.FindCountries(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 
 	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
 		if _, err := rx.Asset.Update(ctx, asset); err != nil {
@@ -631,12 +674,13 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 	s.bumpRev(ctx)
-	return s.buildExposure(asset, regions, sectors), nil
+	return s.buildExposure(asset, regions, sectors, countries), nil
 }
 
 // FetchETFExposure fetches the country and sector exposure of an ETF from the
-// python-service, maps countries to macro-regions and sectors to canonical GICS
-// names, then persists and returns the complete exposure.
+// python-service, keeps the raw countries (normalized to ISO codes), derives
+// macro-regions and canonical GICS sectors, then persists and returns the
+// complete exposure.
 func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -665,7 +709,13 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 	}
 
 	mapped := &model.AssetExposure{}
-	if regions := price.AggregateRegions(raw.Regions); len(regions) > 0 {
+	// Keep the raw countries (normalized to ISO codes), not aggregated.
+	if countries := normalizeCountries(raw.Countries); len(countries) > 0 {
+		mapped.Countries = countries
+	}
+	// Derive regions from the raw country rows for robustness; SaveAssetExposure
+	// will re-derive them from the stored countries anyway.
+	if regions := price.AggregateRegions(raw.Countries); len(regions) > 0 {
 		mapped.Regions = regions
 	}
 	if sectors := price.AggregateSectors(raw.Sectors); len(sectors) > 0 {
@@ -694,13 +744,14 @@ func (s *Service) resolveETFISIN(ctx context.Context, asset *model.Asset) (strin
 }
 
 // buildExposure assembles the complete exposure output for an asset: every
-// canonical region and GICS sector in canonical order, overlaid with the stored
-// weights and the stock defaults when nothing is stored.
-func (s *Service) buildExposure(asset *model.Asset, regions, sectors []model.ExposureRow) *model.AssetExposure {
+// canonical country, region and GICS sector in canonical order, overlaid with
+// the stored weights and the stock defaults when nothing is stored.
+func (s *Service) buildExposure(asset *model.Asset, regions, sectors, countries []model.ExposureRow) *model.AssetExposure {
 	return &model.AssetExposure{
-		ISIN:    asset.ISIN,
-		Regions: canonicalExposureRows(geo.Regions, regions, asset.Type == model.AssetTypeStock, geo.RegionForCountry(asset.Country)),
-		Sectors: canonicalExposureRows(geo.GICSSectors, sectors, asset.Type == model.AssetTypeStock, geo.NormalizeSector(asset.Sector)),
+		ISIN:      asset.ISIN,
+		Countries: canonicalExposureRows(geo.Countries, countries, false, ""),
+		Regions:   canonicalExposureRows(geo.Regions, regions, asset.Type == model.AssetTypeStock, geo.RegionForCountry(asset.Country)),
+		Sectors:   canonicalExposureRows(geo.GICSSectors, sectors, asset.Type == model.AssetTypeStock, geo.NormalizeSector(asset.Sector)),
 	}
 }
 
@@ -740,7 +791,9 @@ func normalizeExposureRows(rows []model.ExposureRow) []model.ExposureRow {
 }
 
 // validateExposureWeights checks that a dimension sums to ~100 with a 0.5
-// tolerance.
+// tolerance. It is used for regions and sectors only; country weights are
+// informational and not required to sum to 100 (the residual is absorbed by the
+// "Other / Not Classified" region).
 func validateExposureWeights(rows []model.ExposureRow) error {
 	sum := decimal.Zero
 	for _, row := range rows {
@@ -750,6 +803,76 @@ func validateExposureWeights(rows []model.ExposureRow) error {
 		return ErrInvalidWeights
 	}
 	return nil
+}
+
+// isCanonicalCountry reports whether code is one of the canonical ISO codes.
+func isCanonicalCountry(code string) bool {
+	for _, c := range geo.Countries {
+		if c == code {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeCountries normalizes raw country rows to canonical ISO codes,
+// dropping empty names, non-positive weights and names that resolve to no
+// canonical country.
+func normalizeCountries(rows []model.ExposureRow) []model.ExposureRow {
+	out := make([]model.ExposureRow, 0, len(rows))
+	for _, row := range rows {
+		if row.Name == "" || !row.Weight.IsPositive() {
+			continue
+		}
+		code := geo.NormalizeCountry(row.Name)
+		if !isCanonicalCountry(code) {
+			continue
+		}
+		out = append(out, model.ExposureRow{Name: code, Weight: row.Weight})
+	}
+	return out
+}
+
+// FetchMorningstarExposure fetches the country and sector exposure of an ETF
+// from the python-service using Morningstar as the data source, keeps the raw
+// countries (normalized to ISO codes), derives canonical GICS sectors, then
+// persists and returns the complete exposure.
+func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+	asset, err := s.repos.Asset.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+	if asset.Type != model.AssetTypeETF {
+		return nil, ErrNotETF
+	}
+	if strings.TrimSpace(asset.ISIN) == "" {
+		isin, err := s.resolveETFISIN(ctx, asset)
+		if err != nil {
+			return nil, err
+		}
+		asset.ISIN = isin
+		if _, err := s.repos.Asset.Update(ctx, asset); err != nil {
+			return nil, err
+		}
+	}
+
+	raw, err := s.etfFetcher.FetchMorningstarExposure(ctx, asset.ISIN)
+	if err != nil {
+		return nil, err
+	}
+
+	mapped := &model.AssetExposure{}
+	if countries := normalizeCountries(raw.Countries); len(countries) > 0 {
+		mapped.Countries = countries
+	}
+	// SaveAssetExposure derives regions from the stored countries.
+	if sectors := price.AggregateSectors(raw.Sectors); len(sectors) > 0 {
+		mapped.Sectors = sectors
+	}
+	return s.SaveAssetExposure(ctx, id, mapped)
 }
 
 func (s *Service) SearchAssets(ctx context.Context, query string) ([]*model.Asset, error) {

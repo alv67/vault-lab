@@ -20,6 +20,7 @@
     type SplitInfo,
   } from '$lib/services/api'
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
+  import { countryDisplayName } from '$lib/countryNames'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import { EllipsisVertical, Loader2, Pencil } from 'lucide-svelte'
@@ -67,11 +68,14 @@
   let exposure = $state<AssetExposure | null>(null)
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
+  let countriesEdit = $state<ExposureRow[]>([])
   let savingRegions = $state(false)
   let savingSectors = $state(false)
+  let savingCountries = $state(false)
   let saving = $state(false)
   let prefilling = $state(false)
   let fetchingETF = $state(false)
+  let fetchingMorningstar = $state(false)
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
@@ -139,8 +143,12 @@
   const sumSectors = $derived(
     sectorsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
   )
+  const sumCountries = $derived(
+    countriesEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
+  )
   const regionsValid = $derived(Math.abs(sumRegions - 100) <= 0.5)
   const sectorsValid = $derived(Math.abs(sumSectors - 100) <= 0.5)
+  const countriesValid = $derived(Math.abs(sumCountries - 100) <= 0.5)
 
   function changeClass(value: string | number | undefined): string {
     const n = Number(value ?? 0)
@@ -192,6 +200,7 @@
       splits = sp
       regionsEdit = ex.regions.map((r) => ({ ...r }))
       sectorsEdit = ex.sectors.map((r) => ({ ...r }))
+      countriesEdit = ex.countries.map((r) => ({ ...r }))
       fillForm(a)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load asset'
@@ -402,6 +411,45 @@
       toast.error(message)
     } finally {
       savingSectors = false
+    }
+  }
+
+  // Prefill da Morningstar: popola paesi e settori (ETF only).
+  async function prefillCountriesFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const saved = await assetApi.fetchMorningstarExposure(id)
+      exposure = saved
+      countriesEdit = saved.countries.map((r) => ({ ...r }))
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Paesi e settori precompilati da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
+    }
+  }
+
+  async function saveCountries(): Promise<void> {
+    if (!id || !exposure) return
+    savingCountries = true
+    try {
+      const saved = await assetApi.saveExposure(id, {
+        countries: countriesEdit,
+      })
+      exposure = saved
+      countriesEdit = saved.countries.map((r) => ({ ...r }))
+      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      toast.success('Distribuzione paesi salvata')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      savingCountries = false
     }
   }
 </script>
@@ -627,7 +675,7 @@
             </button>
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div class="rounded-xl border bg-gray-50 p-4">
             <h3 class="mb-2 font-medium">Distribuzione geografica</h3>
             <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
@@ -660,6 +708,22 @@
               {/each}
             </div>
           </div>
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Distribuzione paesi</h3>
+            <ExposurePie data={countriesEdit} title="Distribuzione paesi" />
+            <div class="mt-3 max-h-48 space-y-0.5 overflow-y-auto">
+              {#each countriesEdit.filter((r) => Number(r.weight) > 0) as c, i (c.name)}
+                <div class="flex items-center gap-1.5 text-xs">
+                  <span
+                    class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                  ></span>
+                  <span class="truncate">{countryDisplayName(c.name)}</span>
+                  <span class="ml-auto text-gray-500">{formatPercent(Number(c.weight))}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -668,19 +732,26 @@
         onClose={() => (exposureModalOpen = false)}
         bind:regionsEdit
         bind:sectorsEdit
+        bind:countriesEdit
         {sumRegions}
         {sumSectors}
+        {sumCountries}
         {regionsValid}
         {sectorsValid}
+        {countriesValid}
         {savingRegions}
         {savingSectors}
+        {savingCountries}
         {saveRegions}
         {saveSectors}
+        {saveCountries}
         {prefilling}
         {fetchingETF}
+        {fetchingMorningstar}
         {prefillRegionsFromETF}
         {prefillSectorsFromETF}
         {prefillSectorsFromYahoo}
+        {prefillCountriesFromMorningstar}
         assetType={asset.type}
       />
     {:else if exposureApplicable === false && asset}

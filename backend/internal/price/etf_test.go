@@ -33,9 +33,35 @@ func TestJustETFFetcherFetchExposure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(exposure.Regions) != 1 || exposure.Regions[0].Name != "United States" ||
-		!exposure.Regions[0].Weight.Equal(decimal.NewFromFloat(63.34)) {
-		t.Fatalf("unexpected regions: %+v", exposure.Regions)
+	if len(exposure.Countries) != 1 || exposure.Countries[0].Name != "United States" ||
+		!exposure.Countries[0].Weight.Equal(decimal.NewFromFloat(63.34)) {
+		t.Fatalf("unexpected countries: %+v", exposure.Countries)
+	}
+	if len(exposure.Sectors) != 1 || exposure.Sectors[0].Name != "Information Technology" ||
+		!exposure.Sectors[0].Weight.Equal(decimal.NewFromFloat(27.5)) {
+		t.Fatalf("unexpected sectors: %+v", exposure.Sectors)
+	}
+}
+
+func TestJustETFFetcherFetchMorningstarExposure(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/etf/IE00B4L5Y983/morningstar-exposure" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, sampleETFETFExposureJSON)
+	}))
+	defer ts.Close()
+
+	f := NewJustETFFetcher(ts.URL)
+	exposure, err := f.FetchMorningstarExposure(context.Background(), "IE00B4L5Y983")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(exposure.Countries) != 1 || exposure.Countries[0].Name != "United States" ||
+		!exposure.Countries[0].Weight.Equal(decimal.NewFromFloat(63.34)) {
+		t.Fatalf("unexpected countries: %+v", exposure.Countries)
 	}
 	if len(exposure.Sectors) != 1 || exposure.Sectors[0].Name != "Information Technology" ||
 		!exposure.Sectors[0].Weight.Equal(decimal.NewFromFloat(27.5)) {
@@ -143,8 +169,8 @@ func TestJustETFFetcherRetriesTransientError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(exposure.Regions) != 1 || exposure.Regions[0].Name != "United States" {
-		t.Fatalf("unexpected regions: %+v", exposure.Regions)
+	if len(exposure.Countries) != 1 || exposure.Countries[0].Name != "United States" {
+		t.Fatalf("unexpected countries: %+v", exposure.Countries)
 	}
 	if calls.Load() != 3 {
 		t.Fatalf("expected 3 attempts (1 + 2 retries), got %d", calls.Load())
@@ -198,6 +224,29 @@ func TestAggregateRegions(t *testing.T) {
 			},
 			want: []model.ExposureRow{
 				{Name: "Asia Developed", Weight: decimal.NewFromInt(100)},
+			},
+		},
+		{
+			name: "residual below 100 lands in Other / Not Classified",
+			in: []model.ExposureRow{
+				{Name: "United States", Weight: decimal.NewFromFloat(60)},
+				{Name: "Japan", Weight: decimal.NewFromFloat(35.22)},
+			},
+			want: []model.ExposureRow{
+				{Name: "Asia Developed", Weight: decimal.NewFromFloat(35.22)},
+				{Name: "North America", Weight: decimal.NewFromFloat(60)},
+				{Name: "Other / Not Classified", Weight: decimal.NewFromFloat(4.78)},
+			},
+		},
+		{
+			name: "no residual bucket when regions already sum to 100",
+			in: []model.ExposureRow{
+				{Name: "United States", Weight: decimal.NewFromFloat(63.34)},
+				{Name: "Japan", Weight: decimal.NewFromFloat(36.66)},
+			},
+			want: []model.ExposureRow{
+				{Name: "Asia Developed", Weight: decimal.NewFromFloat(36.66)},
+				{Name: "North America", Weight: decimal.NewFromFloat(63.34)},
 			},
 		},
 	}

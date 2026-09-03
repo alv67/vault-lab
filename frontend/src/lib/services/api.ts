@@ -112,6 +112,7 @@ export interface ExposureRow {
 }
 
 export interface AssetExposure {
+  countries: ExposureRow[]
   regions: ExposureRow[]
   sectors: ExposureRow[]
   isin?: string
@@ -121,6 +122,7 @@ export interface AssetExposure {
 // indipendenti: omettendo una chiave la relativa distribuzione non viene
 // modificata.
 export interface AssetExposurePatch {
+  countries?: ExposureRow[]
   regions?: ExposureRow[]
   sectors?: ExposureRow[]
 }
@@ -568,6 +570,8 @@ export const assetApi = {
     request<AssetExposure>(`/assets/${id}/fetch-exposure`, { method: 'POST' }),
   fetchETFExposure: (id: string) =>
     request<AssetExposure>(`/assets/${id}/fetch-etf-exposure`, { method: 'POST' }),
+  fetchMorningstarExposure: (id: string) =>
+    request<AssetExposure>(`/assets/${id}/fetch-morningstar-exposure`, { method: 'POST' }),
   backfillHistory: (id: string) =>
     request<{ status: string }>(`/assets/${id}/backfill-history`, { method: 'POST' }),
   remove: (id: string) => request<void>(`/assets/${id}`, { method: 'DELETE' }),

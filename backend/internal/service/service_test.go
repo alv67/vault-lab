@@ -40,8 +40,9 @@ func (f *fakePortfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs [
 func (f *fakePortfolioRepo) FindAll(ctx context.Context) ([]uuid.UUID, error) { return nil, nil }
 
 type fakeExposureRepo struct {
-	regions map[string][]model.ExposureRow
-	sectors map[string][]model.ExposureRow
+	regions   map[string][]model.ExposureRow
+	sectors   map[string][]model.ExposureRow
+	countries map[string][]model.ExposureRow
 }
 
 func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
@@ -50,10 +51,16 @@ func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) (
 func (f *fakeExposureRepo) FindSectors(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
 	return f.sectors[assetID.String()], nil
 }
+func (f *fakeExposureRepo) FindCountries(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
+	return f.countries[assetID.String()], nil
+}
 func (f *fakeExposureRepo) ReplaceRegions(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
 	return nil
 }
 func (f *fakeExposureRepo) ReplaceSectors(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	return nil
+}
+func (f *fakeExposureRepo) ReplaceCountries(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
 	return nil
 }
 func (f *fakeExposureRepo) FindRegionsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
@@ -61,6 +68,9 @@ func (f *fakeExposureRepo) FindRegionsByAssets(ctx context.Context, assetIDs []u
 }
 func (f *fakeExposureRepo) FindSectorsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
 	return f.sectors, nil
+}
+func (f *fakeExposureRepo) FindCountriesByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
+	return f.countries, nil
 }
 
 type fakeFXRepo struct {
@@ -580,5 +590,75 @@ func TestGetDashboardAllocation_ExcludesNonEquity(t *testing.T) {
 	}
 	if !equalDecimal(sectorWeightSum, decimal.NewFromInt(100)) {
 		t.Fatalf("sectors weight sum = %v, want 100", sectorWeightSum)
+	}
+}
+
+func TestNormalizeCountries(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []model.ExposureRow
+		want []model.ExposureRow
+	}{
+		{
+			name: "ISO codes and full names normalize to canonical codes",
+			in: []model.ExposureRow{
+				{Name: "United States", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+		},
+		{
+			name: "non-canonical country names are dropped",
+			in: []model.ExposureRow{
+				{Name: "Atlantis", Weight: decimal.NewFromInt(50)},
+				{Name: "IT", Weight: decimal.NewFromInt(50)},
+			},
+			want: []model.ExposureRow{
+				{Name: "IT", Weight: decimal.NewFromInt(50)},
+			},
+		},
+		{
+			name: "empty and non-positive rows are dropped",
+			in: []model.ExposureRow{
+				{Name: "", Weight: decimal.NewFromInt(50)},
+				{Name: "JP", Weight: decimal.NewFromInt(0)},
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeCountries(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("len = %d, want %d: %+v", len(got), len(tc.want), got)
+			}
+			for i := range got {
+				if got[i].Name != tc.want[i].Name || !got[i].Weight.Equal(tc.want[i].Weight) {
+					t.Fatalf("row[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestIsCanonicalCountry(t *testing.T) {
+	if !isCanonicalCountry("US") {
+		t.Fatal("US should be canonical")
+	}
+	if !isCanonicalCountry("ZA") {
+		t.Fatal("ZA should be canonical")
+	}
+	if isCanonicalCountry("") {
+		t.Fatal("empty should not be canonical")
+	}
+	if isCanonicalCountry("XYZ") {
+		t.Fatal("XYZ should not be canonical")
 	}
 }

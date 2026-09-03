@@ -9,7 +9,7 @@
 | Database | PostgreSQL 16 | Con docker volume |
 | Cache | Redis 7 | Caching dashboard/series, rate-limit Yahoo |
 | Worker | Go (prezzi) | Container separato |
-| Python Service | FastAPI + uvicorn + requests + bs4 | ETF metadata da JustETF (esposizione paesi/regioni + settori, ticker→ISIN) — EPIC B.5 |
+| Python Service | FastAPI + uvicorn + requests + bs4 + selenium (chromium headless) | ETF metadata da JustETF (esposizione paesi/regioni + settori) + Morningstar (esposizione paesi + settori via resolver custom; auto-resolve ticker→ISIN per mercato) — EPIC B.5, B.14 |
 | Container | podman + podman-compose su macOS | |
 
 ## Release
@@ -81,6 +81,8 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 | #45 | B.10 — Asset detail page (`/assets/[id]`) + exchange field | Full-stack | ✅ completa |
 | #49 | B.11 — Asset class: colonna `asset_class` + auto-detect Yahoo + override manuale | Full-stack | ✅ implementata (da validare) |
 | #50 | B.12 — Allocazione per classi: `GET /allocation/class` + donut | Full-stack | ✅ implementata (da validare) |
+| #58 | B.13 — Per-country exposure storage: tabella `asset_country_weights`, 3 dimensioni | Backend + Frontend | ✅ implementata |
+| #59 | B.14 — Morningstar come fonte esposizione: resolver custom (bootstrap Chromium headless per WAF+JWT), rotta backend, prefill frontend | Backend + Frontend | ✅ implementata |
 
 **Ordine di implementazione**:
 1. Data layer: B.1 → B.9 → B.3
@@ -117,6 +119,21 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
   - `GET /api/v1/etf/{isin}/exposure` — paesi/regioni e settori **completi** replicando gli AJAX
     Wicket "Show more" di JustETF (niente browser a runtime, Playwright usato solo per discovery);
   - `GET /api/v1/etf/{isin}/holdings` (stub) e `GET /healthz`; mai crash → errori `502` JSON.
+  - **Morningstar** (`GET /api/v1/etf/{isin}/morningstar-exposure`) — stesso breakdown paesi/
+    settori recuperato da **Morningstar** con un **resolver custom** (`app/morningstar.py`, senza
+    mstarpy): il dominio `global.morningstar.com` usato da mstarpy è hard-blocked (403), quindi il
+    resolver esegue un **bootstrap Chromium headless** (sotto Xvfb nel container, chromedriver
+    esplicito per aarch64) che risolve il challenge AWS WAF su `www.morningstar.com` e ottiene il
+    **Bearer JWT** da `/api/v2/stores/maas/token` (cache ~1h), poi le chiamate dati viaggiano via
+    `requests` con token+cookie verso `www.us-api.morningstar.com/sal/sal-service/etf/...`
+    (`portfolio/v2/sector/{sid}/data` → settori, `portfolio/regionalSectorIncludeCountries/{sid}/data`
+    → paesi, `portfolio/regionalSector/{sid}/data` → regioni). ISIN→securityId via
+    `www.morningstar.com/api/v2/search?q={isin}`. Parser difensivo: `fundPortfolio.countries`
+    (name camelCase→nome leggibile, percent) e bucket `EQUITY`/`FIXEDINCOME` → settori GICS
+    (scelta bucket col peso maggiore, chiavi non-GICS scartate), conversione 0-1→0-100,
+    pesi paesi tenuti come riportati (Morningstar espone la lista paesi completa, 51 voci
+    con molte a 0 e una quota residuale non esposta come paese; il residuo confluisce
+    nella regione `Other / Not Classified` lato backend), ordinamento pesi desc.
 - **Backend Go** — interfaccia `price.ETFFetcher` + `JustETFFetcher` (client del python-service),
   aggregazione `AggregateRegions`/`AggregateSectors` (paesi→macro-regioni + alias settori),
   nuova rotta **`POST /assets/{id}/fetch-etf-exposure`**: se l'asset non ha ISIN lo **auto-risolve
@@ -138,6 +155,14 @@ Verificato: **Yahoo non espone l'ISIN** (nessun campo in `assetProfile`/`fundPro
 o scraping fragile token-gated. Decisione B.5: il campo `isin` resta **editabile a mano**
 nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /assets/{id}/fetch-etf-exposure`
 (anche alla creazione, se l'ISIN è vuoto) risolve ticker→ISIN e lo persiste sull'asset.
+
+Da B.14 l'auto-resolve è **market-aware**: quando il ticker porta un suffisso di
+mercato riconosciuto (`.MI`, `.DE`, `.L`, `.SW`, ...), l'ISIN viene risolto via
+**Morningstar** cercando la quotazione su quell'exchange (mappa suffisso→codice
+Morningstar in `python-service/app/morningstar.py`); senza suffisso si usa
+JustETF. È necessario perché lo stesso ticker può avere **ISIN diversi a seconda
+del listino** (es. `EQQQ` = `IE0032077012` sul listino tedesco vs altre quotazioni),
+e Morningstar permette di cercare sul mercato esatto.
 
 ### Asset class + allocazione per classi (B.11, B.12)
 - **Rimossa la classificazione single-category** (`category_id` → tabella `categories`): inadatta agli ETF
@@ -199,6 +224,64 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
   `asset_class: equity` per rispettare l'universo strict) + esclusione bond
   verificata end-to-end (covered=2600, excluded=10000, pesi somma 100).
 
+### B.13 + B.14 — Exposure 3 dimensioni + Morningstar (issues #58, #59)
+- **B.13 — Per-country exposure storage** (#58): nuova tabella
+  `asset_country_weights (asset_id, country, weight)` (migrazione
+  `000016_country_weights`). L'esposizione ora ha 3 dimensioni:
+  `countries` (pesi per paese ISO-3166 alpha-2), `regions` (macro-regioni)
+  e `sectors` (settori GICS). Il package `geo` espone `var Countries` (~89
+  codici ISO canonici). Il repository `ExposureRepository` aggiunge
+  `FindCountries`/`ReplaceCountries`/`FindCountriesByAssets`.
+  - `GET /assets/{id}/exposure` restituisce countries zero-filled sulla lista
+    canonica completa (più regions e sectors).
+  - `PUT /assets/{id}/exposure` accetta `countries?` (dimensioni indipendenti),
+    tiene solo codici ISO canonici; la somma dei paesi **non deve** essere
+    esattamente 100 (i pesi paesi sono informativi): quando i countries sono
+    forniti il backend ricalcola e persiste le regions dalla mappatura
+    paese→regione, imputando il residuo (100 − somma) nella regione
+    `Other / Not Classified` (coerenza automatica a somma 100 per le regioni).
+  - JustETF ora salva i countries raw (normalizzati a codici ISO) invece di
+    scartarli, e il backend li archivia in `asset_country_weights`.
+- **B.14 — Morningstar come fonte esposizione** (#59):
+  - **python-service**: nuovo endpoint `GET /api/v1/etf/{isin}/morningstar-exposure`
+    (modulo `python-service/app/morningstar.py`, **resolver custom senza mstarpy**).
+    Il dominio `global.morningstar.com` delle SAL API informali usate da mstarpy è
+    hard-blocked (403 "Request blocked") dall'IP di questo ambiente; il resolver
+    esegue un **bootstrap Chromium headless** (installato nell'immagine via apt:
+    `chromium`, `chromium-driver`, `xvfb`, `fonts-liberation`; chromedriver passato
+    esplicitamente perché Selenium Manager non supporta `linux/aarch64`). Il browser
+    carica `www.morningstar.com` finché il challenge AWS WAF non si risolve, legge i
+    cookie di sessione e il **Bearer JWT** da `/api/v2/stores/maas/token` (cache in
+    memoria, scadenza ~1h da `exp` del JWT). Le chiamate dati avvengono poi via
+    `requests` con Bearer+cookie verso
+    `www.us-api.morningstar.com/sal/sal-service/etf/...`:
+    `portfolio/v2/sector/{sid}/data` (settori), `portfolio/regionalSectorIncludeCountries/{sid}/data`
+    (paesi), ISIN→securityId via `www.morningstar.com/api/v2/search?q={isin}`.
+    Parser: paesi camelCase→nomi leggibili, settori dal bucket col peso maggiore
+    (EQUITY per fondi azionari, FIXEDINCOME per obbligazionari; chiavi non-GICS come
+    `cashAndEquivalents`/`government` scartate). I pesi paesi sono tenuti come
+    riportati (Morningstar espone la lista paesi completa, 51 voci, ma con una
+    quota residuale "Other" non esposta come paese → la somma è ~95%): il residuo
+    confluisce nella regione `Other / Not Classified` lato backend. L'auto-resolve
+    ticker→ISIN è **market-aware** (mappa suffisso→exchange, es. `.MI`→`XMIL`):
+    `search_etf` usa Morningstar per i ticker con suffisso riconosciuto e JustETF
+    per i ticker senza suffisso. Variabili env opzionali
+    `MORNINGSTAR_BEARER`/`MORNINGSTAR_COOKIES` per bypassare il browser nei test.
+  - **Backend Go**: interfaccia `ETFFetcher` estesa con `FetchMorningstarExposure`;
+    nuovo metodo `Service.FetchMorningstarExposure`; nuovo handler + rotta
+    `POST /assets/{id}/fetch-morningstar-exposure` (solo ETF, auto-risolve ISIN).
+  - **Frontend**: la pagina asset detail e `ExposureModal` guadagnano un terzo
+    pannello "Distribuzione paesi" con pulsante prefill Morningstar (popola
+    countries + sectors; regions ricalcolate lato server). Modifica add/remove
+    dei paesi dalla lista canonica supportata; display usa nomi paese amichevoli
+    da `frontend/src/lib/countryNames.ts`.
+- **Verifica**: Go build/vet/test green; python-service pytest (42 test) green;
+  `svelte-check`/eslint clean; e2e su stack isolato `vaultlab-test` con
+  `tests/test-epic-b.sh` (20 PASS). Morningstar verificato end-to-end sullo stack
+  test: `POST /assets/{id}/fetch-morningstar-exposure` per XMME restituisce paesi
+  canonici (zero-fill, somma raw ~95%) + settori GICS (somma 100), regioni derivate
+  a somma 100 con il residuo nella regione `Other / Not Classified`.
+
 ### Altri EPIC Fase 2
 - EPIC G.7 (#53) — Asset con ticker non-Yahoo: no richiesta prezzo e no errori
   - Campo `price_source` su `assets` (`yahoo`/`manual`/`none`, default `yahoo`):
@@ -211,9 +294,10 @@ nella pagina asset, ma per gli ETF è ora **automatizzato** via JustETF: `POST /
     fanno zoom in-place (coppia `start`/`end` percentuali) senza ricaricare dati.
   - Uno zoom/spostamento manuale deseleziona il pulsante attivo e preserva la vista.
 - F.10 (#64) — Pagina asset: solo pie chart + modale di modifica esposizione
-  - `ExposureModal.svelte`: modale divisa in due parti affiancate (geo/settore);
-    sulla pagina restano i due donut `ExposurePie`. I prefill vivono solo nella
-    modale e popolano una dimensione alla volta: JustETF → regioni; JustETF e
+  - `ExposureModal.svelte`: modale divisa in due/tre parti affiancate
+    (geografica/settoriale + paesi, dopo B.13); sulla pagina restano i due donut
+    `ExposurePie`. I prefill vivono solo nella modale e popolano una dimensione alla
+    volta: JustETF → paesi + regioni; Morningstar → paesi + settori (B.14);
     Yahoo → settori.
 - Splits sul chart asset — nuovi `GET /assets/{id}/splits` (service `AssetSplits`,
   handler) e `markLine` viola etichettati con il rapporto sul `PriceChart`,

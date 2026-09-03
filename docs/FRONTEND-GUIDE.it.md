@@ -269,7 +269,7 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 | `assetApi` | list, search, lookup, meta | `GET /assets`, `GET /assets/search?q=`, `GET /assets/lookup?q=`, `GET /assets/meta?ticker=` |
 | | get, create, update, remove | `GET /assets/{id}`, `POST /assets`, `PATCH /assets/{id}`, `DELETE /assets/{id}` |
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
-| | exposure, saveExposure, fetchExposure, fetchETFExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure` |
+| | exposure, saveExposure, fetchExposure, fetchETFExposure, fetchMorningstarExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure`, `POST /assets/{id}/fetch-morningstar-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
 | `transactionApi` | list, create | `GET/POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
@@ -614,20 +614,27 @@ freschi.
   (1G/1S/1M/1Y/YTD) da `AssetQuote`, colorate verde/grigio/rosso; un 404 in
   caricamento reindirizza a `/assets`.
 - **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/YTD/MAX (zoom in-place).
-- **Distribuzione geografica** e **Distribuzione settoriale**: sulla pagina
+- **Distribuzione geografica**, **Distribuzione settoriale** e — da
+  B.13/B.14 — **Distribuzione paesi**: sulla pagina
   resta solo l'header "Distribuzione" con il pulsante "Modifica" (icona
-  matita) e i due donut `ExposurePie`; tutto l'editing avviene in una modale
-  `ExposureModal`. La modale è **divisa in due parti affiancate**: a sinistra
-  la geografica, a destra la settoriale, ognuna con le tabelle dei pesi
+  matita) e i due donut `ExposurePie` (geo e settore); tutto l'editing avviene
+  in una modale `ExposureModal`. La modale ha **tre parti** (a sinistra paesi,
+  al centro regioni, a destra settori), ognuna con le tabelle dei pesi
   modificabili, la somma dal vivo validata a 100 ± 0,5 (altrimenti il
-  salvataggio è disabilitato) e il proprio donut. I pulsanti di **prefill
-  vivono solo nella modale**, accanto al titolo di ciascuna parte, e popolano
-  **solo la rispettiva dimensione**:
-  - geografica: un solo pulsante **"Prefill JustETF"** (`fetchETFExposure`,
+  salvataggio è disabilitato) e il proprio donut. I paesi si modificano sulla
+  **lista ISO canonica** (aggiungi/rimuovi un paese dalla lista e imposta il
+  suo peso); il display usa nomi paese amichevoli da `lib/countryNames.ts`. I
+  pulsanti di **prefill vivono solo nella modale**, accanto al titolo di
+  ciascuna parte, e popolano **solo la rispettiva dimensione**:
+  - regioni: un solo pulsante **"Prefill JustETF"** (`fetchETFExposure`,
     applica solo `regions`);
-  - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
+  - settori: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
     `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
-    applica solo `sectors`).
+    applica solo `sectors`);
+  - paesi: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
+    `countries`) e **"Prefill Morningstar"** (`fetchMorningstarExposure`,
+    popola sia `countries` sia `sectors`; le regioni vengono ricalcolate lato
+    server).
   Nella modale i pulsanti di prefill sono **icone-favicon boxate** (JustETF e
   Yahoo, con bordo) con tooltip. La **palette dei colori è condivisa**
   (`$lib/chartPalette.ts`): i quadratini colorati prima di ogni nome usano
@@ -636,14 +643,14 @@ freschi.
   quadratino e grafico combaciano sempre. I grafici nella modale sono **muti**
   (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip sulle
   fette), per riepilogare le proporzioni senza testo sovrapposto.
-  La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
-  a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
-  grafico settoriale con la **sua legenda sotto**. La paletta della legenda è
+  La card "Distribuzione" contiene **tre box affiancati** (grigi, con bordo):
+  paesi, grafico geografico e grafico settoriale, ognuno con la **sua legenda
+  sotto**. La paletta della legenda è
   allineata ai pie chart, così che tutti i valori (es. gli 11 settori GICS)
   siano sempre visibili anche quando il pie chart non può mostrare la legenda
   inline.
   Il salvataggio invia **solo la dimensione modificata**
-  (`PUT /assets/{id}/exposure` con `{regions}` o `{sectors}` — omettere una
+  (`PUT /assets/{id}/exposure` con `{countries}`, `{regions}` o `{sectors}` — omettere una
   chiave lascia l'altra intatta), poi ricarica la risposta canonica. La
   sezione è renderizzata solo quando l'asset è azionabile per l'universo
   equity (`exposureApplicable`: stock, oppure etf/mutual_fund con
@@ -652,9 +659,17 @@ freschi.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, i pesi settoriali `topHoldings` di
   Yahoo) precompila la tabella dei settori.
+- **Prefill da Morningstar (B.14)** — `assetApi.fetchMorningstarExposure(id)`
+  (`POST /assets/{id}/fetch-morningstar-exposure`): recupera l'esposizione
+  paesi e settori da Morningstar (tramite il python-service, resolver custom con
+  bootstrap Chromium headless) e
+  popola sia la tabella paesi sia quella settori; le regioni vengono ricalcolate
+  lato server. Visibile solo per asset di tipo ETF (stessa regola di "Carica da
+  JustETF").
 - **Carica da JustETF** — `assetApi.fetchETFExposure(id)`
   (`POST /assets/{id}/fetch-etf-exposure`): recupera e salva dal microservizio
-  JustETF sia la distribuzione geografica (paesi → macro-regioni canoniche) sia
+  JustETF sia la distribuzione geografica (paesi → macro-regioni canoniche, e
+  da B.13 i paesi raw) sia
   i settori GICS; visibile solo per asset di tipo ETF
   (`asset.type !== 'etf'` ⇒ pulsante disabilitato). Sincronizza inoltre l'ISIN
   risolto dal backend nel campo ISIN del form.
@@ -708,6 +723,15 @@ pulsante "Refresh Now".
     "Allocazione per classi" (`md:flex-row`, una card ciascuno) e la dashboard
     aggiunge una card "Allocazione complessiva" (griglia `md:grid-cols-2`)
     alimentata da `GET /dashboard/allocation`;
+- **B.13/B.14 esposizione paesi + Morningstar (issues #58/#59)** — il tipo
+  `AssetExposure` ora ha **tre dimensioni**: `countries`, `regions` e
+  `sectors`. La pagina asset detail e la `ExposureModal` hanno un terzo pannello
+  "Distribuzione paesi" dove l'utente può aggiungere/rimuovere paesi dalla
+  lista ISO canonica (`lib/countryNames.ts` fornisce i nomi paese amichevoli)
+  e modificarne i pesi; il salvataggio invia solo la dimensione modificata. Un
+  pulsante **prefill Morningstar** (`fetchMorningstarExposure`, POST
+  `/assets/{id}/fetch-morningstar-exposure`) popola paesi e settori (regioni
+  ricalcolate lato server).
 - **Universo equity-only (follow-up B.8)** — le allocazioni geo/settoriali
   coprono solo le holding azionarie (azioni sempre; ETF/fondi solo quando
   `asset_class` è `equity` o `real_estate`). Bond, crypto, commodity e fondi

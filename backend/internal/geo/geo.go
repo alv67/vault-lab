@@ -17,6 +17,31 @@ var Regions = []string{
 	"Other / Not Classified",
 }
 
+// OtherRegion is the canonical name of the fallback macro-region that absorbs
+// country weights that map to no specific region (or the residual when the
+// country weights of a provider do not cover 100%).
+const OtherRegion = "Other / Not Classified"
+
+// Countries is the canonical list of ISO alpha-2 country codes in display
+// order (grouped by macro-region, then code). It contains exactly the keys of
+// the regionByCountry map below, so every canonical country maps to a region.
+var Countries = []string{
+	// North America
+	"CA", "US",
+	// Latin America
+	"AR", "BO", "BR", "CL", "CO", "CR", "CU", "DO", "EC", "GT", "HN", "MX", "NI", "PA", "PE", "PY", "SV", "UY", "VE",
+	// Europe Developed
+	"AT", "BE", "CH", "CY", "DE", "DK", "ES", "FI", "FR", "GB", "GR", "IE", "IS", "IT", "LU", "MT", "NL", "NO", "PT", "SE",
+	// Europe Emerging
+	"BG", "CZ", "EE", "HR", "HU", "LT", "LV", "PL", "RO", "RS", "RU", "SI", "SK", "TR", "UA",
+	// Africa / Middle East
+	"AE", "BH", "DZ", "EG", "IL", "JO", "KE", "KW", "LB", "MA", "NG", "OM", "QA", "SA", "TN", "ZA",
+	// Asia Developed
+	"AU", "HK", "JP", "NZ", "SG",
+	// Asia Emerging
+	"BD", "CN", "ID", "IN", "KR", "LK", "MY", "PH", "PK", "TH", "TW", "VN",
+}
+
 // GICSSectors is the canonical list of GICS sectors.
 var GICSSectors = []string{
 	"Energy",

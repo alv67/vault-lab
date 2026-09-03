@@ -500,6 +500,31 @@ func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, exposure)
 }
 
+func (h *Handler) FetchMorningstarExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchMorningstarExposure(r.Context(), uid)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("fetch morningstar exposure failed")
+			respondError(w, http.StatusBadGateway, "morningstar exposure fetch failed")
+		}
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
 func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	uid, err := parseUUID(id)

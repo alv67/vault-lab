@@ -131,6 +131,35 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
 
+### 11b. NEW — fetch ETF exposure from Morningstar (countries + sectors). Uses the
+### custom resolver (headless Chromium bootstrap) in the python-service; falls
+### back to 502 if Morningstar is unreachable in the sandbox (Yahoo disabled,
+### external calls may be blocked).
+# @name fetchMorningstarExposure
+POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure
+Authorization: Bearer {{token}}
+
+### 11c. Read the persisted exposure: should now include `countries` (canonical,
+### zero-filled across all ~89 canonical ISO codes) alongside regions + sectors.
+# @name getExposure3
+GET {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+
+### 11d. Manual edit of country weights: a small subset (must sum to ~100). The
+### regions are re-derived by the backend from these countries.
+# @name putCountries
+PUT {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "countries": [
+    { "name": "US", "weight": 70.0 },
+    { "name": "DE", "weight": 15.0 },
+    { "name": "FR", "weight": 15.0 }
+  ]
+}
+
 ### 12. Create a portfolio (EUR) — id is captured so the allocation and transaction
 ### requests below need no manual UUID editing, on a fresh stack or on reruns.
 # @name createPortfolio

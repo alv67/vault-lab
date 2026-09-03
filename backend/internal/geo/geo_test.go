@@ -2,6 +2,27 @@ package geo
 
 import "testing"
 
+func TestCanonicalCountries(t *testing.T) {
+	seen := map[string]bool{}
+	for _, c := range Countries {
+		if seen[c] {
+			t.Fatalf("Countries contains duplicate code %q", c)
+		}
+		seen[c] = true
+		if _, ok := regionByCountry[c]; !ok {
+			t.Fatalf("Countries %q is not a key of regionByCountry", c)
+		}
+	}
+	for code := range regionByCountry {
+		if !seen[code] {
+			t.Fatalf("regionByCountry key %q missing from Countries", code)
+		}
+	}
+	if len(Countries) != len(regionByCountry) {
+		t.Fatalf("Countries len = %d, regionByCountry len = %d", len(Countries), len(regionByCountry))
+	}
+}
+
 func TestClassifyAssetClass(t *testing.T) {
 	cases := []struct {
 		name      string
