@@ -80,6 +80,54 @@ func TestFundClassifiable(t *testing.T) {
 	}
 }
 
+// TestRegionsCanonical asserts the canonical region list matches the Morningstar
+// taxonomy: 10 regions plus the residual bucket, in display order.
+func TestRegionsCanonical(t *testing.T) {
+	want := []string{
+		"North America",
+		"Latin America",
+		"United Kingdom",
+		"Europe Developed",
+		"Europe Emerging",
+		"Africa / Middle East",
+		"Japan",
+		"Australasia",
+		"Asia Developed",
+		"Asia Emerging",
+		"Other / Not Classified",
+	}
+	if len(Regions) != len(want) {
+		t.Fatalf("Regions len = %d, want %d", len(Regions), len(want))
+	}
+	for i, name := range want {
+		if Regions[i] != name {
+			t.Fatalf("Regions[%d] = %q, want %q", i, Regions[i], name)
+		}
+	}
+	if Regions[len(Regions)-1] != OtherRegion {
+		t.Fatalf("last region = %q, want %q", Regions[len(Regions)-1], OtherRegion)
+	}
+}
+
+// TestChangedRegionMappings asserts the country-to-region mappings that moved
+// when aligning the taxonomy with Morningstar.
+func TestChangedRegionMappings(t *testing.T) {
+	cases := map[string]string{
+		"GB": "United Kingdom",
+		"JP": "Japan",
+		"AU": "Australasia",
+		"NZ": "Australasia",
+		"KR": "Asia Developed",
+		"TW": "Asia Developed",
+		"SI": "Europe Developed",
+	}
+	for code, want := range cases {
+		if got := RegionForCountry(code); got != want {
+			t.Errorf("RegionForCountry(%q) = %q, want %q", code, got, want)
+		}
+	}
+}
+
 func TestRegionForCountry(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -91,7 +139,13 @@ func TestRegionForCountry(t *testing.T) {
 		{"Canada", "CA", "North America"},
 		{"Italy", "IT", "Europe Developed"},
 		{"Italy lowercase", "it", "Europe Developed"},
-		{"Japan", "JP", "Asia Developed"},
+		{"United Kingdom", "GB", "United Kingdom"},
+		{"Japan", "JP", "Japan"},
+		{"Australia", "AU", "Australasia"},
+		{"New Zealand", "NZ", "Australasia"},
+		{"South Korea", "KR", "Asia Developed"},
+		{"Taiwan", "TW", "Asia Developed"},
+		{"Slovenia", "SI", "Europe Developed"},
 		{"China", "CN", "Asia Emerging"},
 		{"empty", "", "Other / Not Classified"},
 		{"unknown", "XYZ", "Other / Not Classified"},

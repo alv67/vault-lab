@@ -476,7 +476,7 @@ In sintesi, chi scrive e chi legge:
   (`GET /portfolios/{id}/allocation/class`); l'allocazione pesata geo/settore
   a livello portafoglio è implementata da EPIC B.6/B.7
   (`GET /portfolios/{id}/allocation/geography` e `/allocation/sector`,
-  8 macro-regioni / 11 settori GICS + `Other`, zero-filled).
+  10 macro-regioni (allineate a Morningstar da B.14) / 11 settori GICS + `Other`, zero-filled).
 - **`assets.isin`**: Yahoo non espone l'ISIN in nessun modulo, ma da B.5 per gli
   ETF il valore viene **risolto automaticamente dal ticker** tramite il servizio
   JustETF (`POST /assets/{id}/fetch-etf-exposure` / il suo endpoint di search) e

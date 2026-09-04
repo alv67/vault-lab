@@ -173,6 +173,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Post("/assets/{id}/fetch-profile", h.FetchAssetProfile)
 			r.Get("/assets/{id}/exposure", h.GetAssetExposure)
 			r.Put("/assets/{id}/exposure", h.SaveAssetExposure)
+			r.Post("/assets/{id}/exposure/derive", h.DeriveAssetRegions)
 			r.Post("/assets/{id}/fetch-exposure", h.FetchAssetExposure)
 			r.Post("/assets/{id}/fetch-etf-exposure", h.FetchETFExposure)
 			r.Post("/assets/{id}/fetch-morningstar-exposure", h.FetchMorningstarExposure)

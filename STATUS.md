@@ -9,7 +9,7 @@
 | Database | PostgreSQL 16 | Con docker volume |
 | Cache | Redis 7 | Caching dashboard/series, rate-limit Yahoo |
 | Worker | Go (prezzi) | Container separato |
-| Python Service | FastAPI + uvicorn + requests + bs4 + selenium (chromium headless) | ETF metadata da JustETF (esposizione paesi/regioni + settori) + Morningstar (esposizione paesi + settori via resolver custom; auto-resolve ticker→ISIN per mercato) — EPIC B.5, B.14 |
+| Python Service | FastAPI + uvicorn + requests + bs4 + selenium (chromium headless) | ETF metadata da JustETF (esposizione paesi + settori) + Morningstar (esposizione paesi + regioni ufficiali + settori via resolver custom; auto-resolve ticker→ISIN per mercato) — EPIC B.5, B.14 |
 | Container | podman + podman-compose su macOS | |
 
 ## Release
@@ -74,7 +74,7 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 | #9  | B.3 — Country backfill (exposure via `assetProfile`) + sector backfill + ISO normalization + region mapping | Backend | ✅ implementata: country = domicilio emittente (fix cross-listing alla creazione), `geo.NormalizeCountry`/`RegionForCountry`, validazione ISO su create/update, `POST /assets/backfill-meta` che riempie E corregge i legacy (1AAPL.MI → US) — in PR #55 |
 | #10 | B.4 — ETF weight editor (frontend): regions/sectors grid + "Try scrape" | Frontend | ✅ editor tabelle + pie chart sulla pagina asset; scrape differito a B.5 |
 | #11 | B.5 — Python microservice: ETF metadata da JustETF | Python | ✅ implementata: `python-service` (FastAPI) con search ticker/ISIN + exposure paesi/regioni e settori; backend `POST /assets/{id}/fetch-etf-exposure` con auto-resolve ISIN — in PR #55 |
-| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ✅ implementata: 8 macro-regioni + `Other`, zero-filled — in PR #60 |
+| #12 | B.6 — Endpoint /allocation/geography (weighted sum by region) | Backend | ✅ implementata: 8 macro-regioni + `Other` (poi allineate a Morningstar: 10 + `Other`), zero-filled — in PR #60 |
 | #13 | B.7 — Endpoint /allocation/sector (weighted sum by GICS) | Backend | ✅ implementata: 11 settori GICS, zero-filled — in PR #60 |
 | #14 | B.8 — Frontend GeographyChart + SectorChart + dashboard/portfolio widgets | Frontend | ✅ implementata (charts dashboard/portfolio, universo equity-only + coverage, pulsante JustETF + ISIN) — in PR #62 |
 | #44 | B.9 — FX rate history + series engine per-date | Backend | ✅ implementata — in PR #61 |
@@ -93,7 +93,7 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
 - **Pagina asset detail `/assets/[id]`** (B.10) su branch `feat/B.10-asset-detail`:
   - Caratteristiche editabili: Ticker, ISIN, Nome, Tipo, Valuta, Exchange (+ metadati `exchange`, `sector`, `industry` nel modello)
   - Card metriche + grafico prezzi ECharts con selettore periodo (1M/3M/1Y/MAX)
-  - Tabelle distribuzione **geo** (8 macro-regioni) e **settore** (11 settori GICS) **modificabili**,
+  - Tabelle distribuzione **geo** (8 macro-regioni, poi allineate a Morningstar in B.14 → 10 + `Other`) e **settore** (11 settori GICS) **modificabili**,
     con validazione somma=100% e grafici a ciambella affiancati
   - Pulsanti da menu hamburger: **"Aggiorna da Yahoo"** (meta: profile + sector weightings)
     e **"Backfill storico completo"** (storico prezzi completo da Yahoo)
@@ -189,7 +189,7 @@ e Morningstar permette di cercare sul mercato esatto.
   `GET /portfolios/{id}/allocation/sector` (somma pesata per **settore GICS**): stessi principi di
   `/allocation/class` (pesi per-asset da `asset_region_weights`/`asset_sector_weights` × valore in
   valuta portafoglio, conversioni FX incluse).
-- Risultato con **8 macro-regioni (+ `Other`)** e **11 settori GICS (+ `Other`)**, zero-filled per
+- Risultato con **10 macro-regioni (+ `Other`, allineate a Morningstar)** e **11 settori GICS (+ `Other`)**, zero-filled per
   evitare buchi: bucket sempre in ordine fisso, percentuali che sommano a 100. `Other` raccoglie
   pesi non mappabili (asset country/region o settore non riconosciuti); per i settori un peso
   complessivo 0 finisce tutto in `Other`.
@@ -228,10 +228,18 @@ e Morningstar permette di cercare sul mercato esatto.
 - **B.13 — Per-country exposure storage** (#58): nuova tabella
   `asset_country_weights (asset_id, country, weight)` (migrazione
   `000016_country_weights`). L'esposizione ora ha 3 dimensioni:
-  `countries` (pesi per paese ISO-3166 alpha-2), `regions` (macro-regioni)
-  e `sectors` (settori GICS). Il package `geo` espone `var Countries` (~89
-  codici ISO canonici). Il repository `ExposureRepository` aggiunge
-  `FindCountries`/`ReplaceCountries`/`FindCountriesByAssets`.
+`countries` (pesi per paese ISO-3166 alpha-2), `regions` (macro-regioni)
+    e `sectors` (settori GICS). Il package `geo` espone `var Countries` (~89
+    codici ISO canonici). Il repository `ExposureRepository` aggiunge
+    `FindCountries`/`ReplaceCountries`/`FindCountriesByAssets`.
+    - **Tassonomia regioni allineata a Morningstar**: 10 macro-regioni +
+      `Other / Not Classified`. Rispetto alla vecchia lista a 8 regioni:
+      **United Kingdom** (GB) separata da Europe Developed; **Japan** (JP)
+      separata da Asia Developed; **Australasia** (AU, NZ) separata; **TW/KR**
+      spostate da Asia Emerging a **Asia Developed**; **SI** spostata da
+      Europe Emerging a Europe Developed (coerente con Morningstar).
+      Le chiavi Morningstar (`northAmerica`, `unitedKingdom`, `japan`,
+      `australasia`, ...) mappano 1:1 sui nomi canonici.
   - `GET /assets/{id}/exposure` restituisce countries zero-filled sulla lista
     canonica completa (più regions e sectors).
   - `PUT /assets/{id}/exposure` accetta `countries?` (dimensioni indipendenti),
@@ -256,10 +264,12 @@ e Morningstar permette di cercare sul mercato esatto.
     `requests` con Bearer+cookie verso
     `www.us-api.morningstar.com/sal/sal-service/etf/...`:
     `portfolio/v2/sector/{sid}/data` (settori), `portfolio/regionalSectorIncludeCountries/{sid}/data`
-    (paesi), ISIN→securityId via `www.morningstar.com/api/v2/search?q={isin}`.
+    (paesi), `portfolio/regionalSector/{sid}/data` (regioni ufficiali),
+    ISIN→securityId via `www.morningstar.com/api/v2/search?q={isin}`.
     Parser: paesi camelCase→nomi leggibili, settori dal bucket col peso maggiore
     (EQUITY per fondi azionari, FIXEDINCOME per obbligazionari; chiavi non-GICS come
-    `cashAndEquivalents`/`government` scartate). I pesi paesi sono tenuti come
+    `cashAndEquivalents`/`government` scartate), regioni mappate sui nomi canonici
+    (`_MORNINGSTAR_REGION_NAMES`). I pesi paesi sono tenuti come
     riportati (Morningstar espone la lista paesi completa, 51 voci, ma con una
     quota residuale "Other" non esposta come paese → la somma è ~95%): il residuo
     confluisce nella regione `Other / Not Classified` lato backend. L'auto-resolve
@@ -270,17 +280,34 @@ e Morningstar permette di cercare sul mercato esatto.
   - **Backend Go**: interfaccia `ETFFetcher` estesa con `FetchMorningstarExposure`;
     nuovo metodo `Service.FetchMorningstarExposure`; nuovo handler + rotta
     `POST /assets/{id}/fetch-morningstar-exposure` (solo ETF, auto-risolve ISIN).
-  - **Frontend**: la pagina asset detail e `ExposureModal` guadagnano un terzo
-    pannello "Distribuzione paesi" con pulsante prefill Morningstar (popola
-    countries + sectors; regions ricalcolate lato server). Modifica add/remove
+    Quando il python-service restituisce le regioni ufficiali Morningstar, queste
+    vengono usate direttamente (ordine canonico); altrimenti si ricade sulla
+    derivazione da paesi. Nuovo endpoint **`POST /assets/{id}/exposure/derive`**
+    (`{countries}` → `{regions}`, senza persistenza): usa la stessa
+    `AggregateRegions` con il residuo in `Other / Not Classified`.
+  - **Frontend**: la pagina asset detail è riorganizzata in **due card** —
+    "Distribuzione geografica" (top 15 paesi a barre orizzontali + donut
+    regioni) e "Distribuzione settoriale" (donut settori) — e l'editing è
+    separato in **due modali**: `ExposureGeoModal` (regioni + paesi) e
+    `ExposureSectorModal` (settori, prefill JustETF/Yahoo). I pulsanti di prefill
+    seguono la fonte dei dati:
+    - box **paesi**: **"Prefill da JustETF"** (JustETF scarica i paesi) e
+      **"Prefill da Morningstar"** (paesi [+ settori]);
+    - box **regioni**: **"Calcola da paesi"** (`POST /assets/{id}/exposure/derive`,
+      ricalcola le regioni dai paesi correnti senza salvare) e
+      **"Prefill da Morningstar"** (regioni ufficiali Morningstar);
+    - box **settori**: "Prefill da JustETF" e "Prefill da Yahoo".
+    Modifica add/remove
     dei paesi dalla lista canonica supportata; display usa nomi paese amichevoli
     da `frontend/src/lib/countryNames.ts`.
-- **Verifica**: Go build/vet/test green; python-service pytest (42 test) green;
+- **Verifica**: Go build/vet/test green; python-service pytest (51 test) green;
   `svelte-check`/eslint clean; e2e su stack isolato `vaultlab-test` con
-  `tests/test-epic-b.sh` (20 PASS). Morningstar verificato end-to-end sullo stack
-  test: `POST /assets/{id}/fetch-morningstar-exposure` per XMME restituisce paesi
-  canonici (zero-fill, somma raw ~95%) + settori GICS (somma 100), regioni derivate
-  a somma 100 con il residuo nella regione `Other / Not Classified`.
+  `make test-e2e` (18 PASS, 0 FAIL). Morningstar verificato end-to-end sullo stack
+  test: `POST /assets/{id}/fetch-morningstar-exposure` per SMEA restituisce paesi
+  canonici (zero-fill, somma raw ~95%) + settori GICS (somma 100) + **regioni
+  ufficiali** (es. United Kingdom 21.27, Europe Developed ex-UK 75.85 per un ETF
+  europeo); `POST /assets/{id}/exposure/derive` verifica la nuova tassonomia
+  (GB→United Kingdom, JP→Japan, TW+KR→Asia Developed, residuo→Other).
 
 ### Altri EPIC Fase 2
 - EPIC G.7 (#53) — Asset con ticker non-Yahoo: no richiesta prezzo e no errori
@@ -293,12 +320,14 @@ e Morningstar permette di cercare sul mercato esatto.
   - `PriceChart` carica sempre tutto lo storico; i selettori 1M/3M/1Y/YTD/MAX
     fanno zoom in-place (coppia `start`/`end` percentuali) senza ricaricare dati.
   - Uno zoom/spostamento manuale deseleziona il pulsante attivo e preserva la vista.
-- F.10 (#64) — Pagina asset: solo pie chart + modale di modifica esposizione
-  - `ExposureModal.svelte`: modale divisa in due/tre parti affiancate
-    (geografica/settoriale + paesi, dopo B.13); sulla pagina restano i due donut
-    `ExposurePie`. I prefill vivono solo nella modale e popolano una dimensione alla
-    volta: JustETF → paesi + regioni; Morningstar → paesi + settori (B.14);
-    Yahoo → settori.
+- F.10 (#64) — Pagina asset: grafici + modale di modifica esposizione
+  - **Ristrutturata dopo B.13/B.14**: l'unica card "Distribuzione" con una sola
+    `ExposureModal` è diventata **due card** — "Distribuzione geografica" (paesi
+    a barre + donut regioni) e "Distribuzione settoriale" (donut settori) — con
+    **due modali separate**: `ExposureGeoModal.svelte` (regioni + paesi) e
+    `ExposureSectorModal.svelte` (settori). I prefill vivono solo nelle modali e
+    popolano una dimensione alla volta: JustETF → regioni; Morningstar → paesi
+    (+ settori); Yahoo → settori.
 - Splits sul chart asset — nuovi `GET /assets/{id}/splits` (service `AssetSplits`,
   handler) e `markLine` viola etichettati con il rapporto sul `PriceChart`,
   come nel `PositionChart` del portafoglio.

@@ -9,6 +9,7 @@ from app.morningstar import (
     MorningstarDataError,
     _jwt_expiry,
     _parse_countries,
+    _parse_regions,
     _parse_sectors,
     has_market_suffix,
     resolve_market_isin,
@@ -74,10 +75,32 @@ def fake_country_payload():
     }
 
 
-def patch_session(monkeypatch, country_payload=None, sector_payload=None, search_payload=None):
+def fake_region_payload():
+    return {
+        "fundPortfolio": {
+            "portfolioDate": "2026-07-31",
+            "masterPortfolioId": "0P0000TSO8",
+            "northAmerica": 62.4,
+            "europeDeveloped": 15.1,
+            "japan": 6.4,
+            "asiaDeveloped": 5.0,
+            "unitedKingdom": 4.2,
+            "asiaEmerging": 3.2,
+            "australasia": 2.3,
+            "latinAmerica": 1.1,
+            "africaMiddleEast": 0.9,
+            "europeEmerging": 0.8,
+        }
+    }
+
+
+def patch_session(
+    monkeypatch, country_payload=None, sector_payload=None, search_payload=None, region_payload=None
+):
     country_payload = fake_country_payload() if country_payload is None else country_payload
     sector_payload = fake_sector_payload() if sector_payload is None else sector_payload
     search_payload = fake_search_payload() if search_payload is None else search_payload
+    region_payload = fake_region_payload() if region_payload is None else region_payload
 
     def fake_requests_get(url, *args, **kwargs):
         if "/api/v2/search" in url:
@@ -86,6 +109,8 @@ def patch_session(monkeypatch, country_payload=None, sector_payload=None, search
             return FakeResponse(sector_payload)
         if "regionalSectorIncludeCountries" in url:
             return FakeResponse(country_payload)
+        if "portfolio/regionalSector/" in url:
+            return FakeResponse(region_payload)
         raise AssertionError(f"unexpected URL: {url}")
 
     monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "test-bearer-token")
@@ -191,6 +216,35 @@ def test_parse_countries_empty_structures():
     assert _parse_countries({"fundPortfolio": {"countries": []}}) == []
     assert _parse_countries({"fundPortfolio": {}}) == []
     assert _parse_countries(None) == []
+
+
+def test_parse_regions_maps_names_and_skips_metadata():
+    rows = _parse_regions(fake_region_payload())
+    assert [r.name for r in rows] == [
+        "North America",
+        "Europe Developed",
+        "Japan",
+        "Asia Developed",
+        "United Kingdom",
+        "Asia Emerging",
+        "Australasia",
+        "Latin America",
+        "Africa / Middle East",
+        "Europe Emerging",
+    ]
+    assert rows[0].weight == 62.4
+    assert rows[-1].weight == 0.8
+    names = [r.name for r in rows]
+    assert "portfolioDate" not in names
+    assert "masterPortfolioId" not in names
+
+
+def test_parse_regions_empty_structures():
+    assert _parse_regions({}) == []
+    assert _parse_regions({"fundPortfolio": {}}) == []
+    assert _parse_regions({"fundPortfolio": {"portfolioDate": "2026-07-31"}}) == []
+    assert _parse_regions({"fundPortfolio": "not a dict"}) == []
+    assert _parse_regions(None) == []
 
 
 def test_parse_sectors_dict_shape():
@@ -337,6 +391,29 @@ def test_fetch_morningstar_exposure_sorts_descending(monkeypatch):
     assert exposure.sectors[0].weight == 40.0
 
 
+def test_fetch_morningstar_exposure_includes_regions(monkeypatch):
+    patch_session(monkeypatch)
+    exposure = fetch_morningstar_exposure(ISIN)
+    assert exposure.isin == ISIN
+    assert exposure.regions[0].name == "North America"
+    assert exposure.regions[0].weight == 62.4
+    weights = [r.weight for r in exposure.regions]
+    assert weights == sorted(weights, reverse=True)
+    canonical = {
+        "North America",
+        "Latin America",
+        "United Kingdom",
+        "Europe Developed",
+        "Europe Emerging",
+        "Africa / Middle East",
+        "Japan",
+        "Australasia",
+        "Asia Developed",
+        "Asia Emerging",
+    }
+    assert all(r.name in canonical for r in exposure.regions)
+
+
 def test_fetch_morningstar_exposure_picks_etf_security(monkeypatch):
     patch_session(
         monkeypatch,
@@ -395,6 +472,8 @@ def test_morningstar_exposure_ok(monkeypatch):
     assert round(sum(c["weight"] for c in body["countries"]), 2) == 65.0
     assert body["sectors"][0]["name"] == "Energy"
     assert body["sectors"][0]["weight"] == 40.0
+    assert body["regions"][0]["name"] == "North America"
+    assert body["regions"][0]["weight"] == 62.4
 
 
 def test_morningstar_exposure_empty_countries_502(monkeypatch):

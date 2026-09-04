@@ -24,7 +24,8 @@
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import { EllipsisVertical, Loader2, Pencil } from 'lucide-svelte'
-  import ExposureModal from '$lib/components/ExposureModal.svelte'
+  import ExposureGeoModal from '$lib/components/ExposureGeoModal.svelte'
+  import ExposureSectorModal from '$lib/components/ExposureSectorModal.svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -76,10 +77,12 @@
   let prefilling = $state(false)
   let fetchingETF = $state(false)
   let fetchingMorningstar = $state(false)
+  let derivingRegions = $state(false)
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
-  let exposureModalOpen = $state(false)
+  let geoModalOpen = $state(false)
+  let sectorModalOpen = $state(false)
   let range = $state<RangeKey | null>('1Y')
   let programmaticallyZooming = $state(false)
 
@@ -149,6 +152,18 @@
   const regionsValid = $derived(Math.abs(sumRegions - 100) <= 0.5)
   const sectorsValid = $derived(Math.abs(sumSectors - 100) <= 0.5)
   const countriesValid = $derived(Math.abs(sumCountries - 100) <= 0.5)
+
+  // Top 15 countries by weight (desc, > 0) for the geographic card bar list.
+  const topCountries = $derived.by(() =>
+    countriesEdit
+      .filter((c) => Number(c.weight) > 0)
+      .sort((a, b) => Number(b.weight) - Number(a.weight))
+      .slice(0, 15),
+  )
+  // Largest visible weight: bars are scaled proportionally against it.
+  const maxCountryWeight = $derived(
+    topCountries.reduce((max, c) => Math.max(max, Number(c.weight) || 0), 0),
+  )
 
   function changeClass(value: string | number | undefined): string {
     const n = Number(value ?? 0)
@@ -312,21 +327,59 @@
     }
   }
 
-  // Prefill da JustETF: popola SOLO la distribuzione geografica (regioni).
-  async function prefillRegionsFromETF(): Promise<void> {
+  // Prefill da JustETF: popola SOLO la distribuzione paesi (raw JustETF).
+  async function prefillCountriesFromETF(): Promise<void> {
     if (!id || !asset) return
     fetchingETF = true
     try {
       const saved = await assetApi.fetchETFExposure(id)
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      countriesEdit = saved.countries.map((r) => ({ ...r }))
       if (saved.isin) form.isin = saved.isin
-      toast.success('Distribuzione geografica precompilata da JustETF')
+      toast.success('Paesi precompilati da JustETF')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Download fallito'
       toast.error(message)
     } finally {
       fetchingETF = false
+    }
+  }
+
+  // Deriva le regioni canoniche dai paesi correnti (preview, non persistito).
+  async function deriveRegionsFromCountries(): Promise<void> {
+    if (!id || !asset) return
+    if (!countriesEdit.some((c) => Number(c.weight) > 0)) {
+      toast.error('Nessun paese con peso: aggiungi paesi prima')
+      return
+    }
+    derivingRegions = true
+    try {
+      const result = await assetApi.deriveRegions(id, countriesEdit)
+      regionsEdit = result.regions.map((r) => ({ ...r }))
+      toast.success('Regioni ricalcolate dai paesi')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Calcolo fallito'
+      toast.error(message)
+    } finally {
+      derivingRegions = false
+    }
+  }
+
+  // Prefill da Morningstar: popola SOLO le regioni ufficiali Morningstar.
+  async function prefillRegionsFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const saved = await assetApi.fetchMorningstarExposure(id)
+      exposure = saved
+      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Regioni precompilate da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
     }
   }
 
@@ -661,23 +714,50 @@
     </div>
 
     {#if exposureApplicable && exposure}
+      <!-- Geographic distribution card: countries bar list + regions pie -->
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="font-semibold">Distribuzione</h2>
-          <div class="flex items-center gap-2">
-            <button
-              onclick={() => (exposureModalOpen = true)}
-              aria-label="Modifica distribuzione"
-              class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              <Pencil class="h-4 w-4" />
-              Modifica
-            </button>
-          </div>
+          <h2 class="font-semibold">Distribuzione geografica</h2>
+          <button
+            onclick={() => (geoModalOpen = true)}
+            aria-label="Modifica distribuzione geografica"
+            class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            <Pencil class="h-4 w-4" />
+            Modifica
+          </button>
         </div>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div class="rounded-xl border bg-gray-50 p-4">
-            <h3 class="mb-2 font-medium">Distribuzione geografica</h3>
+            <h3 class="mb-2 font-medium">Paesi</h3>
+            {#if topCountries.length === 0}
+              <div class="flex h-[240px] w-full items-center justify-center text-sm text-gray-400">
+                Nessuna distribuzione
+              </div>
+            {:else}
+              <div class="space-y-2 py-1">
+                {#each topCountries as c, i (c.name)}
+                  {@const weight = Number(c.weight) || 0}
+                  {@const barPct = maxCountryWeight > 0 ? (weight / maxCountryWeight) * 100 : 0}
+                  <div class="flex items-center gap-2 text-xs">
+                    <span
+                      class="w-28 shrink-0 truncate sm:w-36"
+                      title={c.name + ' — ' + countryDisplayName(c.name)}
+                    >{countryDisplayName(c.name)}</span>
+                    <div class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        class="h-full rounded-full"
+                        style="width: {barPct.toFixed(1)}%; background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                      ></div>
+                    </div>
+                    <span class="w-14 shrink-0 text-right text-gray-500">{formatPercent(weight)}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Regioni</h3>
             <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
             <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
               {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
@@ -692,66 +772,75 @@
               {/each}
             </div>
           </div>
-          <div class="rounded-xl border bg-gray-50 p-4">
-            <h3 class="mb-2 font-medium">Distribuzione settoriale</h3>
-            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
-            <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
-              {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
-                <div class="flex items-center gap-1.5 text-xs">
-                  <span
-                    class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                    style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
-                  ></span>
-                  <span class="truncate">{s.name}</span>
-                  <span class="ml-auto text-gray-500">{formatPercent(Number(s.weight))}</span>
-                </div>
-              {/each}
-            </div>
-          </div>
-          <div class="rounded-xl border bg-gray-50 p-4">
-            <h3 class="mb-2 font-medium">Distribuzione paesi</h3>
-            <ExposurePie data={countriesEdit} title="Distribuzione paesi" />
-            <div class="mt-3 max-h-48 space-y-0.5 overflow-y-auto">
-              {#each countriesEdit.filter((r) => Number(r.weight) > 0) as c, i (c.name)}
-                <div class="flex items-center gap-1.5 text-xs">
-                  <span
-                    class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                    style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
-                  ></span>
-                  <span class="truncate">{countryDisplayName(c.name)}</span>
-                  <span class="ml-auto text-gray-500">{formatPercent(Number(c.weight))}</span>
-                </div>
-              {/each}
-            </div>
+        </div>
+      </div>
+
+      <!-- Sector distribution card -->
+      <div class="mb-6 rounded-xl bg-white p-4 shadow">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="font-semibold">Distribuzione settoriale</h2>
+          <button
+            onclick={() => (sectorModalOpen = true)}
+            aria-label="Modifica distribuzione settoriale"
+            class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            <Pencil class="h-4 w-4" />
+            Modifica
+          </button>
+        </div>
+        <div class="rounded-xl border bg-gray-50 p-4">
+          <h3 class="mb-2 font-medium">Settori</h3>
+          <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
+          <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
+            {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
+              <div class="flex items-center gap-1.5 text-xs">
+                <span
+                  class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                ></span>
+                <span class="truncate">{s.name}</span>
+                <span class="ml-auto text-gray-500">{formatPercent(Number(s.weight))}</span>
+              </div>
+            {/each}
           </div>
         </div>
       </div>
 
-      <ExposureModal
-        bind:open={exposureModalOpen}
-        onClose={() => (exposureModalOpen = false)}
+      <ExposureGeoModal
+        bind:open={geoModalOpen}
+        onClose={() => (geoModalOpen = false)}
         bind:regionsEdit
-        bind:sectorsEdit
         bind:countriesEdit
         {sumRegions}
-        {sumSectors}
         {sumCountries}
         {regionsValid}
-        {sectorsValid}
         {countriesValid}
         {savingRegions}
-        {savingSectors}
         {savingCountries}
         {saveRegions}
-        {saveSectors}
         {saveCountries}
-        {prefilling}
         {fetchingETF}
         {fetchingMorningstar}
-        {prefillRegionsFromETF}
+        {derivingRegions}
+        {prefillCountriesFromETF}
+        {deriveRegionsFromCountries}
+        {prefillRegionsFromMorningstar}
+        {prefillCountriesFromMorningstar}
+        assetType={asset.type}
+      />
+
+      <ExposureSectorModal
+        bind:open={sectorModalOpen}
+        onClose={() => (sectorModalOpen = false)}
+        bind:sectorsEdit
+        {sumSectors}
+        {sectorsValid}
+        {savingSectors}
+        {saveSectors}
+        {prefilling}
+        {fetchingETF}
         {prefillSectorsFromETF}
         {prefillSectorsFromYahoo}
-        {prefillCountriesFromMorningstar}
         assetType={asset.type}
       />
     {:else if exposureApplicable === false && asset}

@@ -531,10 +531,11 @@ func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.As
 // is absent from the body (nil slice) is left untouched. Present dimensions
 // must sum to ~100 (tolerance 0.5); rows with an empty name or a non-positive
 // weight are ignored. Country rows must come from the canonical geo.Countries
-// list; non-canonical names are skipped. When countries are provided, the
-// regions are re-derived from the stored countries and persisted so the two
-// dimensions stay consistent. Returns the complete output built from the
-// stored state.
+// list; non-canonical names are skipped. When countries are provided without
+// explicit regions, the regions are re-derived from the stored countries and
+// persisted so the two dimensions stay consistent; explicit regions (e.g. the
+// official ones returned by Morningstar) always win over that derivation.
+// Returns the complete output built from the stored state.
 func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure *model.AssetExposure) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -584,11 +585,14 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 			if err := rx.Exposure.ReplaceCountries(ctx, id, countries); err != nil {
 				return err
 			}
-			// Countries overrode the region dimension: re-derive regions from
-			// the stored countries so the two stay consistent.
-			regions = price.AggregateRegions(countries)
-			if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
-				return err
+			// Countries override the region dimension only when the caller did
+			// not supply explicit regions; explicit regions (Morningstar's
+			// official weights) are authoritative and must be kept as-is.
+			if exposure.Regions == nil {
+				regions = price.AggregateRegions(countries)
+				if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -613,6 +617,27 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 		return nil, err
 	}
 	return s.buildExposure(asset, storedRegions, storedSectors, storedCountries), nil
+}
+
+// DeriveRegions aggregates raw country rows into canonical macro-regions for an
+// asset and returns the canonical region list in display order (zero weight for
+// regions without exposure). Nothing is persisted: it is a preview of how the
+// country dimension maps onto the Morningstar-aligned region taxonomy.
+func (s *Service) DeriveRegions(ctx context.Context, id uuid.UUID, countries []model.ExposureRow) ([]model.ExposureRow, error) {
+	if _, err := s.repos.Asset.FindByID(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAssetNotFound
+		}
+		return nil, err
+	}
+	// An empty country list yields the canonical regions zero-filled; a
+	// non-empty list is aggregated with the residual absorbed into
+	// "Other / Not Classified".
+	var derived []model.ExposureRow
+	if len(countries) > 0 {
+		derived = price.AggregateRegions(countries)
+	}
+	return canonicalExposureRows(geo.Regions, derived, false, ""), nil
 }
 
 // FetchAssetExposure fetches sector/industry + sector weights from Yahoo,
@@ -833,10 +858,12 @@ func normalizeCountries(rows []model.ExposureRow) []model.ExposureRow {
 	return out
 }
 
-// FetchMorningstarExposure fetches the country and sector exposure of an ETF
-// from the python-service using Morningstar as the data source, keeps the raw
-// countries (normalized to ISO codes), derives canonical GICS sectors, then
-// persists and returns the complete exposure.
+// FetchMorningstarExposure fetches the country, region and sector exposure of
+// an ETF from the python-service using Morningstar as the data source, keeps
+// the raw countries (normalized to ISO codes), derives canonical GICS sectors,
+// then persists and returns the complete exposure. When Morningstar returns
+// official region rows they are kept as-is (they are already canonical);
+// otherwise the regions are derived from the country rows.
 func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -864,15 +891,28 @@ func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*
 		return nil, err
 	}
 
+	return s.SaveAssetExposure(ctx, id, mapMorningstarExposure(raw))
+}
+
+// mapMorningstarExposure builds the exposure payload to persist from the raw
+// Morningstar rows. Official region rows are used as-is when present; otherwise
+// the regions are derived from the raw country rows via price.AggregateRegions.
+// Countries are normalized to canonical ISO codes and sectors are aggregated to
+// canonical GICS names, as for the other exposure sources.
+func mapMorningstarExposure(raw *model.AssetExposure) *model.AssetExposure {
 	mapped := &model.AssetExposure{}
 	if countries := normalizeCountries(raw.Countries); len(countries) > 0 {
 		mapped.Countries = countries
 	}
-	// SaveAssetExposure derives regions from the stored countries.
+	if len(raw.Regions) > 0 {
+		mapped.Regions = canonicalExposureRows(geo.Regions, raw.Regions, false, "")
+	} else if derived := price.AggregateRegions(raw.Countries); len(derived) > 0 {
+		mapped.Regions = canonicalExposureRows(geo.Regions, derived, false, "")
+	}
 	if sectors := price.AggregateSectors(raw.Sectors); len(sectors) > 0 {
 		mapped.Sectors = sectors
 	}
-	return s.SaveAssetExposure(ctx, id, mapped)
+	return mapped
 }
 
 func (s *Service) SearchAssets(ctx context.Context, query string) ([]*model.Asset, error) {

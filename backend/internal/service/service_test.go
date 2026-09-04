@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 
 	"github.com/amelamela/vault-lab/internal/cache"
@@ -100,12 +102,75 @@ func (f *fakeFXRepo) History(ctx context.Context, base, quote string) ([]model.F
 	return f.history[quote], nil
 }
 
+type fakeAssetRepo struct {
+	asset *model.Asset
+	err   error
+}
+
+func (f *fakeAssetRepo) Create(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	return asset, nil
+}
+func (f *fakeAssetRepo) Update(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	return asset, nil
+}
+func (f *fakeAssetRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.asset == nil || f.asset.ID != id {
+		return nil, pgx.ErrNoRows
+	}
+	return f.asset, nil
+}
+func (f *fakeAssetRepo) FindByTicker(ctx context.Context, ticker string) (*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) Search(ctx context.Context, query string) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) List(ctx context.Context) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) ListYahoo(ctx context.Context) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) AllStocks(ctx context.Context) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error {
+	return nil
+}
+func (f *fakeAssetRepo) MarkHistoryBackfilled(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+func (f *fakeAssetRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+func (f *fakeAssetRepo) Currencies(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func newTestService(t *testing.T, p *fakePortfolioRepo, e *fakeExposureRepo, f *fakeFXRepo) *Service {
 	t.Helper()
 	repos := &repository.Repository{
+		Asset:     &fakeAssetRepo{},
 		Portfolio: p,
 		Exposure:  e,
 		FX:        f,
+	}
+	return New(repos, nil, nil, nil, time.Minute, cache.New(nil), 0, 0, nil)
+}
+
+func newTestServiceWithAsset(t *testing.T, a *fakeAssetRepo) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:     a,
+		Portfolio: &fakePortfolioRepo{},
+		Exposure:  &fakeExposureRepo{},
+		FX:        &fakeFXRepo{},
 	}
 	return New(repos, nil, nil, nil, time.Minute, cache.New(nil), 0, 0, nil)
 }
@@ -163,8 +228,8 @@ func TestGetPortfolioGeographyAllocation_ETF(t *testing.T) {
 	if !equalDecimal(got.Regions[0].Value, wantVal.Mul(decimal.NewFromInt(60)).Div(decimal.NewFromInt(100))) {
 		t.Fatalf("North America value = %v, want 600", got.Regions[0].Value)
 	}
-	if !equalDecimal(got.Regions[2].Value, wantVal.Mul(decimal.NewFromInt(40)).Div(decimal.NewFromInt(100))) {
-		t.Fatalf("Europe Developed value = %v, want 400", got.Regions[2].Value)
+	if !equalDecimal(got.Regions[3].Value, wantVal.Mul(decimal.NewFromInt(40)).Div(decimal.NewFromInt(100))) {
+		t.Fatalf("Europe Developed value = %v, want 400", got.Regions[3].Value)
 	}
 	sum := decimal.Zero
 	for _, r := range got.Regions {
@@ -660,5 +725,142 @@ func TestIsCanonicalCountry(t *testing.T) {
 	}
 	if isCanonicalCountry("XYZ") {
 		t.Fatal("XYZ should not be canonical")
+	}
+}
+
+func TestDeriveRegions(t *testing.T) {
+	assetID := uuid.New()
+	svc := newTestServiceWithAsset(t, &fakeAssetRepo{asset: &model.Asset{ID: assetID, Type: model.AssetTypeETF}})
+
+	regions, err := svc.DeriveRegions(context.Background(), assetID, []model.ExposureRow{
+		{Name: "US", Weight: decimal.NewFromInt(60)},
+		{Name: "GB", Weight: decimal.NewFromInt(25)},
+		{Name: "JP", Weight: decimal.NewFromInt(15)},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(regions), len(geo.Regions))
+	}
+	for i, name := range geo.Regions {
+		if regions[i].Name != name {
+			t.Fatalf("regions[%d] = %q, want %q (canonical order)", i, regions[i].Name, name)
+		}
+	}
+	want := map[string]string{
+		"North America":  "60",
+		"United Kingdom": "25",
+		"Japan":          "15",
+	}
+	for _, r := range regions {
+		if w, ok := want[r.Name]; ok && !r.Weight.Equal(decimal.RequireFromString(w)) {
+			t.Fatalf("region %q weight = %v, want %s", r.Name, r.Weight, w)
+		}
+	}
+}
+
+func TestDeriveRegions_AssetNotFound(t *testing.T) {
+	svc := newTestServiceWithAsset(t, &fakeAssetRepo{})
+	_, err := svc.DeriveRegions(context.Background(), uuid.New(), nil)
+	if !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("err = %v, want ErrAssetNotFound", err)
+	}
+}
+
+func TestDeriveRegions_EmptyCountries(t *testing.T) {
+	assetID := uuid.New()
+	svc := newTestServiceWithAsset(t, &fakeAssetRepo{asset: &model.Asset{ID: assetID, Type: model.AssetTypeETF}})
+
+	regions, err := svc.DeriveRegions(context.Background(), assetID, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(regions), len(geo.Regions))
+	}
+	for _, r := range regions {
+		if !r.Weight.IsZero() {
+			t.Fatalf("region %q weight = %v, want zero", r.Name, r.Weight)
+		}
+	}
+}
+
+func TestMapMorningstarExposure_UsesOfficialRegions(t *testing.T) {
+	raw := &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "United States", Weight: decimal.NewFromInt(60)},
+		},
+		Regions: []model.ExposureRow{
+			{Name: "North America", Weight: decimal.NewFromInt(60)},
+			{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+			{Name: "Japan", Weight: decimal.NewFromInt(15)},
+		},
+		Sectors: []model.ExposureRow{
+			{Name: "Technology", Weight: decimal.NewFromFloat(27.5)},
+		},
+	}
+	mapped := mapMorningstarExposure(raw)
+
+	byName := map[string]decimal.Decimal{}
+	if len(mapped.Regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(mapped.Regions), len(geo.Regions))
+	}
+	for i, name := range geo.Regions {
+		if mapped.Regions[i].Name != name {
+			t.Fatalf("regions[%d] = %q, want %q (canonical order)", i, mapped.Regions[i].Name, name)
+		}
+		byName[name] = mapped.Regions[i].Weight
+	}
+	if !byName["North America"].Equal(decimal.NewFromInt(60)) {
+		t.Fatalf("North America = %v, want 60", byName["North America"])
+	}
+	if !byName["United Kingdom"].Equal(decimal.NewFromInt(25)) {
+		t.Fatalf("United Kingdom = %v, want 25", byName["United Kingdom"])
+	}
+	if !byName["Japan"].Equal(decimal.NewFromInt(15)) {
+		t.Fatalf("Japan = %v, want 15", byName["Japan"])
+	}
+	if !byName["Asia Emerging"].IsZero() {
+		t.Fatalf("Asia Emerging = %v, want zero (zero-filled)", byName["Asia Emerging"])
+	}
+	// Countries are normalized and sectors aggregated as before.
+	if len(mapped.Countries) != 1 || mapped.Countries[0].Name != "US" ||
+		!mapped.Countries[0].Weight.Equal(decimal.NewFromInt(60)) {
+		t.Fatalf("countries = %+v, want [US 60]", mapped.Countries)
+	}
+	if len(mapped.Sectors) != 1 || mapped.Sectors[0].Name != "Information Technology" ||
+		!mapped.Sectors[0].Weight.Equal(decimal.NewFromFloat(27.5)) {
+		t.Fatalf("sectors = %+v, want [Information Technology 27.5]", mapped.Sectors)
+	}
+}
+
+func TestMapMorningstarExposure_FallsBackToDerivation(t *testing.T) {
+	raw := &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "US", Weight: decimal.NewFromInt(60)},
+			{Name: "JP", Weight: decimal.NewFromInt(40)},
+		},
+	}
+	mapped := mapMorningstarExposure(raw)
+
+	byName := map[string]decimal.Decimal{}
+	if len(mapped.Regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(mapped.Regions), len(geo.Regions))
+	}
+	for i, name := range geo.Regions {
+		if mapped.Regions[i].Name != name {
+			t.Fatalf("regions[%d] = %q, want %q (canonical order)", i, mapped.Regions[i].Name, name)
+		}
+		byName[name] = mapped.Regions[i].Weight
+	}
+	if !byName["North America"].Equal(decimal.NewFromInt(60)) {
+		t.Fatalf("North America = %v, want 60", byName["North America"])
+	}
+	if !byName["Japan"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("Japan = %v, want 40", byName["Japan"])
+	}
+	if !byName["United Kingdom"].IsZero() {
+		t.Fatalf("United Kingdom = %v, want zero", byName["United Kingdom"])
 	}
 }

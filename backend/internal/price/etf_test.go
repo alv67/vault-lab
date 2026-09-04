@@ -69,6 +69,42 @@ func TestJustETFFetcherFetchMorningstarExposure(t *testing.T) {
 	}
 }
 
+const sampleMorningstarWithRegionsJSON = `{"countries":[{"name":"United States","weight":60}],"regions":[{"name":"North America","weight":60},{"name":"United Kingdom","weight":25},{"name":"Japan","weight":15}],"sectors":[{"name":"Information Technology","weight":27.5}]}`
+
+// TestJustETFFetcherFetchMorningstarExposureRegions verifies that the official
+// regions field returned by the python-service is parsed through into the
+// exposure model.
+func TestJustETFFetcherFetchMorningstarExposureRegions(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/etf/IE00B4L5Y983/morningstar-exposure" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, sampleMorningstarWithRegionsJSON)
+	}))
+	defer ts.Close()
+
+	f := NewJustETFFetcher(ts.URL)
+	exposure, err := f.FetchMorningstarExposure(context.Background(), "IE00B4L5Y983")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []model.ExposureRow{
+		{Name: "North America", Weight: decimal.NewFromInt(60)},
+		{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+		{Name: "Japan", Weight: decimal.NewFromInt(15)},
+	}
+	if len(exposure.Regions) != len(want) {
+		t.Fatalf("regions len = %d, want %d: %+v", len(exposure.Regions), len(want), exposure.Regions)
+	}
+	for i, row := range want {
+		if exposure.Regions[i].Name != row.Name || !exposure.Regions[i].Weight.Equal(row.Weight) {
+			t.Fatalf("region[%d] = %+v, want %+v", i, exposure.Regions[i], row)
+		}
+	}
+}
+
 func TestJustETFFetcherSearchTicker(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/etf/search" || r.URL.Query().Get("q") != "EUNL" {
@@ -191,7 +227,7 @@ func TestAggregateRegions(t *testing.T) {
 				{Name: "Japan", Weight: decimal.NewFromFloat(36.66)},
 			},
 			want: []model.ExposureRow{
-				{Name: "Asia Developed", Weight: decimal.NewFromFloat(36.66)},
+				{Name: "Japan", Weight: decimal.NewFromFloat(36.66)},
 				{Name: "North America", Weight: decimal.NewFromFloat(63.34)},
 			},
 		},
@@ -203,7 +239,8 @@ func TestAggregateRegions(t *testing.T) {
 				{Name: "GB", Weight: decimal.NewFromInt(25)},
 			},
 			want: []model.ExposureRow{
-				{Name: "Europe Developed", Weight: decimal.NewFromInt(100)},
+				{Name: "Europe Developed", Weight: decimal.NewFromInt(75)},
+				{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
 			},
 		},
 		{
@@ -223,7 +260,7 @@ func TestAggregateRegions(t *testing.T) {
 				{Name: "Japan", Weight: decimal.NewFromInt(100)},
 			},
 			want: []model.ExposureRow{
-				{Name: "Asia Developed", Weight: decimal.NewFromInt(100)},
+				{Name: "Japan", Weight: decimal.NewFromInt(100)},
 			},
 		},
 		{
@@ -233,7 +270,7 @@ func TestAggregateRegions(t *testing.T) {
 				{Name: "Japan", Weight: decimal.NewFromFloat(35.22)},
 			},
 			want: []model.ExposureRow{
-				{Name: "Asia Developed", Weight: decimal.NewFromFloat(35.22)},
+				{Name: "Japan", Weight: decimal.NewFromFloat(35.22)},
 				{Name: "North America", Weight: decimal.NewFromFloat(60)},
 				{Name: "Other / Not Classified", Weight: decimal.NewFromFloat(4.78)},
 			},
@@ -245,8 +282,29 @@ func TestAggregateRegions(t *testing.T) {
 				{Name: "Japan", Weight: decimal.NewFromFloat(36.66)},
 			},
 			want: []model.ExposureRow{
-				{Name: "Asia Developed", Weight: decimal.NewFromFloat(36.66)},
+				{Name: "Japan", Weight: decimal.NewFromFloat(36.66)},
 				{Name: "North America", Weight: decimal.NewFromFloat(63.34)},
+			},
+		},
+		{
+			name: "Korea and Taiwan map to Asia Developed",
+			in: []model.ExposureRow{
+				{Name: "KR", Weight: decimal.NewFromInt(40)},
+				{Name: "TW", Weight: decimal.NewFromInt(30)},
+				{Name: "HK", Weight: decimal.NewFromInt(30)},
+			},
+			want: []model.ExposureRow{
+				{Name: "Asia Developed", Weight: decimal.NewFromInt(100)},
+			},
+		},
+		{
+			name: "Australia and New Zealand map to Australasia",
+			in: []model.ExposureRow{
+				{Name: "AU", Weight: decimal.NewFromInt(70)},
+				{Name: "NZ", Weight: decimal.NewFromInt(30)},
+			},
+			want: []model.ExposureRow{
+				{Name: "Australasia", Weight: decimal.NewFromInt(100)},
 			},
 		},
 	}

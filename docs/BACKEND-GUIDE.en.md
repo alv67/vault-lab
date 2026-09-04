@@ -526,14 +526,23 @@ see `meta.go`):
   data calls then go through `requests` with bearer+cookies to
   `www.us-api.morningstar.com/sal/sal-service/etf/...` (sectors
   `portfolio/v2/sector/{sid}/data`, countries
-  `portfolio/regionalSectorIncludeCountries/{sid}/data`, ISIN→securityId via
+  `portfolio/regionalSectorIncludeCountries/{sid}/data`, official **regions**
+  `portfolio/regionalSector/{sid}/data`, ISIN→securityId via
   `www.morningstar.com/api/v2/search?q={isin}`). Country weights are kept as
   reported: Morningstar returns the full country list (51 entries, many zero; the 10×6
   paging is only client-side UI), with a residual share not exposed as a
   country, so the weights sum to ~95% (no forced scaling to 100).
-  The backend saves the countries and sectors; regions are re-derived from the
-  countries server-side and the residual (100 − country sum) lands in the
-  `Other / Not Classified` region, so regions always sum to 100.
+  The Morningstar region keys (`northAmerica`, `unitedKingdom`, `japan`,
+  `australasia`, ...) are mapped 1:1 onto the canonical VaultLab taxonomy and
+  returned as the `regions` dimension. The backend saves countries, sectors and
+  the official regions when present; otherwise (or for JustETF) regions are
+  re-derived from the countries server-side via `price.AggregateRegions` and
+  the residual (100 − country sum) lands in the `Other / Not Classified` region,
+  so regions always sum to 100. Since the taxonomy alignment, the canonical
+  regions are **10 + `Other`**: North America, Latin America, United Kingdom,
+  Europe Developed, Europe Emerging, Africa / Middle East, Japan, Australasia,
+  Asia Developed, Asia Emerging, Other / Not Classified (UK/Japan/Australasia
+  are standalone; TW/KR are Asia Developed).
 - **Asset class (asset-info refresh / `GET /assets/meta`)**: Yahoo no longer
   exposes `assetClass` (the `quote` quoteSummary module does not exist; v7
   `/quote` does not return it). The class is derived in `FetchMeta` via
@@ -555,12 +564,15 @@ fallback. The exposure responses (`GET/PUT /assets/{id}/exposure`,
 the persisted `isin` field (`AssetExposure.ISIN`), so the frontend can sync it
 after a fetch. Since B.13 the `GET /assets/{id}/exposure` response exposes the
 **countries** dimension zero-filled across the full canonical ISO list, and
-`PUT /assets/{id}/exposure` accepts an optional `countries` array: it validates
-the sum ≈ 100, keeps only canonical ISO codes, and — when countries are
-provided — the backend re-derives and persists the regions from those
-countries, so regions always stay consistent with the countries. Users can
-add/remove countries from the canonical list and edit their individual
-weights.
+`PUT /assets/{id}/exposure` accepts an optional `countries` array: it keeps
+only canonical ISO codes (**the country sum is informational, not enforced**)
+and — when countries are provided — the backend re-derives and persists the
+regions from those countries, so regions always stay consistent with the
+countries (the residual 100 − country sum lands in `Other / Not Classified`).
+Users can add/remove countries from the canonical list and edit their individual
+weights. A companion endpoint `POST /assets/{id}/exposure/derive` computes the
+regions from a `{countries}` body **without persisting** (used by the "Calcola
+da paesi" button in the UI).
 
 ### Cache invalidation (`bumpRev`)
 
@@ -687,15 +699,18 @@ The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices
     quote ranges + price history from the database → JSON to the frontend
 
 The user edits the exposure ──► PUT /assets/{id}/exposure
-    → validates sum=100% → saves asset_country_weights / asset_region_weights / asset_sector_weights
-      (regions re-derived when countries are given) → bumpRev
+    → saves asset_country_weights / asset_region_weights / asset_sector_weights
+      (regions re-derived when countries are given; country sum not enforced) → bumpRev
+
+The user clicks "Calcola da paesi" ──► POST /assets/{id}/exposure/derive
+    → {countries} → {regions} derived via AggregateRegions (no persistence) → fills the regions table
 
 The user clicks "Aggiorna da Yahoo" ──► POST /assets/{id}/fetch-profile
     → quoteSummary (crumb) → sector/industry (+ sectorWeightings) → saved via PATCH/fetch-exposure
 
 The user prefills from Morningstar ──► POST /assets/{id}/fetch-morningstar-exposure
     → python-service GET /api/v1/etf/{isin}/morningstar-exposure (custom resolver, headless Chromium bootstrap)
-    → countries + sectors saved, regions re-derived → bumpRev
+    → countries + sectors + official regions saved → bumpRev
 ```
 
 ---
@@ -779,7 +794,7 @@ otherwise continue".
   `asset_sector_weights`; the weighted-sum
   allocation endpoints at portfolio level are implemented:
   `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
-  8 macro-regions + `Other`, zero-filled) and `/allocation/sector` (EPIC B.7,
+  10 macro-regions + `Other` (Morningstar-aligned since B.14), zero-filled) and `/allocation/sector` (EPIC B.7,
   11 GICS sectors + `Other`). The dashboard/portfolio chart widgets ship in
   B.8 (frontend). Since the B.8 follow-up, the geography/sector allocations are
   computed over the **equity-only universe** (`exposureEligible`: stocks

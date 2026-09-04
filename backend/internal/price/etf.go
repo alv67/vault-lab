@@ -52,6 +52,7 @@ type etfExposureRow struct {
 
 type etfExposureResponse struct {
 	Countries []etfExposureRow `json:"countries"`
+	Regions   []etfExposureRow `json:"regions"`
 	Sectors   []etfExposureRow `json:"sectors"`
 }
 
@@ -132,6 +133,7 @@ func (f *JustETFFetcher) fetchOnce(ctx context.Context, url string) (*model.Asse
 
 	return &model.AssetExposure{
 		Countries: exposureRows(result.Countries),
+		Regions:   exposureRows(result.Regions),
 		Sectors:   exposureRows(result.Sectors),
 	}, nil
 }

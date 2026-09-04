@@ -12,15 +12,15 @@ resolver instead:
 2. ISIN -> securityId lookup: GET /api/v2/search?q={isin} (works with the WAF
    cookies alone).
 3. Data phase (plain requests, using the cached bearer + cookies):
-     * https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/v2/sector/{sid}/data
-       -> sector exposure, bucketed by asset class (EQUITY/FIXEDINCOME/...)
-* https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/regionalSectorIncludeCountries/{sid}/data
+      * https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/v2/sector/{sid}/data
+        -> sector exposure, bucketed by asset class (EQUITY/FIXEDINCOME/...)
+      * https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/regionalSectorIncludeCountries/{sid}/data
         -> country exposure ({fundPortfolio.countries[].name/percent}) — the
            payload already contains the full country list (51 entries, many zero);
            the website only paginates the client-side table 10 rows at a time.
-     * https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/regionalSector/{sid}/data
-       -> regional breakdown (kept for reference; regions are derived app-side
-          from stored countries in VaultLab).
+      * https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/regionalSector/{sid}/data
+        -> official region breakdown ({fundPortfolio.{regionKey: weight}}); the
+           keys map 1:1 to canonical VaultLab region names.
 
 Return-shape notes (confirmed from the live SAL service):
   * countries: name is a Morningstar camelCase country key (e.g. "southKorea",
@@ -131,6 +131,22 @@ _MORNINGSTAR_COUNTRY_NAMES = {
     "unitedArabEmirates": "United Arab Emirates",
 }
 
+# Morningstar regionalSector fundPortfolio key -> canonical VaultLab region name.
+# The backend consumes these names 1:1 (no geo derivation needed); any residual
+# share not covered here is absorbed by the backend into "Other / Not Classified".
+_MORNINGSTAR_REGION_NAMES = {
+    "northAmerica": "North America",
+    "latinAmerica": "Latin America",
+    "unitedKingdom": "United Kingdom",
+    "europeDeveloped": "Europe Developed",
+    "europeEmerging": "Europe Emerging",
+    "africaMiddleEast": "Africa / Middle East",
+    "japan": "Japan",
+    "australasia": "Australasia",
+    "asiaDeveloped": "Asia Developed",
+    "asiaEmerging": "Asia Emerging",
+}
+
 
 def _morningstar_country_name(key):
     """Converts a Morningstar country key to a readable name.
@@ -165,6 +181,30 @@ def _parse_countries(data):
                         rows.append(ExposureRow(name=name, weight=weight))
                 return _maybe_to_percent(rows)
     return []
+
+
+def _parse_regions(data):
+    """Extracts region rows from the regionalSector fundPortfolio shape.
+
+    Only keys in _MORNINGSTAR_REGION_NAMES are reported; metadata keys such as
+    portfolioDate/masterPortfolioId are skipped. Rows are sorted by weight
+    descending.
+    """
+    if not isinstance(data, dict):
+        return []
+    fund_portfolio = data.get("fundPortfolio")
+    if not isinstance(fund_portfolio, dict):
+        return []
+    rows = []
+    for key, canonical_name in _MORNINGSTAR_REGION_NAMES.items():
+        if key not in fund_portfolio:
+            continue
+        weight = _to_float(fund_portfolio.get(key))
+        if weight is None:
+            continue
+        rows.append(ExposureRow(name=canonical_name, weight=weight))
+    rows.sort(key=lambda r: r.weight, reverse=True)
+    return rows
 
 
 def _parse_sectors(data):
@@ -516,10 +556,11 @@ def _sal_get(bearer: str, cookies: dict, path: str, component: str) -> dict:
 
 
 def fetch_morningstar_exposure(isin: str) -> Exposure:
-    """Resolves a fund's country + sector exposure from Morningstar.
+    """Resolves a fund's country, sector, and region exposure from Morningstar.
 
     Raises MorningstarDataError if no usable country data can be retrieved so
-    the endpoint can map it to a 502.
+    the endpoint can map it to a 502. Regions may be empty for funds without a
+    regional breakdown and are not gated on.
     """
     bearer, cookies = _session_credentials()
     security_id = _search_security_id(isin, cookies)
@@ -534,11 +575,15 @@ def fetch_morningstar_exposure(isin: str) -> Exposure:
             f"portfolio/regionalSectorIncludeCountries/{security_id}/data",
             "sal-mip-country-exposure",
         )
+        region_data = _sal_get(
+            bearer, cookies, f"portfolio/regionalSector/{security_id}/data", "sal-mip-region"
+        )
     except requests.RequestException as exc:
         raise MorningstarDataError(f"Morningstar upstream request failed: {exc}") from exc
 
     countries = _parse_countries(country_data)
     sectors = _parse_sectors(sector_data)
+    regions = _parse_regions(region_data)
 
     if not countries:
         raise MorningstarDataError(f"No country data found for ISIN {isin}")
@@ -549,5 +594,6 @@ def fetch_morningstar_exposure(isin: str) -> Exposure:
     # region dimension.
     countries.sort(key=lambda r: r.weight, reverse=True)
     sectors.sort(key=lambda r: r.weight, reverse=True)
+    regions.sort(key=lambda r: r.weight, reverse=True)
 
-    return Exposure(isin=isin, countries=countries, sectors=sectors)
+    return Exposure(isin=isin, countries=countries, sectors=sectors, regions=regions)
