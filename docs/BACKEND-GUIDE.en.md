@@ -565,14 +565,21 @@ the persisted `isin` field (`AssetExposure.ISIN`), so the frontend can sync it
 after a fetch. Since B.13 the `GET /assets/{id}/exposure` response exposes the
 **countries** dimension zero-filled across the full canonical ISO list, and
 `PUT /assets/{id}/exposure` accepts an optional `countries` array: it keeps
-only canonical ISO codes (**the country sum is informational, not enforced**)
-and — when countries are provided — the backend re-derives and persists the
-regions from those countries, so regions always stay consistent with the
-countries (the residual 100 − country sum lands in `Other / Not Classified`).
-Users can add/remove countries from the canonical list and edit their individual
-weights. A companion endpoint `POST /assets/{id}/exposure/derive` computes the
-regions from a `{countries}` body **without persisting** (used by the "Calcola
-da paesi" button in the UI).
+only canonical ISO codes and **rejects a country sum above 100** (sums below
+100 are legitimate — provider coverage is often ~92–95%, and there is no
+minimum). When countries are provided the backend re-derives and persists the
+regions from those countries (the residual 100 − country sum lands in
+`Other / Not Classified`). Users can add/remove countries from the canonical
+list and edit their individual weights. A companion endpoint
+`POST /assets/{id}/exposure/derive` computes the regions from a `{countries}`
+body **without persisting** (used by the "Calcola da paesi" button in the UI).
+**Region save validation**: the explicit `regions` array now accepts a total
+**≤ 100** (below 100 is valid; above 100 is rejected). The UI never shows or
+edits "Other / Not Classified", so when the client sends regions summing below
+100 with no Other row, the backend **injects the residual into
+`Other / Not Classified` before persisting**, keeping the stored invariant
+"regions sum to 100" that portfolio geography aggregation relies on. Sectors
+keep the exact 100 ± 0.5 rule.
 
 ### Cache invalidation (`bumpRev`)
 

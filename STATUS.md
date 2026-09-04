@@ -309,6 +309,42 @@ e Morningstar permette di cercare sul mercato esatto.
   europeo); `POST /assets/{id}/exposure/derive` verifica la nuova tassonomia
   (GB→United Kingdom, JP→Japan, TW+KR→Asia Developed, residuo→Other).
 
+### Redesign modale distribuzione geografica (paesi-first)
+- **Frontend** (`ExposureGeoModal`, `ExposurePie`, `ProvenanceBadge`): la modale
+  passa a **due colonne** — **Paesi a sinistra**, **Regioni a destra** (impilati
+  paesi-primo su mobile).
+  - **Paesi**: lista a **partenza vuota** (non più 89 righe zero-filled); ogni
+    riga è `codice · nome · barra orizzontale · input peso · cestino`, ordinata
+    per peso desc (riordino su add/remove/blur, mai mentre digiti — la barra si
+    anima live); select + "Aggiungi" per inserire codici canonici; footer con
+    "Totale X%" + meter; **save disabilitato se somma > 100** (sotto 100 ok);
+    **nessun donut**.
+  - **Regioni**: **tabella fissa delle 10 regioni canoniche** (niente
+    add/remove; riga "Other / Not Classified" **rimossa** — filtrata alla
+    pagina, non entra mai in `regionsEdit`); **donut aperto** con la nuova prop
+    `complete={false}` su `ExposurePie` (una fetta residua trasparente mantiene
+    veritieri gli angoli quando la somma < 100, invece della fetta grigia
+    Other); **save disabilitato se somma > 100** (sostituisce la vecchia regola
+    100 ± 0,5).
+  - **Badge di provenienza** (`ProvenanceBadge`): pillola con puntino colorato
+    per fonte — `manuale`/`da JustETF`/`da Morningstar`(` regioni ufficiali`)/
+    `calcolato dai paesi`/`da JustETF via paesi`; prefill/derive impostano il
+    badge, ogni modifica manuale lo riporta a "manuale". Stato session-scoped
+    (niente persistenza), badge nascosto a reload.
+  - Coerenza: anche la **card geografica** della pagina usa `complete={false}`
+    e filtra Other da donut/legenda regioni.
+- **Backend**: `SaveAssetExposure` accetta ora **regioni con somma ≤ 100** e,
+  quando il client non invia Other, **inieietta il residuo in
+  `Other / Not Classified`** prima di persistere (invariante «regioni=100»
+  preservata per l'aggregazione portafoglio); **countries rifiutano somma
+  > 100.5** (nessun minimo, sotto 100 ok); settori invariati (100 ± 0,5).
+  `derive` invariato (restituisce Other; filtra il frontend).
+- **Verifica**: Go build/vet/test green (nuovi `TestPrepareRegions`/
+  `TestPrepareCountries`/`TestValidateExposureWeights`); pytest 51;
+  `svelte-check`/eslint/build clean; `make test-e2e` 18 PASS 0 FAIL. Test
+  manuale PUT: regions somma 95 → 200 con Other=5 persistito (somma 100);
+  regions 103 → 400; countries 120 → 400; countries 95 → 200.
+
 ### Altri EPIC Fase 2
 - EPIC G.7 (#53) — Asset con ticker non-Yahoo: no richiesta prezzo e no errori
   - Campo `price_source` su `assets` (`yahoo`/`manual`/`none`, default `yahoo`):

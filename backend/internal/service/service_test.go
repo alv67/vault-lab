@@ -864,3 +864,259 @@ func TestMapMorningstarExposure_FallsBackToDerivation(t *testing.T) {
 		t.Fatalf("United Kingdom = %v, want zero", byName["United Kingdom"])
 	}
 }
+
+func TestValidateExposureWeights(t *testing.T) {
+	cases := []struct {
+		name    string
+		sum     string
+		rule    weightSumRule
+		wantErr bool
+	}{
+		{"exact: 100 is valid", "100", weightSumExact100, false},
+		{"exact: 100.4 is within tolerance", "100.4", weightSumExact100, false},
+		{"exact: 99.5 is within tolerance", "99.5", weightSumExact100, false},
+		{"exact: 100.6 is rejected", "100.6", weightSumExact100, true},
+		{"exact: 99.4 is rejected", "99.4", weightSumExact100, true},
+		{"exact: 103 is rejected", "103", weightSumExact100, true},
+		{"max: 100 is valid", "100", weightSumMax100, false},
+		{"max: 100.5 is the accepted boundary", "100.5", weightSumMax100, false},
+		{"max: 100.6 is rejected", "100.6", weightSumMax100, true},
+		{"max: 103 is rejected", "103", weightSumMax100, true},
+		{"max: a partial 95 is valid", "95", weightSumMax100, false},
+		{"max: zero rows are valid", "0", weightSumMax100, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []model.ExposureRow{{Name: "X", Weight: decimal.RequireFromString(tc.sum)}}
+			err := validateExposureWeights(rows, tc.rule)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidWeights) {
+					t.Fatalf("err = %v, want ErrInvalidWeights", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareRegions(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      []model.ExposureRow
+		wantErr bool
+		want    map[string]string
+		wantSum string
+	}{
+		{
+			name: "sum of 95 injects the residual into Other so the stored total is 100",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(60)},
+				{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+				{Name: "Japan", Weight: decimal.NewFromInt(10)},
+			},
+			want: map[string]string{
+				"North America":          "60",
+				"United Kingdom":         "25",
+				"Japan":                  "10",
+				"Other / Not Classified": "5",
+			},
+			wantSum: "100",
+		},
+		{
+			name: "sum of 103 is rejected",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(103)},
+			},
+			wantErr: true,
+		},
+		{
+			name: "exact 100 without an Other row needs no injection",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(95)},
+				{Name: "Japan", Weight: decimal.NewFromInt(5)},
+			},
+			want: map[string]string{
+				"North America": "95",
+				"Japan":         "5",
+			},
+			wantSum: "100",
+		},
+		{
+			name: "explicit zero Other row is dropped and not re-added",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(100)},
+				{Name: "Other / Not Classified", Weight: decimal.Zero},
+			},
+			want: map[string]string{
+				"North America": "100",
+			},
+			wantSum: "100",
+		},
+		{
+			name: "explicit positive Other row is kept as sent",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(90)},
+				{Name: geo.OtherRegion, Weight: decimal.NewFromInt(8)},
+			},
+			want: map[string]string{
+				"North America":          "90",
+				"Other / Not Classified": "8",
+			},
+			wantSum: "98",
+		},
+		{
+			name: "residual within the 0.5 rounding tolerance is not injected",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromFloat(99.7)},
+			},
+			want: map[string]string{
+				"North America": "99.7",
+			},
+			wantSum: "99.7",
+		},
+		{
+			name:    "empty dimension closes entirely into Other",
+			in:      []model.ExposureRow{},
+			want:    map[string]string{"Other / Not Classified": "100"},
+			wantSum: "100",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareRegions(tc.in)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidWeights) {
+					t.Fatalf("err = %v, want ErrInvalidWeights", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			byName := map[string]decimal.Decimal{}
+			for _, r := range got {
+				byName[r.Name] = r.Weight
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("rows = %+v, want %d rows", got, len(tc.want))
+			}
+			for name, w := range tc.want {
+				if !byName[name].Equal(decimal.RequireFromString(w)) {
+					t.Fatalf("region %q = %v, want %s", name, byName[name], w)
+				}
+			}
+			if tc.wantSum != "" && !exposureWeightsSum(got).Equal(decimal.RequireFromString(tc.wantSum)) {
+				t.Fatalf("stored sum = %v, want %s", exposureWeightsSum(got), tc.wantSum)
+			}
+		})
+	}
+}
+
+func TestPrepareCountries(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      []model.ExposureRow
+		wantErr bool
+		want    []model.ExposureRow
+	}{
+		{
+			name: "sum of 120 is rejected",
+			in: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(70)},
+				{Name: "JP", Weight: decimal.NewFromInt(50)},
+			},
+			wantErr: true,
+		},
+		{
+			name: "sum of 95 is accepted with no lower bound",
+			in: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "GB", Weight: decimal.NewFromInt(25)},
+				{Name: "JP", Weight: decimal.NewFromInt(10)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "GB", Weight: decimal.NewFromInt(25)},
+				{Name: "JP", Weight: decimal.NewFromInt(10)},
+			},
+		},
+		{
+			name: "non-canonical rows are dropped before the upper-bound check",
+			in: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "Atlantis", Weight: decimal.NewFromInt(60)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+			},
+		},
+		{
+			name: "names normalize to canonical ISO codes",
+			in: []model.ExposureRow{
+				{Name: "United States", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+		},
+		{
+			name: "empty and non-positive rows are dropped",
+			in: []model.ExposureRow{
+				{Name: "", Weight: decimal.NewFromInt(50)},
+				{Name: "JP", Weight: decimal.Zero},
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareCountries(tc.in)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidWeights) {
+					t.Fatalf("err = %v, want ErrInvalidWeights", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("rows = %+v, want %+v", got, tc.want)
+			}
+			for i := range got {
+				if got[i].Name != tc.want[i].Name || !got[i].Weight.Equal(tc.want[i].Weight) {
+					t.Fatalf("row[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareSectorsKeepsExactRule(t *testing.T) {
+	sectors := normalizeExposureRows([]model.ExposureRow{
+		{Name: "Technology", Weight: decimal.NewFromInt(103)},
+	})
+	if err := validateExposureWeights(sectors, weightSumExact100); !errors.Is(err, ErrInvalidWeights) {
+		t.Fatalf("103%% sectors err = %v, want ErrInvalidWeights", err)
+	}
+	sectors = normalizeExposureRows([]model.ExposureRow{
+		{Name: "Technology", Weight: decimal.NewFromInt(100)},
+	})
+	if err := validateExposureWeights(sectors, weightSumExact100); err != nil {
+		t.Fatalf("100%% sectors err = %v, want nil", err)
+	}
+	sectors = normalizeExposureRows([]model.ExposureRow{
+		{Name: "Technology", Weight: decimal.NewFromInt(95)},
+	})
+	if err := validateExposureWeights(sectors, weightSumExact100); !errors.Is(err, ErrInvalidWeights) {
+		t.Fatalf("95%% sectors err = %v, want ErrInvalidWeights (sectors keep the exact-100 rule)", err)
+	}
+}

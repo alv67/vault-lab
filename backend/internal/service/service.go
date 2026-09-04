@@ -51,7 +51,9 @@ type AssetExistsError struct {
 	Existing *model.Asset
 }
 
-func (e *AssetExistsError) Error() string { return fmt.Sprintf("%s: %s", ErrAssetExists, e.Existing.Ticker) }
+func (e *AssetExistsError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrAssetExists, e.Existing.Ticker)
+}
 func (e *AssetExistsError) Unwrap() error { return ErrAssetExists }
 
 // assetClasses is the allowed set for asset_class plus a helper to derive a
@@ -528,13 +530,19 @@ func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.As
 
 // SaveAssetExposure validates and persists the weight distribution for an
 // asset. Each dimension is validated and saved independently: a dimension that
-// is absent from the body (nil slice) is left untouched. Present dimensions
-// must sum to ~100 (tolerance 0.5); rows with an empty name or a non-positive
-// weight are ignored. Country rows must come from the canonical geo.Countries
-// list; non-canonical names are skipped. When countries are provided without
-// explicit regions, the regions are re-derived from the stored countries and
-// persisted so the two dimensions stay consistent; explicit regions (e.g. the
-// official ones returned by Morningstar) always win over that derivation.
+// is absent from the body (nil slice) is left untouched. Sectors must sum to
+// ~100 (tolerance 0.5). Regions must not exceed 100 (same tolerance): the UI
+// hides the "Other / Not Classified" row, so a sum below 100 is accepted and
+// the residual is injected into that bucket before persisting, keeping the
+// stored regions summing to 100 for portfolio geography aggregation. Countries
+// must not exceed 100 (same tolerance) with no lower bound; the residual is
+// handled by the region re-derivation. Rows with an empty name or a
+// non-positive weight are ignored. Country rows must come from the canonical
+// geo.Countries list; non-canonical names are skipped. When countries are
+// provided without explicit regions, the regions are re-derived from the
+// stored countries and persisted so the two dimensions stay consistent;
+// explicit regions (e.g. the official ones returned by Morningstar) always win
+// over that derivation.
 // Returns the complete output built from the stored state.
 func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure *model.AssetExposure) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
@@ -548,17 +556,18 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 	var regions, sectors, countries []model.ExposureRow
 	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
 		if exposure.Regions != nil {
-			regions = normalizeExposureRows(exposure.Regions)
-			if err := validateExposureWeights(regions); err != nil {
+			prepared, err := prepareRegions(exposure.Regions)
+			if err != nil {
 				return err
 			}
+			regions = prepared
 			if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
 				return err
 			}
 		}
 		if exposure.Sectors != nil {
 			sectors = normalizeExposureRows(exposure.Sectors)
-			if err := validateExposureWeights(sectors); err != nil {
+			if err := validateExposureWeights(sectors, weightSumExact100); err != nil {
 				return err
 			}
 			if err := rx.Exposure.ReplaceSectors(ctx, id, sectors); err != nil {
@@ -566,22 +575,11 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 			}
 		}
 		if exposure.Countries != nil {
-			countries = normalizeExposureRows(exposure.Countries)
-			// Only keep rows whose name resolves to a canonical country; drop
-			// anything else rather than failing hard. Country weights are
-			// informational and used to derive regions, so a sum that is not
-			// exactly 100 is accepted (the residual lands in the region
-			// "Other / Not Classified").
-			kept := countries[:0]
-			for _, row := range countries {
-				code := geo.NormalizeCountry(row.Name)
-				if !geo.IsValidCountry(code) || !isCanonicalCountry(code) {
-					continue
-				}
-				row.Name = code
-				kept = append(kept, row)
+			prepared, err := prepareCountries(exposure.Countries)
+			if err != nil {
+				return err
 			}
-			countries = kept
+			countries = prepared
 			if err := rx.Exposure.ReplaceCountries(ctx, id, countries); err != nil {
 				return err
 			}
@@ -815,19 +813,92 @@ func normalizeExposureRows(rows []model.ExposureRow) []model.ExposureRow {
 	return out
 }
 
-// validateExposureWeights checks that a dimension sums to ~100 with a 0.5
-// tolerance. It is used for regions and sectors only; country weights are
-// informational and not required to sum to 100 (the residual is absorbed by the
-// "Other / Not Classified" region).
-func validateExposureWeights(rows []model.ExposureRow) error {
+// weightSumRule selects how validateExposureWeights checks a dimension's total
+// against 100.
+type weightSumRule int
+
+const (
+	// weightSumExact100 requires the weights to sum to 100 ± 0.5 (sectors).
+	weightSumExact100 weightSumRule = iota
+	// weightSumMax100 enforces only the upper bound: sums up to 100.5 are
+	// accepted and sums below 100 are valid (regions and countries).
+	weightSumMax100
+)
+
+// validateExposureWeights checks a dimension's weights sum against 100 following
+// the given rule: exactly 100 ± 0.5 (weightSumExact100) or at most 100.5
+// (weightSumMax100). Rows are expected to be already normalized.
+func validateExposureWeights(rows []model.ExposureRow, rule weightSumRule) error {
+	sum := exposureWeightsSum(rows)
+	tolerance := decimal.NewFromFloat(0.5)
+	delta := sum.Sub(decimal.NewFromInt(100))
+	switch rule {
+	case weightSumMax100:
+		if delta.GreaterThan(tolerance) {
+			return ErrInvalidWeights
+		}
+	default: // weightSumExact100
+		if delta.Abs().GreaterThan(tolerance) {
+			return ErrInvalidWeights
+		}
+	}
+	return nil
+}
+
+// exposureWeightsSum totals the weights of a dimension.
+func exposureWeightsSum(rows []model.ExposureRow) decimal.Decimal {
 	sum := decimal.Zero
 	for _, row := range rows {
 		sum = sum.Add(row.Weight)
 	}
-	if sum.Sub(decimal.NewFromInt(100)).Abs().GreaterThan(decimal.NewFromFloat(0.5)) {
-		return ErrInvalidWeights
+	return sum
+}
+
+// prepareRegions normalizes and validates the region dimension, then enforces
+// the stored invariant that regions sum to 100: the UI hides the
+// "Other / Not Classified" row and may legitimately send weights summing below
+// 100 (only sums above 100.5 are rejected), so when no explicit Other row is
+// present and the residual exceeds the 0.5 rounding tolerance it is injected
+// into that bucket before persisting, mirroring price.AggregateRegions. An
+// explicit Other row is kept as the client sent it.
+func prepareRegions(rows []model.ExposureRow) ([]model.ExposureRow, error) {
+	prepared := normalizeExposureRows(rows)
+	if err := validateExposureWeights(prepared, weightSumMax100); err != nil {
+		return nil, err
 	}
-	return nil
+	for _, row := range prepared {
+		if row.Name == geo.OtherRegion {
+			return prepared, nil
+		}
+	}
+	residual := decimal.NewFromInt(100).Sub(exposureWeightsSum(prepared))
+	if residual.GreaterThan(decimal.NewFromFloat(0.5)) {
+		prepared = append(prepared, model.ExposureRow{Name: geo.OtherRegion, Weight: residual})
+	}
+	return prepared, nil
+}
+
+// prepareCountries normalizes the country dimension: only rows whose name
+// resolves to a canonical country are kept (anything else is dropped rather
+// than failing hard) and the kept weights must not exceed 100 (+ the 0.5
+// rounding tolerance). There is no lower bound: the residual is absorbed by the
+// region re-derivation (price.AggregateRegions), so a partial country list is
+// a valid save.
+func prepareCountries(rows []model.ExposureRow) ([]model.ExposureRow, error) {
+	normalized := normalizeExposureRows(rows)
+	kept := normalized[:0]
+	for _, row := range normalized {
+		code := geo.NormalizeCountry(row.Name)
+		if !geo.IsValidCountry(code) || !isCanonicalCountry(code) {
+			continue
+		}
+		row.Name = code
+		kept = append(kept, row)
+	}
+	if err := validateExposureWeights(kept, weightSumMax100); err != nil {
+		return nil, err
+	}
+	return kept, nil
 }
 
 // isCanonicalCountry reports whether code is one of the canonical ISO codes.

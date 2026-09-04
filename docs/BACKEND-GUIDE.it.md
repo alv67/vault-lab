@@ -559,14 +559,22 @@ includono il campo `isin` persistito (`AssetExposure.ISIN`), così il frontend
 può sincronizzarlo dopo un fetch. Da B.13 la risposta `GET /assets/{id}/exposure`
 espone la dimensione **countries** zero-filled sull'intera lista ISO canonica, e
 `PUT /assets/{id}/exposure` accetta un array opzionale `countries`: tiene solo
-codici ISO canonici (**la somma paesi è informativa, non vincolante**) e — quando
-i countries sono forniti — il backend ricalcola e persiste le regions da quei
-paesi, così le regioni restano sempre coerenti con i paesi (il residuo
-100 − somma paesi confluisce in `Other / Not Classified`). Gli utenti possono
+codici ISO canonici e **rifiuta una somma paesi sopra 100** (una somma sotto
+100 è legittima — la copertura dei provider è spesso ~92–95%, e non c'è un
+minimo). Quando i countries sono forniti il backend ricalcola e persiste le
+regions da quei paesi (il residuo 100 − somma paesi confluisce in
+`Other / Not Classified`). Gli utenti possono
 aggiungere/rimuovere paesi dalla lista canonica e modificarne i singoli pesi.
 Un endpoint complementare `POST /assets/{id}/exposure/derive` calcola le regioni
 da un body `{countries}` **senza persistire** (usato dal pulsante "Calcola da
 paesi" nella UI).
+**Validazione al salvataggio delle regioni**: l'array `regions` esplicito ora
+accetta un totale **≤ 100** (sotto 100 è valido; sopra 100 è rifiutato). La UI
+non mostra né modifica mai "Other / Not Classified", quindi quando il client
+invia regioni con somma sotto 100 senza riga Other, il backend **inietta il
+residuo in `Other / Not Classified` prima di persistere**, mantenendo
+l'invariante salvata «le regioni sommano a 100» su cui si basa l'aggregazione
+geografica del portafoglio. I settori conservano la regola esatta 100 ± 0,5.
 
 ### Invalidation della cache (`bumpRev`)
 

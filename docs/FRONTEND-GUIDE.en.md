@@ -362,7 +362,7 @@ recomputed with `$derived.by`, so the chart reacts to `$props` changes.
 | `PriceChart.svelte` | single **line** (close prices), time x-axis, `inside` + `slider` dataZoom | the **asset detail** page (B.10): historical price with the 1M/3M/1Y/YTD/MAX selector. Always loads the full history: the selectors apply an **in-place zoom** (a `start`/`end` percentage pair, `end`=100) without re-fetching; a manual zoom/pan **deselects** the active button and preserves the view. **Splits** are drawn as a dashed purple `markLine` labelled with the ratio (`Split 4:1`), like in `PositionChart`. Empty state → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **three lines**: cost basis (gray, stepped), market value (green, smooth), realized (amber) + dashed split markers | the **portfolio detail** "Performance history": a dropdown switches between the whole portfolio and a single asset. Split events are drawn as a vertical dashed `markLine` on the market-value line labelled with the ratio (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **multi-series line** (one per portfolio), category x-axis of dates | the **dashboard** "Portfolio History" card. The tooltip formats each series in its own currency (the currency comes from the `DashboardHistory` payload) |
-| `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out | asset detail page (regions and sectors donuts), the two exposure modals (`mute` mode: regions/countries in `ExposureGeoModal`, sectors in `ExposureSectorModal`), and the portfolio **class-allocation donut** (B.12). Countries on the page are shown as a bar list, not a pie. Accepts `ExposureRow[]` (`{name, weight}`) |
+| `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out; `complete={false}` renders the donut **open** when the rows sum to < 100 (a transparent residual slice keeps the angles truthful — no gray "Other" slice) | asset detail page (regions donut with `complete={false}` and the sectors donut), the two exposure modals (`mute` mode: regions in `ExposureGeoModal`, sectors in `ExposureSectorModal`), and the portfolio **class-allocation donut** (B.12). Countries are shown as bar lists (page card and geo modal), never as a pie. Accepts `ExposureRow[]` (`{name, weight}`) |
 | `GeographyChart.svelte` (`lib/components/domain/`) | **donut** (same radius/palette as `ExposurePie`) + full-row table alongside; tooltip shows the value in the portfolio currency and the weight; the `Other` slice is muted in gray | the **portfolio detail** geography card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `RegionAllocation[]` (`{region, value, weight}`); rows with zero weight stay in the table but are not drawn. Optional `covered`/`excluded` props (decimal strings) drive a coverage note ("Copre il X% del portafoglio…") shown when the excluded value is > 0 |
 | `SectorChart.svelte` (`lib/components/domain/`) | identical structure over sectors | the **portfolio detail** sector card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `SectorAllocation[]` (`{sector, value, weight}`), plus the same optional `covered`/`excluded` coverage note as `GeographyChart` |
 
@@ -599,17 +599,43 @@ quote/prices.
   - The **geographic card** groups two side-by-side boxes: **Paesi** — a
     horizontal **bar list of the top 15 countries** (weight > 0, sorted desc,
     bar width scaled against the largest weight, friendly names from
-    `lib/countryNames.ts`) — and **Regioni** — an `ExposurePie` donut with its
-    legend below. Its "Modifica" button opens **`ExposureGeoModal`**.
+    `lib/countryNames.ts`) — and **Regioni** — an `ExposurePie` donut (rendered
+    **open**, `complete={false}`, so a <100% total leaves a real gap; the
+    "Other / Not Classified" residual is filtered out) with its legend below.
+    Its "Modifica" button opens **`ExposureGeoModal`**.
   - The **sector card** shows the sectors `ExposurePie` donut with its legend
     below; its "Modifica" button opens **`ExposureSectorModal`**.
-  - **`ExposureGeoModal`** has two parts (regions and countries), each with the
-    editable weight table, a mute donut and its own save. Regions are validated
-    to 100 ± 0.5 (else save disabled); countries are edited against the
-    **canonical ISO list** (add/remove codes, set weights) and their **sum is
-    not enforced** — an amber note explains the residual goes to
-    "Other / Not Classified" and regions are re-derived server-side on save.
-  - **`ExposureSectorModal`** has the sector table, validated to 100 ± 0.5.
+  - **`ExposureGeoModal`** (countries-first redesign) has **two columns**
+    (`lg:grid-cols-2`): **Paesi on the left**, **Regioni on the right**
+    (stacked countries-first on mobile).
+    - **Paesi box**: starts as an **empty list** (not the full ~89-row
+      zero-filled table). Each row is `ISO code · friendly name · horizontal
+      bar · weight input · delete`, sorted by weight **desc** (re-sorted on
+      add/remove/blur, never while typing — the bar animates live so rows do
+      not jump). The bar colour matches the page-card palette by rank, so the
+      modal previews the card. An `add-country` native select + "Aggiungi"
+      button lets the user add any canonical code not already present (focus
+      then moves to its weight input). A totals footer shows "Totale X%" plus a
+      progress meter; **save is disabled when the sum exceeds 100** (a sum
+      below 100 is allowed). An info line explains the residual goes to
+      "Other / Not Classified" on save. **No donut** in this box.
+    - **Regioni box**: a **fixed table of the 10 canonical regions** (no
+      add/remove, no "Other / Not Classified" row — Other is filtered out at
+      the page so it never enters `regionsEdit`), each row with a colour
+      square, name and weight input, beside a **mute, OPEN donut**
+      (`mute complete={false}`: the <100% total leaves a real gap instead of a
+      gray Other slice). Totals footer as in countries; **save is disabled when
+      the sum exceeds 100** (a sum below 100 is valid — this replaces the old
+      `100 ± 0.5` rule).
+    - **Provenance badges**: each box header shows a `ProvenanceBadge` pill
+      (a coloured dot + label) with the source of its current data —
+      `manuale`, `da JustETF`, `da Morningstar` / `da Morningstar (regioni
+      ufficiali)`, `calcolato dai paesi`, `da JustETF via paesi`. A prefill or
+      derive sets the badge; **any manual edit flips it to "manuale"**. The
+      state is session-scoped in the page (nothing is persisted), so the badge
+      is hidden on a fresh reload.
+  - **`ExposureSectorModal`** has the sector table, validated to 100 ± 0.5
+    (unchanged — sectors still require an exact total).
   - The **prefill buttons live only inside the modals**, next to each part's
     title (boxed favicon icons with tooltip), placed where the data comes from:
     - **countries** (`ExposureGeoModal`): **"Prefill JustETF"**
@@ -631,8 +657,11 @@ quote/prices.
   modals are **mute** (`mute` on `ExposurePie`: no value labels and no tooltip
   on the slices).
   Saving sends **only the edited dimension**
-  (`PUT /assets/{id}/exposure` with `{countries}`, `{regions}` or `{sectors}` — omitting a
+  (`PUT /assets/{id}/exposure` with `{countries}` or `{regions}` — omitting a
   key leaves the other untouched), then reloads the canonical response. The
+  page strips any "Other / Not Classified" row from the regions response
+  before feeding the UI; the server keeps re-adding the residual internally so
+  stored regions still sum to 100 for portfolio aggregation. The
   exposure section is rendered only when the asset is actionable for the
   equity universe (`exposureApplicable`: stock, or etf/mutual_fund with
   `asset_class`
@@ -718,7 +747,13 @@ events (timestamp, type, status badge, code, message, duration), with a
   (`POST /assets/{id}/exposure/derive`, derives regions from the current
   countries without saving) and **"Prefill Morningstar"** (official Morningstar
   regions). The canonical regions were aligned to the Morningstar taxonomy
-  (UK / Japan / Australasia standalone; TW/KR → Asia Developed).
+  (UK / Japan / Australasia standalone; TW/KR → Asia Developed). A later
+  countries-first redesign of the geo modal made it two columns (Paesi left,
+  Regioni right) with an empty-start country list (bar rows, add/remove, no
+  donut), a fixed 10-region table with "Other / Not Classified" removed and an
+  **open** donut (`complete={false}`) when the total is < 100, ≤100 save
+  validation, and **provenance badges** (manuale / da JustETF / da Morningstar /
+  calcolato dai paesi).
 - **Equity-only universe (B.8 follow-up)** — the geo/sector allocations cover
   only equity holdings (stocks always; ETFs/mutual funds only when
   `asset_class` is `equity` or `real_estate`). Bonds, crypto, commodities and

@@ -162,8 +162,9 @@ Content-Type: application/json
 GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
 
-### 11d. Manual edit of country weights: a small subset (must sum to ~100). The
-### regions are re-derived by the backend from these countries.
+### 11d. Manual edit of country weights: a small subset (must not exceed ~100; a
+### sum below 100 is valid). The regions are re-derived by the backend from
+### these countries, absorbing the residual into "Other / Not Classified".
 # @name putCountries
 PUT {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}

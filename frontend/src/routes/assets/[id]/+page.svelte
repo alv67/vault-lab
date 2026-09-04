@@ -70,6 +70,10 @@
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
   let countriesEdit = $state<ExposureRow[]>([])
+  // Data provenance for the geo modal badges: which source currently owns each
+  // dimension ('manual' once the user edits it). Null = unknown (no badge).
+  let countriesSource = $state<string | null>(null)
+  let regionsSource = $state<string | null>(null)
   let savingRegions = $state(false)
   let savingSectors = $state(false)
   let savingCountries = $state(false)
@@ -149,9 +153,35 @@
   const sumCountries = $derived(
     countriesEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
   )
-  const regionsValid = $derived(Math.abs(sumRegions - 100) <= 0.5)
+  // Countries and regions may legitimately sum below 100: the backend absorbs
+  // the residual into «Other / Not Classified» at persist time. Only a sum
+  // above 100 (± float epsilon) blocks saving. Sectors still require 100 ±0.5.
+  const regionsValid = $derived(sumRegions <= 100 + 1e-9)
   const sectorsValid = $derived(Math.abs(sumSectors - 100) <= 0.5)
-  const countriesValid = $derived(Math.abs(sumCountries - 100) <= 0.5)
+  const countriesValid = $derived(sumCountries <= 100 + 1e-9)
+
+  /** The hidden fallback region injected server-side at persist time; the UI
+   * never displays or edits it. */
+  const OTHER_REGION = 'Other / Not Classified'
+
+  /**
+   * Copy backend country rows keeping only positive weights: the exposure
+   * endpoints answer with the full canonical zero-filled list, while the edit
+   * list must stay minimal (the backend drops non-positive rows on save, so
+   * sending only the > 0 rows is lossless).
+   */
+  function positiveCountries(rows: ExposureRow[]): ExposureRow[] {
+    return rows.filter((r) => Number(r.weight) > 0).map((r) => ({ ...r }))
+  }
+
+  /**
+   * Copy backend region rows in canonical order, dropping the «Other / Not
+   * Classified» residual: sums, donut and table then work on visible rows
+   * only (the page re-adds the open-donut gap via complete={false}).
+   */
+  function withoutOther(rows: ExposureRow[]): ExposureRow[] {
+    return rows.filter((r) => r.name !== OTHER_REGION).map((r) => ({ ...r }))
+  }
 
   // Top 15 countries by weight (desc, > 0) for the geographic card bar list.
   const topCountries = $derived.by(() =>
@@ -213,9 +243,9 @@
       prices = ps
       exposure = ex
       splits = sp
-      regionsEdit = ex.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(ex.regions)
       sectorsEdit = ex.sectors.map((r) => ({ ...r }))
-      countriesEdit = ex.countries.map((r) => ({ ...r }))
+      countriesEdit = positiveCountries(ex.countries)
       fillForm(a)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load asset'
@@ -334,7 +364,8 @@
     try {
       const saved = await assetApi.fetchETFExposure(id)
       exposure = saved
-      countriesEdit = saved.countries.map((r) => ({ ...r }))
+      countriesEdit = positiveCountries(saved.countries)
+      countriesSource = 'justetf'
       if (saved.isin) form.isin = saved.isin
       toast.success('Paesi precompilati da JustETF')
     } catch (err: unknown) {
@@ -355,7 +386,10 @@
     derivingRegions = true
     try {
       const result = await assetApi.deriveRegions(id, countriesEdit)
-      regionsEdit = result.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(result.regions)
+      // The residual «Other / Not Classified» row is filtered out: the modal's
+      // totals line already explains what is left unattributed.
+      regionsSource = countriesSource === 'justetf' ? 'derived-etf' : 'derived'
       toast.success('Regioni ricalcolate dai paesi')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Calcolo fallito'
@@ -372,7 +406,8 @@
     try {
       const saved = await assetApi.fetchMorningstarExposure(id)
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(saved.regions)
+      regionsSource = 'morningstar-regions'
       if (saved.isin) form.isin = saved.isin
       toast.success('Regioni precompilate da Morningstar')
     } catch (err: unknown) {
@@ -437,7 +472,7 @@
         regions: regionsEdit,
       })
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(saved.regions)
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione geografica salvata')
     } catch (err: unknown) {
@@ -456,7 +491,7 @@
         sectors: sectorsEdit,
       })
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(saved.regions)
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione settoriale salvata')
     } catch (err: unknown) {
@@ -474,7 +509,8 @@
     try {
       const saved = await assetApi.fetchMorningstarExposure(id)
       exposure = saved
-      countriesEdit = saved.countries.map((r) => ({ ...r }))
+      countriesEdit = positiveCountries(saved.countries)
+      countriesSource = 'morningstar'
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       if (saved.isin) form.isin = saved.isin
       toast.success('Paesi e settori precompilati da Morningstar')
@@ -487,15 +523,19 @@
   }
 
   async function saveCountries(): Promise<void> {
-    if (!id || !exposure) return
+    if (!id || !exposure || !countriesValid) return
     savingCountries = true
     try {
       const saved = await assetApi.saveExposure(id, {
         countries: countriesEdit,
       })
       exposure = saved
-      countriesEdit = saved.countries.map((r) => ({ ...r }))
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      countriesEdit = positiveCountries(saved.countries)
+      // The backend re-derives the regions from the stored countries (and
+      // persists them, since no explicit regions were sent): the regions box
+      // now shows a computation over the countries list.
+      regionsEdit = withoutOther(saved.regions)
+      regionsSource = 'derived'
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione paesi salvata')
     } catch (err: unknown) {
@@ -504,6 +544,16 @@
     } finally {
       savingCountries = false
     }
+  }
+
+  // Provenance flips to 'manual' on the first user mutation of a dimension
+  // (invoked by the geo modal at every add/remove/weight-edit point).
+  function markCountriesManual(): void {
+    countriesSource = 'manual'
+  }
+
+  function markRegionsManual(): void {
+    regionsSource = 'manual'
   }
 </script>
 
@@ -758,7 +808,10 @@
           </div>
           <div class="rounded-xl border bg-gray-50 p-4">
             <h3 class="mb-2 font-medium">Regioni</h3>
-            <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
+            <!-- regionsEdit never carries the «Other / Not Classified» row
+                 (filtered at assignment time), so the donut renders open:
+                 complete={false} adds the transparent residual gap. -->
+            <ExposurePie data={regionsEdit} title="Distribuzione geografica" complete={false} />
             <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
               {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
                 <div class="flex items-center gap-1.5 text-xs">
@@ -813,8 +866,6 @@
         bind:countriesEdit
         {sumRegions}
         {sumCountries}
-        {regionsValid}
-        {countriesValid}
         {savingRegions}
         {savingCountries}
         {saveRegions}
@@ -826,6 +877,10 @@
         {deriveRegionsFromCountries}
         {prefillRegionsFromMorningstar}
         {prefillCountriesFromMorningstar}
+        {countriesSource}
+        {regionsSource}
+        onCountriesDirty={markCountriesManual}
+        onRegionsDirty={markRegionsManual}
         assetType={asset.type}
       />
 

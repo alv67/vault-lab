@@ -378,7 +378,7 @@ cambiamenti di `$props`.
 | `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/YTD/MAX. Carica sempre tutto lo storico: i selettori fanno uno **zoom in-place** (coppia `start`/`end` percentuali, `end`=100) senza ricaricare dati; uno zoom/spostamento manuale **deseleziona** il pulsante attivo e preserva la vista. Gli **split** sono disegnati come `markLine` tratteggiata viola etichettata con il rapporto (`Split 4:1`), come in `PositionChart`. Stato vuoto → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la **storico performance** del dettaglio portafoglio: un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio), asse x a categorie di date | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`) |
-| `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate | pagina dettaglio asset (donut regioni e settori), le due modali esposizione (in modalità `mute`: regioni/paesi in `ExposureGeoModal`, settori in `ExposureSectorModal`) e il donut **"Allocazione per classi"** del portafoglio (B.12). I paesi sulla pagina sono una lista a barre, non una pie. Accetta `ExposureRow[]` (`{name, weight}`) |
+| `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate; `complete={false}` la rende **aperta** quando le righe sommano < 100 (una fetta residua trasparente tiene veritieri gli angoli — niente fetta grigia "Other") | pagina dettaglio asset (donut regioni con `complete={false}` e donut settori), le due modali esposizione (in modalità `mute`: regioni in `ExposureGeoModal`, settori in `ExposureSectorModal`) e il donut **"Allocazione per classi"** del portafoglio (B.12). I paesi (pagina e modale geografica) sono liste a barre, mai una pie. Accetta `ExposureRow[]` (`{name, weight}`) |
 | `GeographyChart.svelte` (`lib/components/domain/`) | **ciambella** (stessi raggio/palette di `ExposurePie`) + tabella delle righe complete accanto; il tooltip mostra il valore nella valuta del portafoglio e il peso; la fetta `Other` è in grigio spento | la card **geografia** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `RegionAllocation[]` (`{region, value, weight}`); le righe a peso zero restano in tabella ma non vengono disegnate. Le prop opzionali `covered`/`excluded` (stringhe decimali) alimentano una nota di copertura ("Copre il X% del portafoglio…") mostrata quando il valore escluso è > 0 |
 | `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `SectorAllocation[]` (`{sector, value, weight}`), più la stessa nota di copertura opzionale `covered`/`excluded` di `GeographyChart` |
 
@@ -621,18 +621,40 @@ freschi.
   - La **card geografica** raggruppa due box affiancati: **Paesi** — una
     **lista a barre orizzontali dei primi 15 paesi** (peso > 0, ordinati desc,
     barra scalata sul peso maggiore, nomi amichevoli da `lib/countryNames.ts`)
-    — e **Regioni** — donut `ExposurePie` con la sua legenda sotto. Il suo
+    — e **Regioni** — donut `ExposurePie` **aperto** (`complete={false}`: con
+    totale < 100 resta un vero varco, la fetta grigia "Other / Not Classified"
+    è filtrata via) con la sua legenda sotto. Il suo
     "Modifica" apre **`ExposureGeoModal`**.
   - La **card settoriale** mostra il donut `ExposurePie` dei settori con la
     legenda sotto; il suo "Modifica" apre **`ExposureSectorModal`**.
-  - **`ExposureGeoModal`** ha due parti (regioni e paesi), ognuna con tabella
-    dei pesi modificabile, donut muto e salvataggio proprio. Le regioni sono
-    validate a 100 ± 0,5 (altrimenti il salvataggio è disabilitato); i paesi si
-    modificano sulla **lista ISO canonica** (aggiungi/rimuovi e imposta il
-    peso) e la loro **somma non è vincolante**: una nota ambra spiega che il
-    residuo confluisce in "Other / Not Classified" e che le regioni vengono
-    ricalcolate lato server al salvataggio.
-  - **`ExposureSectorModal`** ha la tabella dei settori, validata a 100 ± 0,5.
+  - **`ExposureGeoModal`** (redesign paesi-first) ha **due colonne**
+    (`lg:grid-cols-2`): **Paesi a sinistra**, **Regioni a destra** (impilati
+    paesi-primo su mobile).
+    - **Box Paesi**: parte come **lista vuota** (non la tabella zero-filled da
+      ~89 righe). Ogni riga è `codice ISO · nome · barra orizzontale · input
+      peso · elimina`, ordinata per peso **desc** (riordinata su add/remove/blur,
+      mai mentre si digita — la barra si anima live così le righe non saltano).
+      Il colore della barra segue la palette della card per rango. Un select
+      nativo + "Aggiungi" inserisce un codice canonico non ancora presente (il
+      focus passa al suo input peso). Il footer mostra "Totale X%" + barra di
+      progresso; **il salvataggio è disabilitato se la somma supera 100** (sotto
+      100 è ammesso). **Nessun donut** in questo box.
+    - **Box Regioni**: **tabella fissa delle 10 regioni canoniche** (niente
+      add/remove, riga "Other / Not Classified" esclusa — filtrata alla pagina,
+      non entra mai in `regionsEdit`), ogni riga con quadratino colore, nome e
+      input peso, accanto a un **donut muto APERTO** (`mute complete={false}`:
+      il totale < 100 lascia un varco reale invece della fetta grigia Other).
+      Footer come i paesi; **salvataggio disabilitato se la somma supera 100**
+      (sotto 100 è valido — sostituisce la vecchia regola `100 ± 0,5`).
+    - **Badge di provenienza**: l'header di ogni box mostra una pillola
+      `ProvenanceBadge` (puntino colorato + etichetta) con la fonte dei dati —
+      `manuale`, `da JustETF`, `da Morningstar` / `da Morningstar (regioni
+      ufficiali)`, `calcolato dai paesi`, `da JustETF via paesi`. Prefill/derive
+      impostano il badge; **ogni modifica manuale lo riporta a "manuale"**. Lo
+      stato è session-scoped nella pagina (nulla è persistito), quindi il badge
+      è nascosto al primo reload.
+  - **`ExposureSectorModal`** ha la tabella dei settori, validata a 100 ± 0,5
+    (invariata — i settori richiedono ancora il totale esatto).
   - I pulsanti di **prefill vivono solo nelle modali**, accanto al titolo di
     ciascuna parte (icone-favicon boxate con tooltip), posizionati dove nascono
     i dati:
@@ -655,8 +677,11 @@ freschi.
   **muti** (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip
   sulle fette).
   Il salvataggio invia **solo la dimensione modificata**
-  (`PUT /assets/{id}/exposure` con `{countries}`, `{regions}` o `{sectors}` — omettere una
-  chiave lascia l'altra intatta), poi ricarica la risposta canonica. La
+  (`PUT /assets/{id}/exposure` con `{countries}` o `{regions}` — omettere una
+  chiave lascia l'altra intatta), poi ricarica la risposta canonica. La pagina
+  scarta la riga "Other / Not Classified" dalla risposta regioni prima di
+  alimentarla alla UI; il server la riaggiunge internamente così le regioni
+  persistite sommano ancora a 100 per l'aggregazione del portafoglio. La
   sezione è renderizzata solo quando l'asset è azionabile per l'universo
   equity (`exposureApplicable`: stock, oppure etf/mutual_fund con
   `asset_class` `equity`/`real_estate`); altrimenti compare un banner che
@@ -743,7 +768,13 @@ pulsante "Refresh Now".
   (`POST /assets/{id}/exposure/derive`, deriva le regioni dai paesi correnti
   senza salvare) e **"Prefill Morningstar"** (regioni ufficiali Morningstar).
   Le regioni canoniche sono state allineate alla tassonomia Morningstar
-  (UK / Japan / Australasia separate; TW/KR → Asia Developed).
+  (UK / Japan / Australasia separate; TW/KR → Asia Developed). Un successivo
+  redesign paesi-first della modale geografica l'ha resa a due colonne (Paesi a
+  sinistra, Regioni a destra) con lista paesi a partenza vuota (righe a barre,
+  add/remove, niente donut), tabella fissa delle 10 regioni con "Other / Not
+  Classified" rimossa e donut **aperto** (`complete={false}`) sotto il 100%,
+  validazione di salvataggio ≤100 e **badge di provenienza** (manuale / da
+  JustETF / da Morningstar / calcolato dai paesi).
 - **Universo equity-only (follow-up B.8)** — le allocazioni geo/settoriali
   coprono solo le holding azionarie (azioni sempre; ETF/fondi solo quando
   `asset_class` è `equity` o `real_estate`). Bond, crypto, commodity e fondi
