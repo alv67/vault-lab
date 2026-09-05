@@ -55,6 +55,8 @@
 - [x] Chart storico asset: zoom in-place + selettore YTD — **EPIC F.9 (#52)**
 - [x] Pagina asset: solo pie chart + modale di modifica esposizione — **EPIC F.10 (#64)**
 - [x] Split come marcatori sul chart storico asset (`GET /assets/{id}/splits` + markLine)
+- [x] Per-country exposure: tabella `asset_country_weights` + 3 dimensioni (countries/regions/sectors) — **EPIC B.13 (#58)**
+- [x] Morningstar exposure source: resolver custom (bootstrap Chromium headless per WAF+JWT, poi SAL service via requests), rotta backend `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend — **EPIC B.14 (#59)**
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -87,6 +89,7 @@ Price        → id, asset_id, date, open, high, low, close, volume, source
 FxHistory    → base_currency, quote_currency, date, rate, source
 AssetRegion  → asset_id, region, weight, source
 AssetSector  → asset_id, sector, weight, source
+AssetCountry → asset_id, country, weight (ISO-3166 alpha-2, from B.13)
 ```
 
 ### Finanza (Fase 4)
@@ -173,12 +176,15 @@ vault-lab/
 **Release v0.1.0** pubblicata su `main` (prima release ufficiale).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
-procede su `develop` (feature branch `feat/B.8-allocation-charts`, PR #62, e `feat/B.9-fx-history`,
-PR #61, per la parte finale EPIC B). Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
+procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
 il **backfill country/ISO** (B.3), il **microservizio Python JustETF** per l'esposizione ETF e
 l'auto-resolve ISIN (B.5), le asset class con allocazione per classi (B.11/B.12), gli **endpoint di
 allocazione geo/settore a livello portafoglio** (B.6/B.7), le **chart dashboard/portafoglio** con
-universo equity-only e metadati di copertura (B.8, #14) e lo **storico FX per-data** (B.9, #44).
+universo equity-only e metadati di copertura (B.8, #14), lo **storico FX per-data** (B.9, #44),
+il **per-country exposure storage** (B.13, #58: tabella `asset_country_weights`, 3 dimensioni
+countries/regions/sectors) e **Morningstar come fonte esposizione** (B.14, #59: resolver custom con
+bootstrap Chromium headless per WAF+JWT, rotta backend
+`POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend).
 Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
 di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

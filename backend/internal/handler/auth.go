@@ -500,6 +500,63 @@ func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, exposure)
 }
 
+func (h *Handler) FetchMorningstarExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchMorningstarExposure(r.Context(), uid)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("fetch morningstar exposure failed")
+			respondError(w, http.StatusBadGateway, "morningstar exposure fetch failed")
+		}
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
+// DeriveAssetRegions previews how a country weight distribution maps onto the
+// canonical macro-regions for an asset. Nothing is persisted.
+func (h *Handler) DeriveAssetRegions(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	var req struct {
+		Countries []model.ExposureRow `json:"countries"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	regions, err := h.svc.DeriveRegions(r.Context(), uid, req.Countries)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("derive asset regions failed")
+		respondError(w, http.StatusInternalServerError, "derive failed")
+		return
+	}
+
+	respond(w, http.StatusOK, map[string][]model.ExposureRow{"regions": regions})
+}
+
 func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	uid, err := parseUUID(id)

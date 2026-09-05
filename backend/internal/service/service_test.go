@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/shopspring/decimal"
 
 	"github.com/amelamela/vault-lab/internal/cache"
@@ -40,8 +42,12 @@ func (f *fakePortfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs [
 func (f *fakePortfolioRepo) FindAll(ctx context.Context) ([]uuid.UUID, error) { return nil, nil }
 
 type fakeExposureRepo struct {
-	regions map[string][]model.ExposureRow
-	sectors map[string][]model.ExposureRow
+	regions   map[string][]model.ExposureRow
+	sectors   map[string][]model.ExposureRow
+	countries map[string][]model.ExposureRow
+	// replaceRegionsCalls records every region write so tests can assert that
+	// saving countries alone never rewrites the regions dimension.
+	replaceRegionsCalls int
 }
 
 func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
@@ -50,10 +56,29 @@ func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) (
 func (f *fakeExposureRepo) FindSectors(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
 	return f.sectors[assetID.String()], nil
 }
+func (f *fakeExposureRepo) FindCountries(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
+	return f.countries[assetID.String()], nil
+}
 func (f *fakeExposureRepo) ReplaceRegions(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	f.replaceRegionsCalls++
+	if f.regions == nil {
+		f.regions = map[string][]model.ExposureRow{}
+	}
+	f.regions[assetID.String()] = rows
 	return nil
 }
 func (f *fakeExposureRepo) ReplaceSectors(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	if f.sectors == nil {
+		f.sectors = map[string][]model.ExposureRow{}
+	}
+	f.sectors[assetID.String()] = rows
+	return nil
+}
+func (f *fakeExposureRepo) ReplaceCountries(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	if f.countries == nil {
+		f.countries = map[string][]model.ExposureRow{}
+	}
+	f.countries[assetID.String()] = rows
 	return nil
 }
 func (f *fakeExposureRepo) FindRegionsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
@@ -61,6 +86,9 @@ func (f *fakeExposureRepo) FindRegionsByAssets(ctx context.Context, assetIDs []u
 }
 func (f *fakeExposureRepo) FindSectorsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
 	return f.sectors, nil
+}
+func (f *fakeExposureRepo) FindCountriesByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
+	return f.countries, nil
 }
 
 type fakeFXRepo struct {
@@ -90,12 +118,75 @@ func (f *fakeFXRepo) History(ctx context.Context, base, quote string) ([]model.F
 	return f.history[quote], nil
 }
 
+type fakeAssetRepo struct {
+	asset *model.Asset
+	err   error
+}
+
+func (f *fakeAssetRepo) Create(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	return asset, nil
+}
+func (f *fakeAssetRepo) Update(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	return asset, nil
+}
+func (f *fakeAssetRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.asset == nil || f.asset.ID != id {
+		return nil, pgx.ErrNoRows
+	}
+	return f.asset, nil
+}
+func (f *fakeAssetRepo) FindByTicker(ctx context.Context, ticker string) (*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) Search(ctx context.Context, query string) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) List(ctx context.Context) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) ListYahoo(ctx context.Context) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) AllStocks(ctx context.Context) ([]*model.Asset, error) {
+	return nil, nil
+}
+func (f *fakeAssetRepo) MarkPricesFetched(ctx context.Context, ids []uuid.UUID, at time.Time) error {
+	return nil
+}
+func (f *fakeAssetRepo) MarkHistoryBackfilled(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+func (f *fakeAssetRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	return nil
+}
+func (f *fakeAssetRepo) Currencies(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func newTestService(t *testing.T, p *fakePortfolioRepo, e *fakeExposureRepo, f *fakeFXRepo) *Service {
 	t.Helper()
 	repos := &repository.Repository{
+		Asset:     &fakeAssetRepo{},
 		Portfolio: p,
 		Exposure:  e,
 		FX:        f,
+	}
+	return New(repos, nil, nil, nil, time.Minute, cache.New(nil), 0, 0, nil)
+}
+
+func newTestServiceWithAsset(t *testing.T, a *fakeAssetRepo) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:     a,
+		Portfolio: &fakePortfolioRepo{},
+		Exposure:  &fakeExposureRepo{},
+		FX:        &fakeFXRepo{},
 	}
 	return New(repos, nil, nil, nil, time.Minute, cache.New(nil), 0, 0, nil)
 }
@@ -153,8 +244,8 @@ func TestGetPortfolioGeographyAllocation_ETF(t *testing.T) {
 	if !equalDecimal(got.Regions[0].Value, wantVal.Mul(decimal.NewFromInt(60)).Div(decimal.NewFromInt(100))) {
 		t.Fatalf("North America value = %v, want 600", got.Regions[0].Value)
 	}
-	if !equalDecimal(got.Regions[2].Value, wantVal.Mul(decimal.NewFromInt(40)).Div(decimal.NewFromInt(100))) {
-		t.Fatalf("Europe Developed value = %v, want 400", got.Regions[2].Value)
+	if !equalDecimal(got.Regions[3].Value, wantVal.Mul(decimal.NewFromInt(40)).Div(decimal.NewFromInt(100))) {
+		t.Fatalf("Europe Developed value = %v, want 400", got.Regions[3].Value)
 	}
 	sum := decimal.Zero
 	for _, r := range got.Regions {
@@ -580,5 +671,576 @@ func TestGetDashboardAllocation_ExcludesNonEquity(t *testing.T) {
 	}
 	if !equalDecimal(sectorWeightSum, decimal.NewFromInt(100)) {
 		t.Fatalf("sectors weight sum = %v, want 100", sectorWeightSum)
+	}
+}
+
+func TestNormalizeCountries(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []model.ExposureRow
+		want []model.ExposureRow
+	}{
+		{
+			name: "ISO codes and full names normalize to canonical codes",
+			in: []model.ExposureRow{
+				{Name: "United States", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+		},
+		{
+			name: "non-canonical country names are dropped",
+			in: []model.ExposureRow{
+				{Name: "Atlantis", Weight: decimal.NewFromInt(50)},
+				{Name: "IT", Weight: decimal.NewFromInt(50)},
+			},
+			want: []model.ExposureRow{
+				{Name: "IT", Weight: decimal.NewFromInt(50)},
+			},
+		},
+		{
+			name: "empty and non-positive rows are dropped",
+			in: []model.ExposureRow{
+				{Name: "", Weight: decimal.NewFromInt(50)},
+				{Name: "JP", Weight: decimal.NewFromInt(0)},
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeCountries(tc.in)
+			if len(got) != len(tc.want) {
+				t.Fatalf("len = %d, want %d: %+v", len(got), len(tc.want), got)
+			}
+			for i := range got {
+				if got[i].Name != tc.want[i].Name || !got[i].Weight.Equal(tc.want[i].Weight) {
+					t.Fatalf("row[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestIsCanonicalCountry(t *testing.T) {
+	if !isCanonicalCountry("US") {
+		t.Fatal("US should be canonical")
+	}
+	if !isCanonicalCountry("ZA") {
+		t.Fatal("ZA should be canonical")
+	}
+	if isCanonicalCountry("") {
+		t.Fatal("empty should not be canonical")
+	}
+	if isCanonicalCountry("XYZ") {
+		t.Fatal("XYZ should not be canonical")
+	}
+}
+
+func TestDeriveRegions(t *testing.T) {
+	assetID := uuid.New()
+	svc := newTestServiceWithAsset(t, &fakeAssetRepo{asset: &model.Asset{ID: assetID, Type: model.AssetTypeETF}})
+
+	regions, err := svc.DeriveRegions(context.Background(), assetID, []model.ExposureRow{
+		{Name: "US", Weight: decimal.NewFromInt(60)},
+		{Name: "GB", Weight: decimal.NewFromInt(25)},
+		{Name: "JP", Weight: decimal.NewFromInt(15)},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(regions), len(geo.Regions))
+	}
+	for i, name := range geo.Regions {
+		if regions[i].Name != name {
+			t.Fatalf("regions[%d] = %q, want %q (canonical order)", i, regions[i].Name, name)
+		}
+	}
+	want := map[string]string{
+		"North America":  "60",
+		"United Kingdom": "25",
+		"Japan":          "15",
+	}
+	for _, r := range regions {
+		if w, ok := want[r.Name]; ok && !r.Weight.Equal(decimal.RequireFromString(w)) {
+			t.Fatalf("region %q weight = %v, want %s", r.Name, r.Weight, w)
+		}
+	}
+}
+
+func TestDeriveRegions_AssetNotFound(t *testing.T) {
+	svc := newTestServiceWithAsset(t, &fakeAssetRepo{})
+	_, err := svc.DeriveRegions(context.Background(), uuid.New(), nil)
+	if !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("err = %v, want ErrAssetNotFound", err)
+	}
+}
+
+func TestDeriveRegions_EmptyCountries(t *testing.T) {
+	assetID := uuid.New()
+	svc := newTestServiceWithAsset(t, &fakeAssetRepo{asset: &model.Asset{ID: assetID, Type: model.AssetTypeETF}})
+
+	regions, err := svc.DeriveRegions(context.Background(), assetID, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(regions), len(geo.Regions))
+	}
+	for _, r := range regions {
+		if !r.Weight.IsZero() {
+			t.Fatalf("region %q weight = %v, want zero", r.Name, r.Weight)
+		}
+	}
+}
+
+func exposureRowsByName(rows []model.ExposureRow) map[string]decimal.Decimal {
+	byName := map[string]decimal.Decimal{}
+	for _, r := range rows {
+		byName[r.Name] = r.Weight
+	}
+	return byName
+}
+
+func TestSaveExposureDimensions_CountriesDoNotTouchRegions(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		regions: map[string][]model.ExposureRow{
+			key: {{Name: "North America", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "United States", Weight: decimal.NewFromInt(60)},
+			{Name: "JP", Weight: decimal.NewFromInt(35)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.replaceRegionsCalls != 0 {
+		t.Fatalf("ReplaceRegions calls = %d, want 0 (saving countries must not rewrite the regions dimension)", ex.replaceRegionsCalls)
+	}
+	gotRegions := ex.regions[key]
+	if len(gotRegions) != 1 || gotRegions[0].Name != "North America" || !gotRegions[0].Weight.Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("stored regions = %+v, want the pre-existing [North America 100]", gotRegions)
+	}
+	gotCountries := exposureRowsByName(ex.countries[key])
+	if len(gotCountries) != 2 || !gotCountries["US"].Equal(decimal.NewFromInt(60)) || !gotCountries["JP"].Equal(decimal.NewFromInt(35)) {
+		t.Fatalf("stored countries = %+v, want normalized US 60 + JP 35", ex.countries[key])
+	}
+	if _, ok := ex.sectors[key]; ok {
+		t.Fatalf("sectors written for an absent dimension: %+v", ex.sectors[key])
+	}
+}
+
+func TestSaveExposureDimensions_ExplicitRegionsStillSaved(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		regions: map[string][]model.ExposureRow{
+			key: {{Name: "North America", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Regions: []model.ExposureRow{
+			{Name: "North America", Weight: decimal.NewFromInt(60)},
+			{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+			{Name: "Japan", Weight: decimal.NewFromInt(10)},
+		},
+		Countries: []model.ExposureRow{
+			{Name: "US", Weight: decimal.NewFromInt(60)},
+			{Name: "GB", Weight: decimal.NewFromInt(25)},
+			{Name: "JP", Weight: decimal.NewFromInt(10)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.replaceRegionsCalls != 1 {
+		t.Fatalf("ReplaceRegions calls = %d, want 1 (explicit regions must persist)", ex.replaceRegionsCalls)
+	}
+	gotRegions := exposureRowsByName(ex.regions[key])
+	if !gotRegions["North America"].Equal(decimal.NewFromInt(60)) || !gotRegions["United Kingdom"].Equal(decimal.NewFromInt(25)) ||
+		!gotRegions["Japan"].Equal(decimal.NewFromInt(10)) {
+		t.Fatalf("stored regions = %+v, want the explicit 60/25/10", ex.regions[key])
+	}
+	if !gotRegions[geo.OtherRegion].Equal(decimal.NewFromInt(5)) {
+		t.Fatalf("residual %q = %v, want 5 (prepareRegions invariant)", geo.OtherRegion, gotRegions[geo.OtherRegion])
+	}
+	if gotCountries := exposureRowsByName(ex.countries[key]); len(gotCountries) != 3 || !gotCountries["GB"].Equal(decimal.NewFromInt(25)) {
+		t.Fatalf("stored countries = %+v, want US/GB/JP 60/25/10", ex.countries[key])
+	}
+}
+
+func TestSaveExposureDimensions_EmptyPayloadWritesNothing(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		regions:   map[string][]model.ExposureRow{key: {{Name: "Japan", Weight: decimal.NewFromInt(100)}}},
+		sectors:   map[string][]model.ExposureRow{key: {{Name: "Health Care", Weight: decimal.NewFromInt(100)}}},
+		countries: map[string][]model.ExposureRow{key: {{Name: "JP", Weight: decimal.NewFromInt(100)}}},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	if err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.replaceRegionsCalls != 0 {
+		t.Fatalf("ReplaceRegions calls = %d, want 0", ex.replaceRegionsCalls)
+	}
+	if got := exposureRowsByName(ex.regions[key]); !got["Japan"].Equal(decimal.NewFromInt(100)) || len(got) != 1 {
+		t.Fatalf("stored regions = %+v, want the pre-existing [Japan 100]", ex.regions[key])
+	}
+	if got := exposureRowsByName(ex.countries[key]); !got["JP"].Equal(decimal.NewFromInt(100)) || len(got) != 1 {
+		t.Fatalf("stored countries = %+v, want the pre-existing [JP 100]", ex.countries[key])
+	}
+}
+
+func TestMapMorningstarExposure_UsesOfficialRegions(t *testing.T) {
+	raw := &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "United States", Weight: decimal.NewFromInt(60)},
+		},
+		Regions: []model.ExposureRow{
+			{Name: "North America", Weight: decimal.NewFromInt(60)},
+			{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+			{Name: "Japan", Weight: decimal.NewFromInt(15)},
+		},
+		Sectors: []model.ExposureRow{
+			{Name: "Technology", Weight: decimal.NewFromFloat(27.5)},
+		},
+	}
+	mapped := mapMorningstarExposure(raw)
+
+	byName := map[string]decimal.Decimal{}
+	if len(mapped.Regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(mapped.Regions), len(geo.Regions))
+	}
+	for i, name := range geo.Regions {
+		if mapped.Regions[i].Name != name {
+			t.Fatalf("regions[%d] = %q, want %q (canonical order)", i, mapped.Regions[i].Name, name)
+		}
+		byName[name] = mapped.Regions[i].Weight
+	}
+	if !byName["North America"].Equal(decimal.NewFromInt(60)) {
+		t.Fatalf("North America = %v, want 60", byName["North America"])
+	}
+	if !byName["United Kingdom"].Equal(decimal.NewFromInt(25)) {
+		t.Fatalf("United Kingdom = %v, want 25", byName["United Kingdom"])
+	}
+	if !byName["Japan"].Equal(decimal.NewFromInt(15)) {
+		t.Fatalf("Japan = %v, want 15", byName["Japan"])
+	}
+	if !byName["Asia Emerging"].IsZero() {
+		t.Fatalf("Asia Emerging = %v, want zero (zero-filled)", byName["Asia Emerging"])
+	}
+	// Countries are normalized and sectors aggregated as before.
+	if len(mapped.Countries) != 1 || mapped.Countries[0].Name != "US" ||
+		!mapped.Countries[0].Weight.Equal(decimal.NewFromInt(60)) {
+		t.Fatalf("countries = %+v, want [US 60]", mapped.Countries)
+	}
+	if len(mapped.Sectors) != 1 || mapped.Sectors[0].Name != "Information Technology" ||
+		!mapped.Sectors[0].Weight.Equal(decimal.NewFromFloat(27.5)) {
+		t.Fatalf("sectors = %+v, want [Information Technology 27.5]", mapped.Sectors)
+	}
+}
+
+func TestMapMorningstarExposure_FallsBackToDerivation(t *testing.T) {
+	raw := &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "US", Weight: decimal.NewFromInt(60)},
+			{Name: "JP", Weight: decimal.NewFromInt(40)},
+		},
+	}
+	mapped := mapMorningstarExposure(raw)
+
+	byName := map[string]decimal.Decimal{}
+	if len(mapped.Regions) != len(geo.Regions) {
+		t.Fatalf("regions len = %d, want %d", len(mapped.Regions), len(geo.Regions))
+	}
+	for i, name := range geo.Regions {
+		if mapped.Regions[i].Name != name {
+			t.Fatalf("regions[%d] = %q, want %q (canonical order)", i, mapped.Regions[i].Name, name)
+		}
+		byName[name] = mapped.Regions[i].Weight
+	}
+	if !byName["North America"].Equal(decimal.NewFromInt(60)) {
+		t.Fatalf("North America = %v, want 60", byName["North America"])
+	}
+	if !byName["Japan"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("Japan = %v, want 40", byName["Japan"])
+	}
+	if !byName["United Kingdom"].IsZero() {
+		t.Fatalf("United Kingdom = %v, want zero", byName["United Kingdom"])
+	}
+}
+
+func TestValidateExposureWeights(t *testing.T) {
+	cases := []struct {
+		name    string
+		sum     string
+		rule    weightSumRule
+		wantErr bool
+	}{
+		{"exact: 100 is valid", "100", weightSumExact100, false},
+		{"exact: 100.4 is within tolerance", "100.4", weightSumExact100, false},
+		{"exact: 99.5 is within tolerance", "99.5", weightSumExact100, false},
+		{"exact: 100.6 is rejected", "100.6", weightSumExact100, true},
+		{"exact: 99.4 is rejected", "99.4", weightSumExact100, true},
+		{"exact: 103 is rejected", "103", weightSumExact100, true},
+		{"max: 100 is valid", "100", weightSumMax100, false},
+		{"max: 100.5 is the accepted boundary", "100.5", weightSumMax100, false},
+		{"max: 100.6 is rejected", "100.6", weightSumMax100, true},
+		{"max: 103 is rejected", "103", weightSumMax100, true},
+		{"max: a partial 95 is valid", "95", weightSumMax100, false},
+		{"max: zero rows are valid", "0", weightSumMax100, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []model.ExposureRow{{Name: "X", Weight: decimal.RequireFromString(tc.sum)}}
+			err := validateExposureWeights(rows, tc.rule)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidWeights) {
+					t.Fatalf("err = %v, want ErrInvalidWeights", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestPrepareRegions(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      []model.ExposureRow
+		wantErr bool
+		want    map[string]string
+		wantSum string
+	}{
+		{
+			name: "sum of 95 injects the residual into Other so the stored total is 100",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(60)},
+				{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+				{Name: "Japan", Weight: decimal.NewFromInt(10)},
+			},
+			want: map[string]string{
+				"North America":          "60",
+				"United Kingdom":         "25",
+				"Japan":                  "10",
+				"Other / Not Classified": "5",
+			},
+			wantSum: "100",
+		},
+		{
+			name: "sum of 103 is rejected",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(103)},
+			},
+			wantErr: true,
+		},
+		{
+			name: "exact 100 without an Other row needs no injection",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(95)},
+				{Name: "Japan", Weight: decimal.NewFromInt(5)},
+			},
+			want: map[string]string{
+				"North America": "95",
+				"Japan":         "5",
+			},
+			wantSum: "100",
+		},
+		{
+			name: "explicit zero Other row is dropped and not re-added",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(100)},
+				{Name: "Other / Not Classified", Weight: decimal.Zero},
+			},
+			want: map[string]string{
+				"North America": "100",
+			},
+			wantSum: "100",
+		},
+		{
+			name: "explicit positive Other row is kept as sent",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromInt(90)},
+				{Name: geo.OtherRegion, Weight: decimal.NewFromInt(8)},
+			},
+			want: map[string]string{
+				"North America":          "90",
+				"Other / Not Classified": "8",
+			},
+			wantSum: "98",
+		},
+		{
+			name: "residual within the 0.5 rounding tolerance is not injected",
+			in: []model.ExposureRow{
+				{Name: "North America", Weight: decimal.NewFromFloat(99.7)},
+			},
+			want: map[string]string{
+				"North America": "99.7",
+			},
+			wantSum: "99.7",
+		},
+		{
+			name:    "empty dimension closes entirely into Other",
+			in:      []model.ExposureRow{},
+			want:    map[string]string{"Other / Not Classified": "100"},
+			wantSum: "100",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareRegions(tc.in)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidWeights) {
+					t.Fatalf("err = %v, want ErrInvalidWeights", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			byName := map[string]decimal.Decimal{}
+			for _, r := range got {
+				byName[r.Name] = r.Weight
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("rows = %+v, want %d rows", got, len(tc.want))
+			}
+			for name, w := range tc.want {
+				if !byName[name].Equal(decimal.RequireFromString(w)) {
+					t.Fatalf("region %q = %v, want %s", name, byName[name], w)
+				}
+			}
+			if tc.wantSum != "" && !exposureWeightsSum(got).Equal(decimal.RequireFromString(tc.wantSum)) {
+				t.Fatalf("stored sum = %v, want %s", exposureWeightsSum(got), tc.wantSum)
+			}
+		})
+	}
+}
+
+func TestPrepareCountries(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      []model.ExposureRow
+		wantErr bool
+		want    []model.ExposureRow
+	}{
+		{
+			name: "sum of 120 is rejected",
+			in: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(70)},
+				{Name: "JP", Weight: decimal.NewFromInt(50)},
+			},
+			wantErr: true,
+		},
+		{
+			name: "sum of 95 is accepted with no lower bound",
+			in: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "GB", Weight: decimal.NewFromInt(25)},
+				{Name: "JP", Weight: decimal.NewFromInt(10)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "GB", Weight: decimal.NewFromInt(25)},
+				{Name: "JP", Weight: decimal.NewFromInt(10)},
+			},
+		},
+		{
+			name: "non-canonical rows are dropped before the upper-bound check",
+			in: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "Atlantis", Weight: decimal.NewFromInt(60)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+			},
+		},
+		{
+			name: "names normalize to canonical ISO codes",
+			in: []model.ExposureRow{
+				{Name: "United States", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(60)},
+				{Name: "DE", Weight: decimal.NewFromInt(40)},
+			},
+		},
+		{
+			name: "empty and non-positive rows are dropped",
+			in: []model.ExposureRow{
+				{Name: "", Weight: decimal.NewFromInt(50)},
+				{Name: "JP", Weight: decimal.Zero},
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+			want: []model.ExposureRow{
+				{Name: "US", Weight: decimal.NewFromInt(100)},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareCountries(tc.in)
+			if tc.wantErr {
+				if !errors.Is(err, ErrInvalidWeights) {
+					t.Fatalf("err = %v, want ErrInvalidWeights", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("rows = %+v, want %+v", got, tc.want)
+			}
+			for i := range got {
+				if got[i].Name != tc.want[i].Name || !got[i].Weight.Equal(tc.want[i].Weight) {
+					t.Fatalf("row[%d] = %+v, want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestPrepareSectorsKeepsExactRule(t *testing.T) {
+	sectors := normalizeExposureRows([]model.ExposureRow{
+		{Name: "Technology", Weight: decimal.NewFromInt(103)},
+	})
+	if err := validateExposureWeights(sectors, weightSumExact100); !errors.Is(err, ErrInvalidWeights) {
+		t.Fatalf("103%% sectors err = %v, want ErrInvalidWeights", err)
+	}
+	sectors = normalizeExposureRows([]model.ExposureRow{
+		{Name: "Technology", Weight: decimal.NewFromInt(100)},
+	})
+	if err := validateExposureWeights(sectors, weightSumExact100); err != nil {
+		t.Fatalf("100%% sectors err = %v, want nil", err)
+	}
+	sectors = normalizeExposureRows([]model.ExposureRow{
+		{Name: "Technology", Weight: decimal.NewFromInt(95)},
+	})
+	if err := validateExposureWeights(sectors, weightSumExact100); !errors.Is(err, ErrInvalidWeights) {
+		t.Fatalf("95%% sectors err = %v, want ErrInvalidWeights (sectors keep the exact-100 rule)", err)
 	}
 }

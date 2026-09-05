@@ -131,6 +131,54 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
 
+### 11b. NEW — fetch ETF exposure from Morningstar (countries + sectors + official
+### regions). Uses the custom resolver (headless Chromium bootstrap) in the
+### python-service; falls back to 502 if Morningstar is unreachable in the
+### sandbox (Yahoo disabled, external calls may be blocked).
+# @name fetchMorningstarExposure
+POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure
+Authorization: Bearer {{token}}
+
+### 11b2. NEW — derive regions from countries without persisting (tassonomia
+### Morningstar: GB→United Kingdom, JP→Japan, TW/KR→Asia Developed, residuo→Other).
+# @name deriveRegions
+POST {{baseUrl}}/assets/{{asset2Id}}/exposure/derive
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "countries": [
+    { "name": "US", "weight": 40 },
+    { "name": "GB", "weight": 25 },
+    { "name": "JP", "weight": 12 },
+    { "name": "TW", "weight": 10 },
+    { "name": "KR", "weight": 5 }
+  ]
+}
+
+### 11c. Read the persisted exposure: should now include `countries` (canonical,
+### zero-filled across all ~89 canonical ISO codes) alongside regions + sectors.
+# @name getExposure3
+GET {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+
+### 11d. Manual edit of country weights: a small subset (must not exceed ~100; a
+### sum below 100 is valid). Saving countries does NOT touch the regions
+### dimension: stored regions come back unchanged (recompute them explicitly
+### with "Calcola da paesi" / POST /assets/{id}/exposure/derive).
+# @name putCountries
+PUT {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "countries": [
+    { "name": "US", "weight": 70.0 },
+    { "name": "DE", "weight": 15.0 },
+    { "name": "FR", "weight": 15.0 }
+  ]
+}
+
 ### 12. Create a portfolio (EUR) — id is captured so the allocation and transaction
 ### requests below need no manual UUID editing, on a fresh stack or on reruns.
 # @name createPortfolio
@@ -182,10 +230,10 @@ Content-Type: application/json
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/class
 Authorization: Bearer {{token}}
 
-### 16. NEW — Portfolio geographic allocation: 8 canonical regions zero-filled, in
+### 16. NEW — Portfolio geographic allocation: 10 canonical regions zero-filled, in
 ### canonical order; "Other" only when a value could not be assigned. Weights sum
 ### to ~100 (FX-ok holdings are the denominator, matching /allocation/class).
-### Without the price seed the weights are 0, but the 8-region structure is visible.
+### Without the price seed the weights are 0, but the 10-region structure is visible.
 # @name geographyAllocation
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/geography
 Authorization: Bearer {{token}}

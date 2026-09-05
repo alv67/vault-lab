@@ -269,7 +269,7 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 | `assetApi` | list, search, lookup, meta | `GET /assets`, `GET /assets/search?q=`, `GET /assets/lookup?q=`, `GET /assets/meta?ticker=` |
 | | get, create, update, remove | `GET /assets/{id}`, `POST /assets`, `PATCH /assets/{id}`, `DELETE /assets/{id}` |
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
-| | exposure, saveExposure, fetchExposure, fetchETFExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure` |
+| | exposure, saveExposure, fetchExposure, fetchETFExposure, fetchMorningstarExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure`, `POST /assets/{id}/fetch-morningstar-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
 | `transactionApi` | list, create | `GET/POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
@@ -378,7 +378,7 @@ cambiamenti di `$props`.
 | `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/YTD/MAX. Carica sempre tutto lo storico: i selettori fanno uno **zoom in-place** (coppia `start`/`end` percentuali, `end`=100) senza ricaricare dati; uno zoom/spostamento manuale **deseleziona** il pulsante attivo e preserva la vista. Gli **split** sono disegnati come `markLine` tratteggiata viola etichettata con il rapporto (`Split 4:1`), come in `PositionChart`. Stato vuoto → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la **storico performance** del dettaglio portafoglio: un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
 | `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio), asse x a categorie di date | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`) |
-| `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate | in **tre punti**: "Distribuzione geografica" e "Distribuzione settoriale" del dettaglio asset, e il donut **"Allocazione per classi"** del portafoglio (B.12). Accetta `ExposureRow[]` (`{name, weight}`) |
+| `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate; `complete={false}` la rende **aperta** quando le righe sommano < 100 (una fetta residua trasparente tiene veritieri gli angoli — niente fetta grigia "Other") | pagina dettaglio asset (donut regioni con `complete={false}` e donut settori), le due modali esposizione (in modalità `mute`: regioni in `ExposureGeoModal`, settori in `ExposureSectorModal`) e il donut **"Allocazione per classi"** del portafoglio (B.12). I paesi (pagina e modale geografica) sono liste a barre, mai una pie. Accetta `ExposureRow[]` (`{name, weight}`) |
 | `GeographyChart.svelte` (`lib/components/domain/`) | **ciambella** (stessi raggio/palette di `ExposurePie`) + tabella delle righe complete accanto; il tooltip mostra il valore nella valuta del portafoglio e il peso; la fetta `Other` è in grigio spento | la card **geografia** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `RegionAllocation[]` (`{region, value, weight}`); le righe a peso zero restano in tabella ma non vengono disegnate. Le prop opzionali `covered`/`excluded` (stringhe decimali) alimentano una nota di copertura ("Copre il X% del portafoglio…") mostrata quando il valore escluso è > 0 |
 | `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `SectorAllocation[]` (`{sector, value, weight}`), più la stessa nota di copertura opzionale `covered`/`excluded` di `GeographyChart` |
 
@@ -388,12 +388,13 @@ date con `new Date(...).toLocaleDateString()`.
 ### Dove vengono usati
 
 - **Dettaglio asset (B.10)** — `PriceChart` per lo storico prezzi (con
-  zoom in-place e marcatori {@code split}); `ExposurePie` due volte per la
-  distribuzione geo/settoriale. Dall'EPIC F.10 (#64) la **modifica**
-  dell'esposizione avviene in una **modale** (`ExposureModal`): sulla pagina
-  restano solo i due pie chart; il pulsante "Modifica" (icona matita, opz.
-  → il controllo di editing) apre la modale con le griglie dei pesi, la
-  validazione somma=100 e i salvataggi indipendenti per regione/settore.
+  zoom in-place e marcatori {@code split}); `ExposurePie` per la
+  distribuzione geo/settoriale. La **modifica**
+  dell'esposizione avviene in **due modali** (`ExposureGeoModal` per
+  paesi + regioni, `ExposureSectorModal` per i settori): sulla pagina
+  restano solo i grafici; il pulsante "Modifica" di ciascuna card (icona
+  matita) apre la propria modale con le griglie dei pesi, la
+  validazione somma=100 (regioni/settori) e i salvataggi indipendenti.
 - **Dettaglio portafoglio (B.12)** — `ExposurePie` per il donut "Allocazione
   per classi". Le righe sono gli `AssetClassSlice[]` restituiti da
   `portfolioApi.classAllocation`, mappati con `ASSET_CLASS_LABELS`.
@@ -614,37 +615,83 @@ freschi.
   (1G/1S/1M/1Y/YTD) da `AssetQuote`, colorate verde/grigio/rosso; un 404 in
   caricamento reindirizza a `/assets`.
 - **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/YTD/MAX (zoom in-place).
-- **Distribuzione geografica** e **Distribuzione settoriale**: sulla pagina
-  resta solo l'header "Distribuzione" con il pulsante "Modifica" (icona
-  matita) e i due donut `ExposurePie`; tutto l'editing avviene in una modale
-  `ExposureModal`. La modale è **divisa in due parti affiancate**: a sinistra
-  la geografica, a destra la settoriale, ognuna con le tabelle dei pesi
-  modificabili, la somma dal vivo validata a 100 ± 0,5 (altrimenti il
-  salvataggio è disabilitato) e il proprio donut. I pulsanti di **prefill
-  vivono solo nella modale**, accanto al titolo di ciascuna parte, e popolano
-  **solo la rispettiva dimensione**:
-  - geografica: un solo pulsante **"Prefill JustETF"** (`fetchETFExposure`,
-    applica solo `regions`);
-  - settoriale: **"Prefill JustETF"** (`fetchETFExposure`, applica solo
-    `sectors`) e **"Prefill Yahoo"** (`fetchExposure`, i `topHoldings` Yahoo,
-    applica solo `sectors`).
-  Nella modale i pulsanti di prefill sono **icone-favicon boxate** (JustETF e
-  Yahoo, con bordo) con tooltip. La **palette dei colori è condivisa**
+- **Distribuzione geografica** e **Distribuzione settoriale** sono **due card
+  separate** (split dopo B.13/B.14, con l'arrivo dei paesi). L'editing avviene
+  **solo nelle modali**; la pagina mantiene la presentazione:
+  - La **card geografica** raggruppa due box affiancati: **Paesi** — una
+    **lista a barre orizzontali dei primi 15 paesi** (peso > 0, ordinati desc,
+    barra scalata sul peso maggiore, nomi amichevoli da `lib/countryNames.ts`)
+    — e **Regioni** — donut `ExposurePie` **aperto** (`complete={false}`: con
+    totale < 100 resta un vero varco, la fetta grigia "Other / Not Classified"
+    è filtrata via) con la sua legenda sotto. Il suo
+    "Modifica" apre **`ExposureGeoModal`**.
+  - La **card settoriale** mostra il donut `ExposurePie` dei settori con la
+    legenda sotto; il suo "Modifica" apre **`ExposureSectorModal`**.
+  - **`ExposureGeoModal`** (redesign paesi-first) ha **due colonne**
+    (`lg:grid-cols-2`): **Paesi a sinistra**, **Regioni a destra** (impilati
+    paesi-primo su mobile).
+    - **Box Paesi**: parte come **lista vuota** (non la tabella zero-filled da
+      ~89 righe). Ogni riga è `codice ISO · nome · barra orizzontale · input
+      peso · elimina`, ordinata per peso **desc** (riordinata su add/remove/blur,
+      mai mentre si digita — la barra si anima live così le righe non saltano).
+      Il colore della barra segue la palette della card per rango. Un select
+      nativo + "Aggiungi" inserisce un codice canonico non ancora presente (il
+      focus passa al suo input peso). La lista è **flessibile**
+      (`min-h-0 flex-1 overflow-y-auto`): cresce fino a riempire il box così il
+      footer "Totale" e il pulsante Salva restano in fondo, allineati al box
+      regioni, e con molti paesi scorre dentro la sua area invece di allargare
+      la modale. Il footer mostra "Totale X%" + barra di
+      progresso; **il salvataggio è disabilitato se la somma supera 100** (sotto
+      100 è ammesso). Una nota segnala il residuo non attribuito e ricorda che
+      le regioni **non** vengono ricalcolate al salvataggio: si aggiornano solo
+      con "Calcola da paesi" nel box regioni. **Nessun donut** in questo box.
+    - **Box Regioni**: **tabella fissa delle 10 regioni canoniche** (niente
+      add/remove, riga "Other / Not Classified" esclusa — filtrata alla pagina,
+      non entra mai in `regionsEdit`), ogni riga con quadratino colore, nome e
+      input peso, accanto a un **donut muto APERTO** (`mute complete={false}`:
+      il totale < 100 lascia un varco reale invece della fetta grigia Other).
+      Footer come i paesi; **salvataggio disabilitato se la somma supera 100**
+      (sotto 100 è valido — sostituisce la vecchia regola `100 ± 0,5`).
+    - **Badge di provenienza**: l'header di ogni box mostra una pillola
+      `ProvenanceBadge` (puntino colorato + etichetta) con la fonte dei dati —
+      `manuale`, `da JustETF`, `da Morningstar` / `da Morningstar (regioni
+      ufficiali)`, `calcolato dai paesi`, `da JustETF via paesi`. Prefill/derive
+      impostano il badge; **ogni modifica manuale lo riporta a "manuale"**. Lo
+      stato è session-scoped nella pagina (nulla è persistito), quindi il badge
+      è nascosto al primo reload.
+  - **`ExposureSectorModal`** ha la tabella dei settori, validata a 100 ± 0,5
+    (invariata — i settori richiedono ancora il totale esatto).
+  - I pulsanti di **prefill vivono solo nelle modali**, accanto al titolo di
+    ciascuna parte (icone-favicon boxate con tooltip), posizionati dove nascono
+    i dati:
+    - **paesi** (`ExposureGeoModal`): **"Prefill JustETF"** (`fetchETFExposure`,
+      applica solo `countries` — JustETF fornisce la lista paesi) e
+      **"Prefill Morningstar"** (`fetchMorningstarExposure`, popola `countries`
+      e, nell'implementazione attuale, aggiorna anche `sectors`);
+    - **regioni** (`ExposureGeoModal`): **"Calcola da paesi"**
+      (`assetApi.deriveRegions` → `POST /assets/{id}/exposure/derive`, calcola
+      le regioni dai paesi correnti senza salvare) e **"Prefill Morningstar"**
+      (`fetchMorningstarExposure`, applica solo le **regioni ufficiali
+      Morningstar** — non più derivate);
+    - settori (`ExposureSectorModal`): **"Prefill JustETF"**
+      (`fetchETFExposure`, applica solo `sectors`) e **"Prefill Yahoo"**
+      (`fetchExposure`, i `topHoldings` Yahoo, applica solo `sectors`).
+  La **palette dei colori è condivisa**
   (`$lib/chartPalette.ts`): i quadratini colorati prima di ogni nome usano
-  `colorForRow`, che restituisce esattamente il colore della fetta nel chart
-  (i colori ECharts sono assegnati per indice sulle righe con peso > 0), quindi
-  quadratino e grafico combaciano sempre. I grafici nella modale sono **muti**
-  (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip sulle
-  fette), per riepilogare le proporzioni senza testo sovrapposto.
-  La card "Distribuzione" contiene **due box affiancati** (grigi, con bordo):
-  a sinistra il grafico geografico con la **sua legenda sotto**, a destra il
-  grafico settoriale con la **sua legenda sotto**. La paletta della legenda è
-  allineata ai pie chart, così che tutti i valori (es. gli 11 settori GICS)
-  siano sempre visibili anche quando il pie chart non può mostrare la legenda
-  inline.
+  `colorForRow`, che restituisce esattamente il colore della fetta nel chart,
+  quindi quadratino e grafico combaciano sempre. I grafici nelle modali sono
+  **muti** (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip
+  sulle fette).
   Il salvataggio invia **solo la dimensione modificata**
-  (`PUT /assets/{id}/exposure` con `{regions}` o `{sectors}` — omettere una
-  chiave lascia l'altra intatta), poi ricarica la risposta canonica. La
+  (`PUT /assets/{id}/exposure` con `{countries}` o `{regions}` — omettere una
+  chiave lascia l'altra intatta), poi ricarica la risposta canonica. Salvare i
+  paesi **non ricalcola più le regioni lato server**: le regioni memorizzate
+  tornano invariate e il badge di provenienza delle regioni non viene
+  toccato — le regioni si ricalcolano solo cliccando **"Calcola da paesi"**
+  nel box regioni. La pagina
+  scarta la riga "Other / Not Classified" dalla risposta regioni prima di
+  alimentarla alla UI; il server la riaggiunge internamente così le regioni
+  persistite sommano ancora a 100 per l'aggregazione del portafoglio. La
   sezione è renderizzata solo quando l'asset è azionabile per l'universo
   equity (`exposureApplicable`: stock, oppure etf/mutual_fund con
   `asset_class` `equity`/`real_estate`); altrimenti compare un banner che
@@ -652,9 +699,17 @@ freschi.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, i pesi settoriali `topHoldings` di
   Yahoo) precompila la tabella dei settori.
+- **Prefill da Morningstar (B.14)** — `assetApi.fetchMorningstarExposure(id)`
+  (`POST /assets/{id}/fetch-morningstar-exposure`): recupera l'esposizione
+  paesi e settori da Morningstar (tramite il python-service, resolver custom con
+  bootstrap Chromium headless) e
+  popola sia la tabella paesi sia quella settori; le regioni vengono ricalcolate
+  lato server. Visibile solo per asset di tipo ETF (stessa regola di "Carica da
+  JustETF").
 - **Carica da JustETF** — `assetApi.fetchETFExposure(id)`
   (`POST /assets/{id}/fetch-etf-exposure`): recupera e salva dal microservizio
-  JustETF sia la distribuzione geografica (paesi → macro-regioni canoniche) sia
+  JustETF sia la distribuzione geografica (paesi → macro-regioni canoniche, e
+  da B.13 i paesi raw) sia
   i settori GICS; visibile solo per asset di tipo ETF
   (`asset.type !== 'etf'` ⇒ pulsante disabilitato). Sincronizza inoltre l'ISIN
   risolto dal backend nel campo ISIN del form.
@@ -691,8 +746,8 @@ pulsante "Refresh Now".
   settoriale sono in questa release:
   - `portfolioApi` espone `geographyAllocation(id)` /
     `sectorAllocation(id)` (`GET /portfolios/{id}/allocation/geography` e
-    `/allocation/sector`: somme pesate, zero-filled, sulle 8 macro-regioni e
-    sugli 11 settori GICS, entrambe + `Other`) e `dashboardAllocation()`
+    `/allocation/sector`: somme pesate, zero-filled, sulle 10 macro-regioni
+    (allineate a Morningstar da B.14) e sugli 11 settori GICS, entrambe + `Other`) e `dashboardAllocation()`
     (`GET /dashboard/allocation`, le stesse righe aggregate su tutti i
     portafogli in USD). Le interfacce di risposta stanno accanto a
     `PortfolioClassAllocation` in `api.ts` (`RegionAllocation`,
@@ -708,6 +763,28 @@ pulsante "Refresh Now".
     "Allocazione per classi" (`md:flex-row`, una card ciascuno) e la dashboard
     aggiunge una card "Allocazione complessiva" (griglia `md:grid-cols-2`)
     alimentata da `GET /dashboard/allocation`;
+- **B.13/B.14 esposizione paesi + Morningstar (issues #58/#59)** — il tipo
+  `AssetExposure` ora ha **tre dimensioni**: `countries`, `regions` e
+  `sectors`. La pagina asset detail è stata riorganizzata: l'unica card
+  "Distribuzione" è diventata **due card** — **Distribuzione geografica** (top
+  15 paesi a barre + pie regioni) e **Distribuzione settoriale** (pie settori)
+  — e la `ExposureModal` è stata divisa in **`ExposureGeoModal`** (regioni +
+  paesi) e **`ExposureSectorModal`** (settori). Nella modale geografica
+  l'utente può aggiungere/rimuovere paesi dalla
+  lista ISO canonica (`lib/countryNames.ts` fornisce i nomi paese amichevoli)
+  e modificarne i pesi; il salvataggio invia solo la dimensione modificata.
+  I pulsanti di prefill stanno per sezione: paesi → **JustETF** (paesi) e
+  **Morningstar** (paesi [+ settori]); regioni → **"Calcola da paesi"**
+  (`POST /assets/{id}/exposure/derive`, deriva le regioni dai paesi correnti
+  senza salvare) e **"Prefill Morningstar"** (regioni ufficiali Morningstar).
+  Le regioni canoniche sono state allineate alla tassonomia Morningstar
+  (UK / Japan / Australasia separate; TW/KR → Asia Developed). Un successivo
+  redesign paesi-first della modale geografica l'ha resa a due colonne (Paesi a
+  sinistra, Regioni a destra) con lista paesi a partenza vuota (righe a barre,
+  add/remove, niente donut), tabella fissa delle 10 regioni con "Other / Not
+  Classified" rimossa e donut **aperto** (`complete={false}`) sotto il 100%,
+  validazione di salvataggio ≤100 e **badge di provenienza** (manuale / da
+  JustETF / da Morningstar / calcolato dai paesi).
 - **Universo equity-only (follow-up B.8)** — le allocazioni geo/settoriali
   coprono solo le holding azionarie (azioni sempre; ETF/fondi solo quando
   `asset_class` è `equity` o `real_estate`). Bond, crypto, commodity e fondi

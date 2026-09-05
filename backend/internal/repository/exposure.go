@@ -12,10 +12,13 @@ import (
 type ExposureRepository interface {
 	FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error)
 	FindSectors(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error)
+	FindCountries(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error)
 	ReplaceRegions(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error
 	ReplaceSectors(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error
+	ReplaceCountries(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error
 	FindRegionsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error)
 	FindSectorsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error)
+	FindCountriesByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error)
 }
 
 type exposureRepo struct {
@@ -25,6 +28,27 @@ type exposureRepo struct {
 func (r *exposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT region, weight FROM asset_region_weights WHERE asset_id = $1 ORDER BY region`,
+		assetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []model.ExposureRow
+	for rows.Next() {
+		var row model.ExposureRow
+		if err := rows.Scan(&row.Name, &row.Weight); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *exposureRepo) FindCountries(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT country, weight FROM asset_country_weights WHERE asset_id = $1 ORDER BY country`,
 		assetID,
 	)
 	if err != nil {
@@ -72,6 +96,10 @@ func (r *exposureRepo) FindSectorsByAssets(ctx context.Context, assetIDs []uuid.
 	return r.findByAssets(ctx, assetIDs, "asset_sector_weights", "sector")
 }
 
+func (r *exposureRepo) FindCountriesByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
+	return r.findByAssets(ctx, assetIDs, "asset_country_weights", "country")
+}
+
 // findByAssets fetches the stored exposure rows for a set of assets in a single
 // batch query, keyed by asset id. Rows with an empty name or a non-positive
 // weight are skipped, mirroring replace's semantics. Table and column are
@@ -109,6 +137,10 @@ func (r *exposureRepo) ReplaceRegions(ctx context.Context, assetID uuid.UUID, ro
 
 func (r *exposureRepo) ReplaceSectors(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
 	return r.replace(ctx, assetID, rows, "asset_sector_weights", "sector")
+}
+
+func (r *exposureRepo) ReplaceCountries(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	return r.replace(ctx, assetID, rows, "asset_country_weights", "country")
 }
 
 // replace deletes the stored rows for an asset and inserts the given ones,

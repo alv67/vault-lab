@@ -104,11 +104,13 @@ type ExposureRow struct {
 	Weight decimal.Decimal `json:"weight"`
 }
 
-// AssetExposure contiene la distribuzione geografica e settoriale di un asset.
+// AssetExposure contiene la distribuzione per paese, macro-regione e settore di
+// un asset.
 type AssetExposure struct {
-	ISIN    string        `json:"isin,omitempty"`
-	Regions []ExposureRow `json:"regions"`
-	Sectors []ExposureRow `json:"sectors"`
+	ISIN      string        `json:"isin,omitempty"`
+	Countries []ExposureRow `json:"countries"`
+	Regions   []ExposureRow `json:"regions"`
+	Sectors   []ExposureRow `json:"sectors"`
 }
 
 type Currency struct {

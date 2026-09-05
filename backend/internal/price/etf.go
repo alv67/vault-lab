@@ -23,6 +23,7 @@ import (
 // and can look up an ETF ISIN from a ticker through the python-service.
 type ETFFetcher interface {
 	FetchExposure(ctx context.Context, isin string) (*model.AssetExposure, error)
+	FetchMorningstarExposure(ctx context.Context, isin string) (*model.AssetExposure, error)
 	SearchTicker(ctx context.Context, query string) ([]EtfSearchResult, error)
 }
 
@@ -51,6 +52,7 @@ type etfExposureRow struct {
 
 type etfExposureResponse struct {
 	Countries []etfExposureRow `json:"countries"`
+	Regions   []etfExposureRow `json:"regions"`
 	Sectors   []etfExposureRow `json:"sectors"`
 }
 
@@ -71,7 +73,17 @@ func NewJustETFFetcher(baseURL string) *JustETFFetcher {
 // up to etfMaxRetries times with a small backoff.
 func (f *JustETFFetcher) FetchExposure(ctx context.Context, isin string) (*model.AssetExposure, error) {
 	url := fmt.Sprintf("%s/api/v1/etf/%s/exposure", f.baseURL, isin)
+	return f.fetchPath(ctx, url, isin)
+}
 
+// FetchMorningstarExposure calls the python-service Morningstar exposure
+// endpoint for an ISIN, using the same retry pattern as FetchExposure.
+func (f *JustETFFetcher) FetchMorningstarExposure(ctx context.Context, isin string) (*model.AssetExposure, error) {
+	url := fmt.Sprintf("%s/api/v1/etf/%s/morningstar-exposure", f.baseURL, isin)
+	return f.fetchPath(ctx, url, isin)
+}
+
+func (f *JustETFFetcher) fetchPath(ctx context.Context, url, isin string) (*model.AssetExposure, error) {
 	var err error
 	for attempt := 0; attempt <= etfMaxRetries; attempt++ {
 		if attempt > 0 {
@@ -120,8 +132,9 @@ func (f *JustETFFetcher) fetchOnce(ctx context.Context, url string) (*model.Asse
 	}
 
 	return &model.AssetExposure{
-		Regions: exposureRows(result.Countries),
-		Sectors: exposureRows(result.Sectors),
+		Countries: exposureRows(result.Countries),
+		Regions:   exposureRows(result.Regions),
+		Sectors:   exposureRows(result.Sectors),
 	}, nil
 }
 
@@ -260,7 +273,10 @@ func exposureRows(rows []etfExposureRow) []model.ExposureRow {
 
 // AggregateRegions maps raw country names to canonical macro-regions, summing
 // the weights of countries in the same region. Country names that resolve to no
-// ISO code land in the geo package's fallback region.
+// ISO code land in the geo package's fallback region. When the aggregated
+// weights do not cover 100% (some providers expose only the countries above a
+// threshold, or drop non-canonical ones), the residual is added to the
+// "Other / Not Classified" region so the region dimension always sums to 100.
 func AggregateRegions(rows []model.ExposureRow) []model.ExposureRow {
 	weights := map[string]decimal.Decimal{}
 	for _, row := range rows {
@@ -272,6 +288,18 @@ func AggregateRegions(rows []model.ExposureRow) []model.ExposureRow {
 			region = row.Name
 		}
 		weights[region] = weights[region].Add(row.Weight)
+	}
+	total := decimal.Zero
+	for _, w := range weights {
+		total = total.Add(w)
+	}
+	// If the mapped regions leave more than a rounding gap (0.5%), the residual
+	// belongs to the "Other / Not Classified" bucket.
+	if total.Sub(decimal.NewFromInt(100)).Abs().GreaterThan(decimal.NewFromFloat(0.5)) {
+		residual := decimal.NewFromInt(100).Sub(total)
+		if residual.IsPositive() {
+			weights[geo.OtherRegion] = weights[geo.OtherRegion].Add(residual)
+		}
 	}
 	return sortedExposureRows(weights)
 }

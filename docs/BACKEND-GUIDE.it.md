@@ -199,7 +199,7 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000015`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000016`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
@@ -213,6 +213,7 @@ costruiscono lo schema. Le tabelle principali:
 | `fx_rates` | i tassi di cambio | quanto vale 1 dollaro in ogni altra valuta |
 | `splits` | gli split azionari | es. un titolo da 1 azione diventa 4 azioni |
 | `asset_region_weights` | l'esposizione geografica | per ogni titolo, il peso di ogni macro-regione |
+| `asset_country_weights` | l'esposizione per-paese | per ogni titolo, il peso di ogni paese ISO-3166 (da B.13) |
 | `asset_sector_weights` | l'esposizione settoriale | per ogni titolo, il peso di ogni settore GICS |
 | `supported_currencies` | la lista delle valute | quali valute si possono usare (capitolo 11) |
 | `lookup_cache` | la cache del cerca-titolo | risultati già scaricati da Yahoo per la ricerca automatica |
@@ -504,7 +505,42 @@ sessione a vita breve, vedi `meta.go`):
   package Go `geo` mappa ogni paese a una macro-regione e normalizza i settori
   al set GICS. Se l'asset non ha ISIN, questo viene **risolto automaticamente
   dal ticker** (suffisso `.MI/.DE/.L...` rimosso, risultati ordinati per
-  similarità di nome con l'asset) e persistito sull'asset.
+  similarità di nome con l'asset) e persistito sull'asset. Da B.13 i paesi raw
+  vengono **conservati**: il backend li salva (normalizzati a codici
+  ISO-3166 alpha-2) nella tabella `asset_country_weights` e la risposta di
+  esposizione ha tre dimensioni — `countries`, `regions` e `sectors`.
+- **Esposizione ETF via Morningstar (`FetchMorningstarExposure`)**: da B.14 è
+  disponibile una seconda fonte: `POST /assets/{id}/fetch-morningstar-exposure`
+  (solo ETF; se manca l'ISIN viene auto-risolto via Morningstar sul mercato del
+  ticker). L'endpoint del
+  python-service `GET /api/v1/etf/{isin}/morningstar-exposure` usa un
+  **resolver custom** (modulo `app/morningstar.py`, senza mstarpy): il dominio
+  `global.morningstar.com` delle SAL API informali usate da mstarpy è bloccato
+  (403), quindi il resolver esegue un **bootstrap Chromium headless** (nel
+  container: `chromium`+`chromium-driver`+`xvfb` via apt) che risolve il challenge
+  AWS WAF su `www.morningstar.com` e ricava il **Bearer JWT** da
+  `/api/v2/stores/maas/token` (cache ~1h); le chiamate dati viaggiano poi via
+  `requests` con Bearer+cookie verso `www.us-api.morningstar.com/sal/sal-service/etf/...`
+  (settori `portfolio/v2/sector/{sid}/data`, paesi `portfolio/regionalSectorIncludeCountries/{sid}/data`,
+  **regioni ufficiali** `portfolio/regionalSector/{sid}/data`,
+  ISIN→securityId via `www.morningstar.com/api/v2/search?q={isin}`). I pesi
+  paesi sono tenuti come riportati: Morningstar restituisce la lista paesi
+  completa (51 voci, molte a 0; la paginazione 10×6 è solo UI client-side) con
+  una quota residuale non esposta come paese, quindi la somma è ~95% (nessuna
+  forzatura a 100). Le chiavi regione Morningstar (`northAmerica`,
+  `unitedKingdom`, `japan`, `australasia`, ...) sono mappate 1:1 sulla
+  tassonomia canonica VaultLab e restituite come dimensione `regions`. Il
+  backend salva paesi, settori e regioni ufficiali quando presenti; altrimenti
+  (o per JustETF) è il fetch a derivare le regioni dai paesi lato server e
+  persistere le regioni come dimensione esplicita (la derivazione appartiene
+  solo al prefill dai provider: il `PUT` manuale con `{countries}` **non**
+  riscrive le regioni); il residuo (100 − somma paesi) confluisce
+  nella regione `Other / Not Classified`, così le regioni sommano sempre a 100.
+  Dopo l'allineamento tassonomico le regioni canoniche sono **10 + `Other`**:
+  North America, Latin America, United Kingdom, Europe Developed, Europe
+  Emerging, Africa / Middle East, Japan, Australasia, Asia Developed, Asia
+  Emerging, Other / Not Classified (UK/Japan/Australasia separate; TW/KR in
+  Asia Developed).
 - **Asset class (recupero info asset / `GET /assets/meta`)**: Yahoo non espone più
   `assetClass` (il modulo `quote` di quoteSummary non esiste, il v7 `/quote` non lo
   restituisce). La classe viene derivata in `FetchMeta` con `geo.ClassifyAssetClass`
@@ -520,9 +556,29 @@ Nota sull'**ISIN**: Yahoo non espone l'ISIN in nessun modulo. Per gli ETF il
 valore ora viene risolto automaticamente dal ticker tramite il servizio JustETF
 (B.5); il campo resta comunque modificabile a mano nella pagina asset come
 fallback. Le risposte di exposure (`GET/PUT /assets/{id}/exposure`,
-`fetch-exposure`, `fetch-etf-exposure`) includono il campo `isin` persistito
-(`AssetExposure.ISIN`), così il frontend può sincronizzarlo dopo un fetch
-JustETF.
+`fetch-exposure`, `fetch-etf-exposure`, `fetch-morningstar-exposure`)
+includono il campo `isin` persistito (`AssetExposure.ISIN`), così il frontend
+può sincronizzarlo dopo un fetch. Da B.13 la risposta `GET /assets/{id}/exposure`
+espone la dimensione **countries** zero-filled sull'intera lista ISO canonica, e
+`PUT /assets/{id}/exposure` accetta un array opzionale `countries`: tiene solo
+codici ISO canonici e **rifiuta una somma paesi sopra 100** (una somma sotto
+100 è legittima — la copertura dei provider è spesso ~92–95%, e non c'è un
+minimo). Il salvataggio dei paesi **non** tocca la dimensione regioni: ogni
+dimensione nel body della `PUT` è salvata indipendentemente, quindi un body
+`{countries}` lascia le regioni memorizzate esattamente come sono. Le regioni
+si ricalcolano dai paesi solo tramite l'endpoint esplicito di derivazione (o
+vengono aggiornate esplicitamente via `{regions}`). Gli utenti possono
+aggiungere/rimuovere paesi dalla lista canonica e modificarne i singoli pesi.
+Un endpoint complementare `POST /assets/{id}/exposure/derive` calcola le regioni
+da un body `{countries}` **senza persistire** (usato dal pulsante "Calcola da
+paesi" nella UI).
+**Validazione al salvataggio delle regioni**: l'array `regions` esplicito ora
+accetta un totale **≤ 100** (sotto 100 è valido; sopra 100 è rifiutato). La UI
+non mostra né modifica mai "Other / Not Classified", quindi quando il client
+invia regioni con somma sotto 100 senza riga Other, il backend **inietta il
+residuo in `Other / Not Classified` prima di persistere**, mantenendo
+l'invariante salvata «le regioni sommano a 100» su cui si basa l'aggregazione
+geografica del portafoglio. I settori conservano la regola esatta 100 ± 0,5.
 
 ### Invalidation della cache (`bumpRev`)
 
@@ -648,10 +704,19 @@ L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&fu
     range di quota + storico prezzi dal database → JSON al frontend
 
 L'utente modifica l'esposizione ──► PUT /assets/{id}/exposure
-    → valida somma=100% → salva asset_region_weights / asset_sector_weights → bumpRev
+    → salva asset_country_weights / asset_region_weights / asset_sector_weights
+      (ogni dimensione salvata indipendentemente: i paesi non riscrivono le
+       regioni; somma paesi non vincolante) → bumpRev
+
+L'utente clicca "Calcola da paesi" ──► POST /assets/{id}/exposure/derive
+    → {countries} → {regions} derivate via AggregateRegions (nessuna persistenza) → riempie la tabella regioni
 
 L'utente clicca "Aggiorna da Yahoo" ──► POST /assets/{id}/fetch-profile
     → quoteSummary (crumb) → settore/industria (+ sectorWeightings) → salvati via PATCH/fetch-exposure
+
+L'utente precompila da Morningstar ──► POST /assets/{id}/fetch-morningstar-exposure
+    → python-service GET /api/v1/etf/{isin}/morningstar-exposure (resolver custom, bootstrap Chromium headless)
+    → paesi + settori + regioni ufficiali salvati → bumpRev
 ```
 
 ---
@@ -666,15 +731,15 @@ backend/
 ├── internal/
 │   ├── auth/jwt.go         # JWT: generazione, validazione, middleware
 │   ├── config/config.go    # variabili d'ambiente + DSN di connessione
-│   ├── geo/geo.go          # macro-regioni, settori GICS, mappatura paese→regione
+│   ├── geo/geo.go          # macro-regioni, settori GICS, paesi ISO canonici, mappatura paese→regione
 │   ├── handler/            # livello HTTP (auth.go, portfolio.go, settings.go, ...)
 │   ├── model/              # strutture dati con tag JSON
 │   ├── position/           # motore AVCO (State, Apply, Walk)
-│   ├── price/              # client Yahoo (yahoo.go, spark.go, meta.go, throttle.go, report.go, ...)
+│   ├── price/              # client Yahoo (yahoo.go, spark.go, meta.go, throttle.go, report.go, ...) + fetcher JustETF/Morningstar
 │   ├── repository/         # query SQL (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # serie giornaliere materializzate (Recompute, LoadRates, FxFactor)
 │   └── service/            # logica di business (service.go)
-├── migrations/             # SQL versionato (000001..000011)
+├── migrations/             # SQL versionato (000001..000016)
 └── go.mod
 ```
 
@@ -732,10 +797,11 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   la tabella `portfolio_shares` (la condivisione con altri utenti) esiste ma
   non è ancora usata.
 - La pagina asset e gli endpoint di esposizione salvano i **pesi per-asset**
-  in `asset_region_weights` e `asset_sector_weights`; gli endpoint di
+  in `asset_country_weights` (da B.13), `asset_region_weights` e
+  `asset_sector_weights`; gli endpoint di
   allocazione pesata a livello portafoglio sono implementati:
   `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
-  8 macro-regioni + `Other`, zero-filled) e `/allocation/sector` (EPIC B.7,
+  10 macro-regioni + `Other` (allineate a Morningstar da B.14), zero-filled) e `/allocation/sector` (EPIC B.7,
   11 settori GICS + `Other`). I widget grafici dashboard/portfolio sono nella
   B.8 (frontend). Dal follow-up di B.8, le allocazioni geo/settoriali sono
   calcolate sull'universo **equity-only** (`exposureEligible`: azioni sempre;
@@ -746,8 +812,12 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   `covered_value`/`excluded_value` (stringhe decimali) con il valore delle
   holding ammissibili vs escluse.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
-  gli ISIN dai ticker via JustETF; si usa solo attraverso il backend
-  (`POST /assets/{id}/fetch-etf-exposure`) e il suo endpoint
+  gli ISIN dai ticker via JustETF; da B.14 espone anche l'esposizione Morningstar
+  via `GET /api/v1/etf/{isin}/morningstar-exposure` (resolver custom: bootstrap
+  **Chromium headless** nel container per risolvere l'AWS WAF e ottenere il Bearer
+  JWT, poi chiamate SAL service via requests). Si usa solo attraverso il backend
+  (`POST /assets/{id}/fetch-etf-exposure` e
+  `POST /assets/{id}/fetch-morningstar-exposure`) e il suo endpoint
   `GET /api/v1/etf/search` (i ticker con suffisso borsa vengono normalizzati
   prima della query).
 - Gli asset possono avere `price_source` impostato su `'yahoo'` (default),

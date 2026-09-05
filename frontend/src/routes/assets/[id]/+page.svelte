@@ -20,10 +20,12 @@
     type SplitInfo,
   } from '$lib/services/api'
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
+  import { countryDisplayName } from '$lib/countryNames'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import { EllipsisVertical, Loader2, Pencil } from 'lucide-svelte'
-  import ExposureModal from '$lib/components/ExposureModal.svelte'
+  import ExposureGeoModal from '$lib/components/ExposureGeoModal.svelte'
+  import ExposureSectorModal from '$lib/components/ExposureSectorModal.svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -67,15 +69,24 @@
   let exposure = $state<AssetExposure | null>(null)
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
+  let countriesEdit = $state<ExposureRow[]>([])
+  // Data provenance for the geo modal badges: which source currently owns each
+  // dimension ('manual' once the user edits it). Null = unknown (no badge).
+  let countriesSource = $state<string | null>(null)
+  let regionsSource = $state<string | null>(null)
   let savingRegions = $state(false)
   let savingSectors = $state(false)
+  let savingCountries = $state(false)
   let saving = $state(false)
   let prefilling = $state(false)
   let fetchingETF = $state(false)
+  let fetchingMorningstar = $state(false)
+  let derivingRegions = $state(false)
   let refreshingMeta = $state(false)
   let backfillingHistory = $state(false)
   let metaMenuOpen = $state(false)
-  let exposureModalOpen = $state(false)
+  let geoModalOpen = $state(false)
+  let sectorModalOpen = $state(false)
   let range = $state<RangeKey | null>('1Y')
   let programmaticallyZooming = $state(false)
 
@@ -133,14 +144,80 @@
     return new Date(cutoff).toISOString().slice(0, 10)
   })
 
+  // Totals are computed on the 2-decimal values that actually enter the edit
+  // lists (also mirrored in the modal footer): this keeps the displayed sum,
+  // the save validation and the persisted weights identical, so a provider
+  // total at float precision (e.g. 100.004) never trips the > 100 guard.
   const sumRegions = $derived(
-    regionsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
+    Math.round(regionsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100) / 100,
   )
   const sumSectors = $derived(
     sectorsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
   )
-  const regionsValid = $derived(Math.abs(sumRegions - 100) <= 0.5)
+  const sumCountries = $derived(
+    Math.round(
+      countriesEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100,
+    ) / 100,
+  )
+  // Countries and regions may legitimately sum below 100: for regions the
+  // backend folds the residual into «Other / Not Classified» at persist time;
+  // for countries the residual just stays unattributed (saving countries no
+  // longer re-derives the regions — that happens only via «Calcola da paesi»).
+  // Only a sum above 100 (± float epsilon) blocks saving. Sectors still
+  // require 100 ±0.5.
+  const regionsValid = $derived(sumRegions <= 100 + 1e-9)
   const sectorsValid = $derived(Math.abs(sumSectors - 100) <= 0.5)
+  const countriesValid = $derived(sumCountries <= 100 + 1e-9)
+
+  /** The hidden fallback region injected server-side at persist time; the UI
+   * never displays or edits it. */
+  const OTHER_REGION = 'Other / Not Classified'
+
+  /**
+   * Round a persisted weight to 2 decimals (the precision the inputs allow and
+   * the UI shows): providers return greedy floats (21.26815...) whose raw sum
+   * can trip the > 100 guard by fractions of a percent even when the display
+   * reads 100.00%.
+   */
+  function roundWeight(w: string | number): string {
+    const n = Number(w)
+    return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '0'
+  }
+
+  /**
+   * Copy backend country rows keeping only positive weights: the exposure
+   * endpoints answer with the full canonical zero-filled list, while the edit
+   * list must stay minimal (the backend drops non-positive rows on save, so
+   * sending only the > 0 rows is lossless).
+   */
+  function positiveCountries(rows: ExposureRow[]): ExposureRow[] {
+    return rows
+      .filter((r) => Number(r.weight) > 0)
+      .map((r) => ({ ...r, weight: roundWeight(r.weight) }))
+  }
+
+  /**
+   * Copy backend region rows in canonical order, dropping the «Other / Not
+   * Classified» residual: sums, donut and table then work on visible rows
+   * only (the page re-adds the open-donut gap via complete={false}).
+   */
+  function withoutOther(rows: ExposureRow[]): ExposureRow[] {
+    return rows
+      .filter((r) => r.name !== OTHER_REGION)
+      .map((r) => ({ ...r, weight: roundWeight(r.weight) }))
+  }
+
+  // Top 15 countries by weight (desc, > 0) for the geographic card bar list.
+  const topCountries = $derived.by(() =>
+    countriesEdit
+      .filter((c) => Number(c.weight) > 0)
+      .sort((a, b) => Number(b.weight) - Number(a.weight))
+      .slice(0, 15),
+  )
+  // Largest visible weight: bars are scaled proportionally against it.
+  const maxCountryWeight = $derived(
+    topCountries.reduce((max, c) => Math.max(max, Number(c.weight) || 0), 0),
+  )
 
   function changeClass(value: string | number | undefined): string {
     const n = Number(value ?? 0)
@@ -190,8 +267,9 @@
       prices = ps
       exposure = ex
       splits = sp
-      regionsEdit = ex.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(ex.regions)
       sectorsEdit = ex.sectors.map((r) => ({ ...r }))
+      countriesEdit = positiveCountries(ex.countries)
       fillForm(a)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load asset'
@@ -303,21 +381,64 @@
     }
   }
 
-  // Prefill da JustETF: popola SOLO la distribuzione geografica (regioni).
-  async function prefillRegionsFromETF(): Promise<void> {
+  // Prefill da JustETF: popola SOLO la distribuzione paesi (raw JustETF).
+  async function prefillCountriesFromETF(): Promise<void> {
     if (!id || !asset) return
     fetchingETF = true
     try {
       const saved = await assetApi.fetchETFExposure(id)
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      countriesEdit = positiveCountries(saved.countries)
+      countriesSource = 'justetf'
       if (saved.isin) form.isin = saved.isin
-      toast.success('Distribuzione geografica precompilata da JustETF')
+      toast.success('Paesi precompilati da JustETF')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Download fallito'
       toast.error(message)
     } finally {
       fetchingETF = false
+    }
+  }
+
+  // Deriva le regioni canoniche dai paesi correnti (preview, non persistito).
+  async function deriveRegionsFromCountries(): Promise<void> {
+    if (!id || !asset) return
+    if (!countriesEdit.some((c) => Number(c.weight) > 0)) {
+      toast.error('Nessun paese con peso: aggiungi paesi prima')
+      return
+    }
+    derivingRegions = true
+    try {
+      const result = await assetApi.deriveRegions(id, countriesEdit)
+      regionsEdit = withoutOther(result.regions)
+      // The residual «Other / Not Classified» row is filtered out: the modal's
+      // totals line already explains what is left unattributed.
+      regionsSource = countriesSource === 'justetf' ? 'derived-etf' : 'derived'
+      toast.success('Regioni ricalcolate dai paesi')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Calcolo fallito'
+      toast.error(message)
+    } finally {
+      derivingRegions = false
+    }
+  }
+
+  // Prefill da Morningstar: popola SOLO le regioni ufficiali Morningstar.
+  async function prefillRegionsFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const saved = await assetApi.fetchMorningstarExposure(id)
+      exposure = saved
+      regionsEdit = withoutOther(saved.regions)
+      regionsSource = 'morningstar-regions'
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Regioni precompilate da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
     }
   }
 
@@ -375,7 +496,7 @@
         regions: regionsEdit,
       })
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(saved.regions)
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione geografica salvata')
     } catch (err: unknown) {
@@ -394,7 +515,7 @@
         sectors: sectorsEdit,
       })
       exposure = saved
-      regionsEdit = saved.regions.map((r) => ({ ...r }))
+      regionsEdit = withoutOther(saved.regions)
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione settoriale salvata')
     } catch (err: unknown) {
@@ -403,6 +524,61 @@
     } finally {
       savingSectors = false
     }
+  }
+
+  // Prefill da Morningstar: popola paesi e settori (ETF only).
+  async function prefillCountriesFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const saved = await assetApi.fetchMorningstarExposure(id)
+      exposure = saved
+      countriesEdit = positiveCountries(saved.countries)
+      countriesSource = 'morningstar'
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      if (saved.isin) form.isin = saved.isin
+      toast.success('Paesi e settori precompilati da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
+    }
+  }
+
+  async function saveCountries(): Promise<void> {
+    if (!id || !exposure || !countriesValid) return
+    savingCountries = true
+    try {
+      const saved = await assetApi.saveExposure(id, {
+        countries: countriesEdit,
+      })
+      exposure = saved
+      countriesEdit = positiveCountries(saved.countries)
+      // Saving countries no longer re-derives the regions server-side: the
+      // response carries back the stored regions unchanged (they are
+      // recomputed only via the modal's «Calcola da paesi» button). The
+      // canonical reload is harmless, and regionsSource must NOT be touched
+      // so the regions provenance badge keeps reflecting its real source.
+      regionsEdit = withoutOther(saved.regions)
+      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      toast.success('Distribuzione paesi salvata')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      savingCountries = false
+    }
+  }
+
+  // Provenance flips to 'manual' on the first user mutation of a dimension
+  // (invoked by the geo modal at every add/remove/weight-edit point).
+  function markCountriesManual(): void {
+    countriesSource = 'manual'
+  }
+
+  function markRegionsManual(): void {
+    regionsSource = 'manual'
   }
 </script>
 
@@ -613,24 +789,54 @@
     </div>
 
     {#if exposureApplicable && exposure}
+      <!-- Geographic distribution card: countries bar list + regions pie -->
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 class="font-semibold">Distribuzione</h2>
-          <div class="flex items-center gap-2">
-            <button
-              onclick={() => (exposureModalOpen = true)}
-              aria-label="Modifica distribuzione"
-              class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-            >
-              <Pencil class="h-4 w-4" />
-              Modifica
-            </button>
-          </div>
+          <h2 class="font-semibold">Distribuzione geografica</h2>
+          <button
+            onclick={() => (geoModalOpen = true)}
+            aria-label="Modifica distribuzione geografica"
+            class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            <Pencil class="h-4 w-4" />
+            Modifica
+          </button>
         </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div class="rounded-xl border bg-gray-50 p-4">
-            <h3 class="mb-2 font-medium">Distribuzione geografica</h3>
-            <ExposurePie data={regionsEdit} title="Distribuzione geografica" />
+            <h3 class="mb-2 font-medium">Paesi</h3>
+            {#if topCountries.length === 0}
+              <div class="flex h-[240px] w-full items-center justify-center text-sm text-gray-400">
+                Nessuna distribuzione
+              </div>
+            {:else}
+              <div class="space-y-2 py-1">
+                {#each topCountries as c, i (c.name)}
+                  {@const weight = Number(c.weight) || 0}
+                  {@const barPct = maxCountryWeight > 0 ? (weight / maxCountryWeight) * 100 : 0}
+                  <div class="flex items-center gap-2 text-xs">
+                    <span
+                      class="w-28 shrink-0 truncate sm:w-36"
+                      title={c.name + ' — ' + countryDisplayName(c.name)}
+                    >{countryDisplayName(c.name)}</span>
+                    <div class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        class="h-full rounded-full"
+                        style="width: {barPct.toFixed(1)}%; background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                      ></div>
+                    </div>
+                    <span class="w-14 shrink-0 text-right text-gray-500">{formatPercent(weight)}</span>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+          <div class="rounded-xl border bg-gray-50 p-4">
+            <h3 class="mb-2 font-medium">Regioni</h3>
+            <!-- regionsEdit never carries the «Other / Not Classified» row
+                 (filtered at assignment time), so the donut renders open:
+                 complete={false} adds the transparent residual gap. -->
+            <ExposurePie data={regionsEdit} title="Distribuzione geografica" complete={false} />
             <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
               {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
                 <div class="flex items-center gap-1.5 text-xs">
@@ -644,41 +850,75 @@
               {/each}
             </div>
           </div>
-          <div class="rounded-xl border bg-gray-50 p-4">
-            <h3 class="mb-2 font-medium">Distribuzione settoriale</h3>
-            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
-            <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
-              {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
-                <div class="flex items-center gap-1.5 text-xs">
-                  <span
-                    class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                    style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
-                  ></span>
-                  <span class="truncate">{s.name}</span>
-                  <span class="ml-auto text-gray-500">{formatPercent(Number(s.weight))}</span>
-                </div>
-              {/each}
-            </div>
+        </div>
+      </div>
+
+      <!-- Sector distribution card -->
+      <div class="mb-6 rounded-xl bg-white p-4 shadow">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 class="font-semibold">Distribuzione settoriale</h2>
+          <button
+            onclick={() => (sectorModalOpen = true)}
+            aria-label="Modifica distribuzione settoriale"
+            class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
+          >
+            <Pencil class="h-4 w-4" />
+            Modifica
+          </button>
+        </div>
+        <div class="rounded-xl border bg-gray-50 p-4">
+          <h3 class="mb-2 font-medium">Settori</h3>
+          <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
+          <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
+            {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
+              <div class="flex items-center gap-1.5 text-xs">
+                <span
+                  class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style="background-color: {LEGEND_PALETTE[i % LEGEND_PALETTE.length]};"
+                ></span>
+                <span class="truncate">{s.name}</span>
+                <span class="ml-auto text-gray-500">{formatPercent(Number(s.weight))}</span>
+              </div>
+            {/each}
           </div>
         </div>
       </div>
 
-      <ExposureModal
-        bind:open={exposureModalOpen}
-        onClose={() => (exposureModalOpen = false)}
+      <ExposureGeoModal
+        bind:open={geoModalOpen}
+        onClose={() => (geoModalOpen = false)}
         bind:regionsEdit
-        bind:sectorsEdit
+        bind:countriesEdit
         {sumRegions}
-        {sumSectors}
-        {regionsValid}
-        {sectorsValid}
+        {sumCountries}
         {savingRegions}
-        {savingSectors}
+        {savingCountries}
         {saveRegions}
+        {saveCountries}
+        {fetchingETF}
+        {fetchingMorningstar}
+        {derivingRegions}
+        {prefillCountriesFromETF}
+        {deriveRegionsFromCountries}
+        {prefillRegionsFromMorningstar}
+        {prefillCountriesFromMorningstar}
+        {countriesSource}
+        {regionsSource}
+        onCountriesDirty={markCountriesManual}
+        onRegionsDirty={markRegionsManual}
+        assetType={asset.type}
+      />
+
+      <ExposureSectorModal
+        bind:open={sectorModalOpen}
+        onClose={() => (sectorModalOpen = false)}
+        bind:sectorsEdit
+        {sumSectors}
+        {sectorsValid}
+        {savingSectors}
         {saveSectors}
         {prefilling}
         {fetchingETF}
-        {prefillRegionsFromETF}
         {prefillSectorsFromETF}
         {prefillSectorsFromYahoo}
         assetType={asset.type}
