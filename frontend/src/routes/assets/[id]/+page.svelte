@@ -144,18 +144,27 @@
     return new Date(cutoff).toISOString().slice(0, 10)
   })
 
+  // Totals are computed on the 2-decimal values that actually enter the edit
+  // lists (also mirrored in the modal footer): this keeps the displayed sum,
+  // the save validation and the persisted weights identical, so a provider
+  // total at float precision (e.g. 100.004) never trips the > 100 guard.
   const sumRegions = $derived(
-    regionsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
+    Math.round(regionsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100) / 100,
   )
   const sumSectors = $derived(
     sectorsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
   )
   const sumCountries = $derived(
-    countriesEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
+    Math.round(
+      countriesEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100,
+    ) / 100,
   )
-  // Countries and regions may legitimately sum below 100: the backend absorbs
-  // the residual into «Other / Not Classified» at persist time. Only a sum
-  // above 100 (± float epsilon) blocks saving. Sectors still require 100 ±0.5.
+  // Countries and regions may legitimately sum below 100: for regions the
+  // backend folds the residual into «Other / Not Classified» at persist time;
+  // for countries the residual just stays unattributed (saving countries no
+  // longer re-derives the regions — that happens only via «Calcola da paesi»).
+  // Only a sum above 100 (± float epsilon) blocks saving. Sectors still
+  // require 100 ±0.5.
   const regionsValid = $derived(sumRegions <= 100 + 1e-9)
   const sectorsValid = $derived(Math.abs(sumSectors - 100) <= 0.5)
   const countriesValid = $derived(sumCountries <= 100 + 1e-9)
@@ -165,13 +174,26 @@
   const OTHER_REGION = 'Other / Not Classified'
 
   /**
+   * Round a persisted weight to 2 decimals (the precision the inputs allow and
+   * the UI shows): providers return greedy floats (21.26815...) whose raw sum
+   * can trip the > 100 guard by fractions of a percent even when the display
+   * reads 100.00%.
+   */
+  function roundWeight(w: string | number): string {
+    const n = Number(w)
+    return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '0'
+  }
+
+  /**
    * Copy backend country rows keeping only positive weights: the exposure
    * endpoints answer with the full canonical zero-filled list, while the edit
    * list must stay minimal (the backend drops non-positive rows on save, so
    * sending only the > 0 rows is lossless).
    */
   function positiveCountries(rows: ExposureRow[]): ExposureRow[] {
-    return rows.filter((r) => Number(r.weight) > 0).map((r) => ({ ...r }))
+    return rows
+      .filter((r) => Number(r.weight) > 0)
+      .map((r) => ({ ...r, weight: roundWeight(r.weight) }))
   }
 
   /**
@@ -180,7 +202,9 @@
    * only (the page re-adds the open-donut gap via complete={false}).
    */
   function withoutOther(rows: ExposureRow[]): ExposureRow[] {
-    return rows.filter((r) => r.name !== OTHER_REGION).map((r) => ({ ...r }))
+    return rows
+      .filter((r) => r.name !== OTHER_REGION)
+      .map((r) => ({ ...r, weight: roundWeight(r.weight) }))
   }
 
   // Top 15 countries by weight (desc, > 0) for the geographic card bar list.
@@ -531,11 +555,12 @@
       })
       exposure = saved
       countriesEdit = positiveCountries(saved.countries)
-      // The backend re-derives the regions from the stored countries (and
-      // persists them, since no explicit regions were sent): the regions box
-      // now shows a computation over the countries list.
+      // Saving countries no longer re-derives the regions server-side: the
+      // response carries back the stored regions unchanged (they are
+      // recomputed only via the modal's «Calcola da paesi» button). The
+      // canonical reload is harmless, and regionsSource must NOT be touched
+      // so the regions provenance badge keeps reflecting its real source.
       regionsEdit = withoutOther(saved.regions)
-      regionsSource = 'derived'
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione paesi salvata')
     } catch (err: unknown) {

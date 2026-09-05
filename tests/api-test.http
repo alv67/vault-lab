@@ -163,8 +163,9 @@ GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
 
 ### 11d. Manual edit of country weights: a small subset (must not exceed ~100; a
-### sum below 100 is valid). The regions are re-derived by the backend from
-### these countries, absorbing the residual into "Other / Not Classified".
+### sum below 100 is valid). Saving countries does NOT touch the regions
+### dimension: stored regions come back unchanged (recompute them explicitly
+### with "Calcola da paesi" / POST /assets/{id}/exposure/derive).
 # @name putCountries
 PUT {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}

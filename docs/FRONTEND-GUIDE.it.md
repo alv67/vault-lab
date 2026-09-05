@@ -636,9 +636,15 @@ freschi.
       mai mentre si digita — la barra si anima live così le righe non saltano).
       Il colore della barra segue la palette della card per rango. Un select
       nativo + "Aggiungi" inserisce un codice canonico non ancora presente (il
-      focus passa al suo input peso). Il footer mostra "Totale X%" + barra di
+      focus passa al suo input peso). La lista è **flessibile**
+      (`min-h-0 flex-1 overflow-y-auto`): cresce fino a riempire il box così il
+      footer "Totale" e il pulsante Salva restano in fondo, allineati al box
+      regioni, e con molti paesi scorre dentro la sua area invece di allargare
+      la modale. Il footer mostra "Totale X%" + barra di
       progresso; **il salvataggio è disabilitato se la somma supera 100** (sotto
-      100 è ammesso). **Nessun donut** in questo box.
+      100 è ammesso). Una nota segnala il residuo non attribuito e ricorda che
+      le regioni **non** vengono ricalcolate al salvataggio: si aggiornano solo
+      con "Calcola da paesi" nel box regioni. **Nessun donut** in questo box.
     - **Box Regioni**: **tabella fissa delle 10 regioni canoniche** (niente
       add/remove, riga "Other / Not Classified" esclusa — filtrata alla pagina,
       non entra mai in `regionsEdit`), ogni riga con quadratino colore, nome e
@@ -678,7 +684,11 @@ freschi.
   sulle fette).
   Il salvataggio invia **solo la dimensione modificata**
   (`PUT /assets/{id}/exposure` con `{countries}` o `{regions}` — omettere una
-  chiave lascia l'altra intatta), poi ricarica la risposta canonica. La pagina
+  chiave lascia l'altra intatta), poi ricarica la risposta canonica. Salvare i
+  paesi **non ricalcola più le regioni lato server**: le regioni memorizzate
+  tornano invariate e il badge di provenienza delle regioni non viene
+  toccato — le regioni si ricalcolano solo cliccando **"Calcola da paesi"**
+  nel box regioni. La pagina
   scarta la riga "Other / Not Classified" dalla risposta regioni prima di
   alimentarla alla UI; il server la riaggiunge internamente così le regioni
   persistite sommano ancora a 100 per l'aggregazione del portafoglio. La

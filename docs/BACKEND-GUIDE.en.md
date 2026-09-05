@@ -535,9 +535,12 @@ see `meta.go`):
   The Morningstar region keys (`northAmerica`, `unitedKingdom`, `japan`,
   `australasia`, ...) are mapped 1:1 onto the canonical VaultLab taxonomy and
   returned as the `regions` dimension. The backend saves countries, sectors and
-  the official regions when present; otherwise (or for JustETF) regions are
-  re-derived from the countries server-side via `price.AggregateRegions` and
-  the residual (100 − country sum) lands in the `Other / Not Classified` region,
+  the official regions when present; otherwise (or for JustETF) the fetch
+  derives the regions from the countries server-side via
+  `price.AggregateRegions` and persists them as an explicit region dimension
+  (this derivation belongs to the provider prefill only: the manual
+  `PUT` with `{countries}` never rewrites the regions). The residual
+  (100 − country sum) lands in the `Other / Not Classified` region,
   so regions always sum to 100. Since the taxonomy alignment, the canonical
   regions are **10 + `Other`**: North America, Latin America, United Kingdom,
   Europe Developed, Europe Emerging, Africa / Middle East, Japan, Australasia,
@@ -567,9 +570,11 @@ after a fetch. Since B.13 the `GET /assets/{id}/exposure` response exposes the
 `PUT /assets/{id}/exposure` accepts an optional `countries` array: it keeps
 only canonical ISO codes and **rejects a country sum above 100** (sums below
 100 are legitimate — provider coverage is often ~92–95%, and there is no
-minimum). When countries are provided the backend re-derives and persists the
-regions from those countries (the residual 100 − country sum lands in
-`Other / Not Classified`). Users can add/remove countries from the canonical
+minimum). Saving countries does **not** touch the regions dimension: each
+dimension in the `PUT` body is saved independently, so a `{countries}` body
+leaves the stored regions exactly as they are. Regions are recomputed from
+countries only through the explicit derive endpoint (or updated explicitly via
+`{regions}`). Users can add/remove countries from the canonical
 list and edit their individual weights. A companion endpoint
 `POST /assets/{id}/exposure/derive` computes the regions from a `{countries}`
 body **without persisting** (used by the "Calcola da paesi" button in the UI).
@@ -707,7 +712,8 @@ The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices
 
 The user edits the exposure ──► PUT /assets/{id}/exposure
     → saves asset_country_weights / asset_region_weights / asset_sector_weights
-      (regions re-derived when countries are given; country sum not enforced) → bumpRev
+      (each dimension saved independently: countries never rewrite regions;
+       country sum not enforced) → bumpRev
 
 The user clicks "Calcola da paesi" ──► POST /assets/{id}/exposure/derive
     → {countries} → {regions} derived via AggregateRegions (no persistence) → fills the regions table

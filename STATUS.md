@@ -243,11 +243,13 @@ e Morningstar permette di cercare sul mercato esatto.
   - `GET /assets/{id}/exposure` restituisce countries zero-filled sulla lista
     canonica completa (più regions e sectors).
   - `PUT /assets/{id}/exposure` accetta `countries?` (dimensioni indipendenti),
-    tiene solo codici ISO canonici; la somma dei paesi **non deve** essere
+    tenere solo codici ISO canonici; la somma dei paesi **non deve** essere
     esattamente 100 (i pesi paesi sono informativi): quando i countries sono
     forniti il backend ricalcola e persiste le regions dalla mappatura
     paese→regione, imputando il residuo (100 − somma) nella regione
     `Other / Not Classified` (coerenza automatica a somma 100 per le regioni).
+    _(Auto-derivation al save poi **rimossa** dal redesign modale: vedi
+    «Redesign modale distribuzione geografica (paesi-first)」.)_
   - JustETF ora salva i countries raw (normalizzati a codici ISO) invece di
     scartarli, e il backend li archivia in `asset_country_weights`.
 - **B.14 — Morningstar come fonte esposizione** (#59):
@@ -308,6 +310,27 @@ e Morningstar permette di cercare sul mercato esatto.
   ufficiali** (es. United Kingdom 21.27, Europe Developed ex-UK 75.85 per un ETF
   europeo); `POST /assets/{id}/exposure/derive` verifica la nuova tassonomia
   (GB→United Kingdom, JP→Japan, TW+KR→Asia Developed, residuo→Other).
+- **Resilienza WAF Morningstar (fix post-#59)**: la WAF può revocare la
+  sessione cacheata prima della scadenza del JWT e rispondere con una pagina
+  HTML di challenge (JSON non decodificabile → 502 opaco "upstream fetch
+  failed"). Ora l'intero flow (ISIN→securityId + le tre chiamate SAL + parsing)
+  viene **ritentato una volta** con credenziali fresche:
+  `_invalidate_bootstrap_cache`/`_retry_on_waf_challenge` in
+  `python-service/app/morningstar.py`, con nuovo errore `MorningstarWafError`.
+  Se la challenge persiste, `morningstar-exposure` risponde 502 con messaggio
+  esplicito ("Morningstar WAF challenge could not be passed for ISIN …; try
+  again in a few seconds") e l'auto-resolve ticker→ISIN degrada a JustETF.
+  Gli altri errori di trasporto restano mappati come prima (nessun retry).
+  pytest aggiornato a 57 test, tutti verdi.
+- **Resilienza bootstrap Chrome (fix post-#59, oltre al retry WAF)**: bootstrap
+  falliti lasciano processi Chromium/chromedriver/crashpad orfani che bloccano
+  ogni sessione successiva ("session not created: Chrome instance exited",
+  zombie `<defunct>` persistenti nel container). Il ramo browser di
+  `_session_credentials` ora ritenta **una sola volta** dopo pulizia best-effort
+  dei processi orfani (`_kill_stale_browsers`, solo `pkill` — mai glob su /tmp);
+  al secondo crash risponde 502 con messaggio chiaro ("Chrome headless could not
+  start in the sandbox; try again in a few seconds"). pytest aggiornato a 62
+  test, tutti verdi.
 
 ### Redesign modale distribuzione geografica (paesi-first)
 - **Frontend** (`ExposureGeoModal`, `ExposurePie`, `ProvenanceBadge`): la modale
@@ -333,17 +356,27 @@ e Morningstar permette di cercare sul mercato esatto.
     (niente persistenza), badge nascosto a reload.
   - Coerenza: anche la **card geografica** della pagina usa `complete={false}`
     e filtra Other da donut/legenda regioni.
+  - **Salvataggio paesi**: il backend **non ricalcola più le regioni** al save
+    dei `countries` (auto-derivation rimossa); le regioni memorizzate restano
+    invariate (badge di provenienza intatto) e si aggiornano solo manualmente
+    con «Calcola da paesi».
 - **Backend**: `SaveAssetExposure` accetta ora **regioni con somma ≤ 100** e,
   quando il client non invia Other, **inieietta il residuo in
   `Other / Not Classified`** prima di persistere (invariante «regioni=100»
   preservata per l'aggregazione portafoglio); **countries rifiutano somma
   > 100.5** (nessun minimo, sotto 100 ok); settori invariati (100 ± 0,5).
+  Auto-derivation al save dei paesi **rimossa**: ogni dimensione del body `PUT`
+  è salvata indipendentemente (logica estratta in `saveExposureDimensions`) e
+  le regioni si ricalcolano solo via `POST /assets/{id}/exposure/derive` o
+  salvando regioni esplicite.
   `derive` invariato (restituisce Other; filtra il frontend).
 - **Verifica**: Go build/vet/test green (nuovi `TestPrepareRegions`/
-  `TestPrepareCountries`/`TestValidateExposureWeights`); pytest 51;
+  `TestPrepareCountries`/`TestValidateExposureWeights`/
+  `TestSaveExposureDimensions_*`); pytest 51;
   `svelte-check`/eslint/build clean; `make test-e2e` 18 PASS 0 FAIL. Test
   manuale PUT: regions somma 95 → 200 con Other=5 persistito (somma 100);
-  regions 103 → 400; countries 120 → 400; countries 95 → 200.
+  regions 103 → 400; countries 120 → 400; countries 95 → 200 con regioni
+  memorizzate invariate (nessuna riscrittura).
 
 ### Altri EPIC Fase 2
 - EPIC G.7 (#53) — Asset con ticker non-Yahoo: no richiesta prezzo e no errori

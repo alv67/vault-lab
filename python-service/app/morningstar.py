@@ -22,6 +22,14 @@ resolver instead:
         -> official region breakdown ({fundPortfolio.{regionKey: weight}}); the
            keys map 1:1 to canonical VaultLab region names.
 
+The cached WAF session can be revoked before the bearer JWT expires, and then
+the APIs answer with an HTML challenge page instead of JSON; every data flow
+is therefore retried once with a fresh browser bootstrap (see
+_retry_on_waf_challenge). Browser bootstrap crashes (a "session not created:
+Chrome instance exited" caused by orphaned Chromium processes left by earlier
+failed boots) are likewise retried once after a best-effort process cleanup
+(see _browser_bootstrap_with_cleanup / _kill_stale_browsers).
+
 Return-shape notes (confirmed from the live SAL service):
   * countries: name is a Morningstar camelCase country key (e.g. "southKorea",
     "czechRepublic", "unitedStates"); percent is a 0-100 number.
@@ -36,6 +44,7 @@ import base64
 import json
 import logging
 import os
+import subprocess
 import threading
 import time
 from contextlib import contextmanager
@@ -90,6 +99,15 @@ _bootstrap_lock = threading.Lock()
 
 class MorningstarDataError(ValueError):
     """Raised when Morningstar exposure data cannot be retrieved or parsed."""
+
+
+class MorningstarWafError(MorningstarDataError):
+    """Raised when the AWS WAF challenge persists even with fresh credentials.
+
+    Signals that the cached session was revoked server-side (the APIs answered
+    with an HTML challenge page instead of JSON) and one re-bootstrap retry
+    already failed.
+    """
 
 
 def _to_float(value):
@@ -253,6 +271,38 @@ def _sector_rows_from_fund_portfolio(fund_portfolio):
 
 # ---------- browser bootstrap (WAF challenge + MAAS bearer token) ----------
 
+# Orphaned browser processes left by a crashed bootstrap — the Chromium main
+# process and its children (their command lines carry the /tmp/.org.chromium.*
+# profile dir or the /usr/lib/chromium/ binary path), chromedriver holding the
+# DevTools port, and the crashpad handler holding its socket — poison every
+# later session with "session not created: Chrome instance exited". The ERE
+# below matches those processes only, never the python/uvicorn command line.
+_STALE_BROWSER_PATTERN = r"\.chromium|/chromium/|chromedriver|chrome_crashpad"
+
+# Bootstrap attempts per credential refresh: one plain try plus one after cleanup.
+_BROWSER_BOOTSTRAP_ATTEMPTS = 2
+
+
+def _kill_stale_browsers():
+    """Best-effort kill of browser processes orphaned by previous bootstrap crashes.
+
+    Deliberately conservative: only stale processes are killed, /tmp is never
+    touched — leftover Chromium profiles are uniquely named per launch, tiny,
+    and do not block new boots, while a blind `rm -rf` glob could race with a
+    profile an in-flight browser is using. Every error is swallowed: cleanup
+    must never mask the original bootstrap failure.
+    """
+    try:
+        subprocess.run(
+            ["pkill", "-9", "-f", _STALE_BROWSER_PATTERN],
+            check=False,
+            timeout=5,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:  # pragma: no cover - depends on host tooling
+        logger.debug("stale browser cleanup failed: %s", exc)
+
 
 def _jwt_expiry(token: str) -> float:
     """Returns the expiry timestamp of a JWT bearer token (0 if unparseable)."""
@@ -288,15 +338,15 @@ def _headless_browser():
 
     Selenium Manager cannot resolve chromedriver on linux/aarch64, so the driver
     is pointed at the Debian-packaged /usr/bin/chromedriver explicitly. A virtual
-    display is started when the DISPLAY env var is not already set.
+    display is started when the DISPLAY env var is not already set. If we started
+    Xvfb ourselves it is always terminated on exit and DISPLAY is cleared again,
+    so a retry bootstraps against a fresh display instead of a dead :99.
     """
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
 
     xvfb_proc = None
     if not os.environ.get("DISPLAY"):
-        import subprocess
-
         xvfb_proc = subprocess.Popen(
             ["Xvfb", ":99", "-screen", "0", "1280x1024x24"],
             stdout=subprocess.DEVNULL,
@@ -305,16 +355,22 @@ def _headless_browser():
         os.environ["DISPLAY"] = ":99"
         time.sleep(2)
 
-    driver = webdriver.Chrome(options=_chrome_options(), service=Service("/usr/bin/chromedriver"))
+    driver = None
     try:
+        driver = webdriver.Chrome(options=_chrome_options(), service=Service("/usr/bin/chromedriver"))
         yield driver
     finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
+        if driver is not None:
+            try:
+                driver.quit()
+            except Exception:
+                pass
         if xvfb_proc is not None:
-            xvfb_proc.terminate()
+            try:
+                xvfb_proc.terminate()
+            except Exception:
+                pass
+            os.environ.pop("DISPLAY", None)
 
 
 def _load_until_real_page(driver, url, tries=4, timeout_per_try=30):
@@ -358,6 +414,40 @@ def _browser_bootstrap():
     return token, cookies
 
 
+def _browser_bootstrap_with_cleanup():
+    """Browser bootstrap hardened against crashed/stale Chrome sessions.
+
+    Orphaned Chromium processes from earlier failed boots make every new
+    session die with SessionNotCreatedException/WebDriverException ("session
+    not created: Chrome instance exited"). On such a crash we kill the stale
+    browser processes and retry once; a second crash raises a clear
+    MorningstarDataError (mapped to 502) instead of looping forever. WAF
+    challenges inside _browser_bootstrap raise MorningstarDataError and are
+    NOT retried here — that is the outer _retry_on_waf_challenge's job.
+    Must be called while holding _bootstrap_lock so process cleanup never runs
+    in parallel with another bootstrap.
+    """
+    from selenium.common.exceptions import WebDriverException
+
+    last_exc = None
+    for attempt in range(1, _BROWSER_BOOTSTRAP_ATTEMPTS + 1):
+        try:
+            return _browser_bootstrap()
+        except WebDriverException as exc:
+            last_exc = exc
+            logger.warning(
+                "morningstar browser bootstrap crashed (attempt %s/%s): %s",
+                attempt,
+                _BROWSER_BOOTSTRAP_ATTEMPTS,
+                exc,
+            )
+            _kill_stale_browsers()
+            _bootstrap_cache.pop("creds", None)
+    raise MorningstarDataError(
+        "Chrome headless could not start in the sandbox; try again in a few seconds"
+    ) from last_exc
+
+
 def _valid_token(token: str) -> bool:
     if not token:
         return False
@@ -380,10 +470,44 @@ def _session_credentials():
         cached = _bootstrap_cache.get("creds")
         if cached and _valid_token(cached["bearer"]):
             return cached["bearer"], cached["cookies"]
-        bearer, cookies = _browser_bootstrap()
+        bearer, cookies = _browser_bootstrap_with_cleanup()
         _bootstrap_cache["creds"] = {"bearer": bearer, "cookies": cookies}
         logger.info("morningstar bootstrap refreshed (expiry=%s)", _jwt_expiry(bearer))
         return bearer, cookies
+
+
+def _invalidate_bootstrap_cache():
+    """Drops the cached WAF credentials so the next call re-bootstraps."""
+    with _bootstrap_lock:
+        _bootstrap_cache.pop("creds", None)
+
+
+def _retry_on_waf_challenge(operation, subject: str):
+    """Runs operation(), retrying once after refreshing the WAF session.
+
+    The WAF can revoke the cached cookies before the bearer JWT expires and
+    then answers with an HTML challenge page: resp.json() raises
+    JSONDecodeError. That is the signal to drop the cached credentials and
+    redo the whole flow (security lookup + data fetch) with a fresh browser
+    bootstrap; a second challenge page gives up with a clear error instead of
+    the opaque decode failure.
+    """
+    try:
+        return operation()
+    except requests.exceptions.JSONDecodeError as exc:
+        logger.warning(
+            "morningstar WAF challenge page for %s (%s); refreshing session and retrying once",
+            subject,
+            exc,
+        )
+    _invalidate_bootstrap_cache()
+    try:
+        return operation()
+    except requests.exceptions.JSONDecodeError as exc:
+        raise MorningstarWafError(
+            f"Morningstar WAF challenge could not be passed for {subject}; "
+            "try again in a few seconds"
+        ) from exc
 
 
 def _headers(bearer: str):
@@ -513,28 +637,37 @@ def resolve_market_isin(ticker: str, cookies: dict) -> tuple[str, str] | None:
     return None
 
 
+def _resolve_ticker_once(query: str) -> list:
+    """Single Morningstar resolution pass for a ticker query."""
+    _, cookies = _session_credentials()
+    resolved = resolve_market_isin(query, cookies)
+    if resolved:
+        security_id, isin = resolved
+        return [EtfSearchResult(isin=isin, name="", ticker=query)]
+    # No recognized suffix: search by the query as-is (Morningstar returns the
+    # primary listing). Only used when a bare ticker has no market suffix.
+    results = _search_morningstar(cookies, query, "isin,name,securityId,investmentType,ticker", limit=10)
+    for item in results:
+        value = item.get("value", {}) if isinstance(item, dict) else {}
+        if value.get("isin") and value.get("investmentType") in _FUND_TYPES:
+            return [EtfSearchResult(isin=value["isin"], name=value.get("name", ""), ticker=value.get("ticker", "") or query)]
+    return []
+
+
 def search_etf_morningstar(query: str) -> list:
     """Resolves a ticker (with optional market suffix) to its ISIN via Morningstar.
 
     Returns a single result (the market-specific quotation when a recognized
     suffix is present, otherwise the first fund match) in the shape the backend
-    expects. Falls back to JustETF when Morningstar is unavailable or the query
-    has no recognized market suffix.
+    expects. Retries once with a refreshed WAF session when Morningstar answers
+    with a challenge page. Falls back to JustETF when Morningstar is unavailable
+    or the query has no recognized market suffix.
     """
     try:
-        _, cookies = _session_credentials()
-        resolved = resolve_market_isin(query, cookies)
-        if resolved:
-            security_id, isin = resolved
-            return [EtfSearchResult(isin=isin, name="", ticker=query)]
-        # No recognized suffix: search by the query as-is (Morningstar returns the
-        # primary listing). Only used when a bare ticker has no market suffix.
-        results = _search_morningstar(cookies, query, "isin,name,securityId,investmentType,ticker", limit=10)
-        for item in results:
-            value = item.get("value", {}) if isinstance(item, dict) else {}
-            if value.get("isin") and value.get("investmentType") in _FUND_TYPES:
-                return [EtfSearchResult(isin=value["isin"], name=value.get("name", ""), ticker=value.get("ticker", "") or query)]
-        return []
+        return _retry_on_waf_challenge(lambda: _resolve_ticker_once(query), f"query {query}")
+    except MorningstarWafError:
+        # Challenge persisted after the re-bootstrap: degrade to JustETF.
+        return scraper_search_etf(query)
     except requests.RequestException:
         # Fall back to JustETF so a bare or unmapped ticker still resolves.
         return scraper_search_etf(query)
@@ -555,13 +688,8 @@ def _sal_get(bearer: str, cookies: dict, path: str, component: str) -> dict:
     return resp.json()
 
 
-def fetch_morningstar_exposure(isin: str) -> Exposure:
-    """Resolves a fund's country, sector, and region exposure from Morningstar.
-
-    Raises MorningstarDataError if no usable country data can be retrieved so
-    the endpoint can map it to a 502. Regions may be empty for funds without a
-    regional breakdown and are not gated on.
-    """
+def _fetch_exposure_once(isin: str) -> Exposure:
+    """Single full resolution pass: credentials, securityId, SAL fetch, parsing."""
     bearer, cookies = _session_credentials()
     security_id = _search_security_id(isin, cookies)
 
@@ -578,6 +706,10 @@ def fetch_morningstar_exposure(isin: str) -> Exposure:
         region_data = _sal_get(
             bearer, cookies, f"portfolio/regionalSector/{security_id}/data", "sal-mip-region"
         )
+    except requests.exceptions.JSONDecodeError:
+        # WAF challenge page instead of JSON: let the retry layer refresh the
+        # session instead of wrapping it as a plain upstream failure.
+        raise
     except requests.RequestException as exc:
         raise MorningstarDataError(f"Morningstar upstream request failed: {exc}") from exc
 
@@ -597,3 +729,15 @@ def fetch_morningstar_exposure(isin: str) -> Exposure:
     regions.sort(key=lambda r: r.weight, reverse=True)
 
     return Exposure(isin=isin, countries=countries, sectors=sectors, regions=regions)
+
+
+def fetch_morningstar_exposure(isin: str) -> Exposure:
+    """Resolves a fund's country, sector, and region exposure from Morningstar.
+
+    Retries the whole flow once with a fresh WAF session when an endpoint
+    answers with a challenge page (stale cached credentials). Raises
+    MorningstarDataError if no usable country data can be retrieved or if the
+    WAF challenge persists, so the endpoint can map it to a 502. Regions may be
+    empty for funds without a regional breakdown and are not gated on.
+    """
+    return _retry_on_waf_challenge(lambda: _fetch_exposure_once(isin), f"ISIN {isin}")

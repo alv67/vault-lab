@@ -535,14 +535,14 @@ func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.As
 // hides the "Other / Not Classified" row, so a sum below 100 is accepted and
 // the residual is injected into that bucket before persisting, keeping the
 // stored regions summing to 100 for portfolio geography aggregation. Countries
-// must not exceed 100 (same tolerance) with no lower bound; the residual is
-// handled by the region re-derivation. Rows with an empty name or a
-// non-positive weight are ignored. Country rows must come from the canonical
-// geo.Countries list; non-canonical names are skipped. When countries are
-// provided without explicit regions, the regions are re-derived from the
-// stored countries and persisted so the two dimensions stay consistent;
-// explicit regions (e.g. the official ones returned by Morningstar) always win
-// over that derivation.
+// must not exceed 100 (same tolerance) with no lower bound. Rows with an empty
+// name or a non-positive weight are ignored. Country rows must come from the
+// canonical geo.Countries list; non-canonical names are skipped. Saving
+// countries does NOT touch the regions dimension: regions are recomputed from
+// countries only through the explicit derive endpoint
+// (POST /assets/{id}/exposure/derive) or updated explicitly via {regions};
+// explicit regions (e.g. the official ones returned by Morningstar) are always
+// saved as sent.
 // Returns the complete output built from the stored state.
 func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure *model.AssetExposure) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
@@ -553,47 +553,8 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 		return nil, err
 	}
 
-	var regions, sectors, countries []model.ExposureRow
 	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
-		if exposure.Regions != nil {
-			prepared, err := prepareRegions(exposure.Regions)
-			if err != nil {
-				return err
-			}
-			regions = prepared
-			if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
-				return err
-			}
-		}
-		if exposure.Sectors != nil {
-			sectors = normalizeExposureRows(exposure.Sectors)
-			if err := validateExposureWeights(sectors, weightSumExact100); err != nil {
-				return err
-			}
-			if err := rx.Exposure.ReplaceSectors(ctx, id, sectors); err != nil {
-				return err
-			}
-		}
-		if exposure.Countries != nil {
-			prepared, err := prepareCountries(exposure.Countries)
-			if err != nil {
-				return err
-			}
-			countries = prepared
-			if err := rx.Exposure.ReplaceCountries(ctx, id, countries); err != nil {
-				return err
-			}
-			// Countries override the region dimension only when the caller did
-			// not supply explicit regions; explicit regions (Morningstar's
-			// official weights) are authoritative and must be kept as-is.
-			if exposure.Regions == nil {
-				regions = price.AggregateRegions(countries)
-				if err := rx.Exposure.ReplaceRegions(ctx, id, regions); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+		return saveExposureDimensions(ctx, rx, id, exposure)
 	})
 	if err != nil {
 		return nil, err
@@ -615,6 +576,42 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 		return nil, err
 	}
 	return s.buildExposure(asset, storedRegions, storedSectors, storedCountries), nil
+}
+
+// saveExposureDimensions validates and persists each dimension present in the
+// payload through rx. Dimensions are independent: a nil slice means "leave the
+// stored dimension untouched". Saving countries never rewrites the regions
+// dimension — the country→region aggregation only runs through the explicit
+// derive endpoint (DeriveRegions) or when the caller saves explicit regions.
+func saveExposureDimensions(ctx context.Context, rx *repository.Repository, id uuid.UUID, exposure *model.AssetExposure) error {
+	if exposure.Regions != nil {
+		prepared, err := prepareRegions(exposure.Regions)
+		if err != nil {
+			return err
+		}
+		if err := rx.Exposure.ReplaceRegions(ctx, id, prepared); err != nil {
+			return err
+		}
+	}
+	if exposure.Sectors != nil {
+		sectors := normalizeExposureRows(exposure.Sectors)
+		if err := validateExposureWeights(sectors, weightSumExact100); err != nil {
+			return err
+		}
+		if err := rx.Exposure.ReplaceSectors(ctx, id, sectors); err != nil {
+			return err
+		}
+	}
+	if exposure.Countries != nil {
+		prepared, err := prepareCountries(exposure.Countries)
+		if err != nil {
+			return err
+		}
+		if err := rx.Exposure.ReplaceCountries(ctx, id, prepared); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeriveRegions aggregates raw country rows into canonical macro-regions for an
@@ -736,8 +733,9 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 	if countries := normalizeCountries(raw.Countries); len(countries) > 0 {
 		mapped.Countries = countries
 	}
-	// Derive regions from the raw country rows for robustness; SaveAssetExposure
-	// will re-derive them from the stored countries anyway.
+	// Derive regions from the raw country rows: a provider prefill always
+	// persists its explicit region dimension (saving countries alone never
+	// rewrites regions).
 	if regions := price.AggregateRegions(raw.Countries); len(regions) > 0 {
 		mapped.Regions = regions
 	}
@@ -881,9 +879,9 @@ func prepareRegions(rows []model.ExposureRow) ([]model.ExposureRow, error) {
 // prepareCountries normalizes the country dimension: only rows whose name
 // resolves to a canonical country are kept (anything else is dropped rather
 // than failing hard) and the kept weights must not exceed 100 (+ the 0.5
-// rounding tolerance). There is no lower bound: the residual is absorbed by the
-// region re-derivation (price.AggregateRegions), so a partial country list is
-// a valid save.
+// rounding tolerance). There is no lower bound, so a partial country list is a
+// valid save; the regions dimension is left untouched (countries only feed the
+// region aggregation through the explicit derive endpoint).
 func prepareCountries(rows []model.ExposureRow) ([]model.ExposureRow, error) {
 	normalized := normalizeExposureRows(rows)
 	kept := normalized[:0]

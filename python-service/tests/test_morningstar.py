@@ -7,6 +7,7 @@ from app import morningstar
 from app.main import app
 from app.morningstar import (
     MorningstarDataError,
+    MorningstarWafError,
     _jwt_expiry,
     _parse_countries,
     _parse_regions,
@@ -460,6 +461,214 @@ def test_fetch_morningstar_exposure_isin_not_found(monkeypatch):
         fetch_morningstar_exposure(ISIN)
 
 
+# ---------- WAF resilience (retry once with a fresh session) ----------
+
+def test_fetch_morningstar_exposure_retries_with_fresh_session_on_challenge(monkeypatch):
+    bootstraps = {"count": 0}
+    sector_calls = {"count": 0}
+
+    def fake_bootstrap():
+        bootstraps["count"] += 1
+        return f"bearer-{bootstraps['count']}", {}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_search_payload())
+        if "portfolio/v2/sector/" in url:
+            sector_calls["count"] += 1
+            if sector_calls["count"] == 1:
+                # Stale session: the WAF answers with an HTML challenge page.
+                raise requests.exceptions.JSONDecodeError("Expecting value", "", 0)
+            return FakeResponse(fake_sector_payload())
+        if "regionalSectorIncludeCountries" in url:
+            return FakeResponse(fake_country_payload())
+        if "portfolio/regionalSector/" in url:
+            return FakeResponse(fake_region_payload())
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr("app.morningstar._bootstrap_cache", {})
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+
+    exposure = fetch_morningstar_exposure(ISIN)
+    # The challenge forced exactly one invalidation + browser re-bootstrap.
+    assert bootstraps["count"] == 2
+    assert morningstar._bootstrap_cache["creds"]["bearer"] == "bearer-2"
+    assert exposure.countries[0].name == "United States"
+    assert exposure.regions[0].name == "North America"
+
+
+def test_fetch_morningstar_exposure_challenge_persists_raises(monkeypatch):
+    search_calls = {"count": 0}
+    bootstraps = {"count": 0}
+
+    def fake_bootstrap():
+        bootstraps["count"] += 1
+        return f"bearer-{bootstraps['count']}", {}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            search_calls["count"] += 1
+            return FakeResponse(fake_search_payload())
+        raise requests.exceptions.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr("app.morningstar._bootstrap_cache", {})
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+
+    with pytest.raises(MorningstarWafError) as err:
+        fetch_morningstar_exposure(ISIN)
+    assert "WAF challenge could not be passed" in str(err.value)
+    assert ISIN in str(err.value)
+    # Exactly one retry of the whole flow, no more: search ran twice and each
+    # attempt re-bootstrapped after the cache invalidation.
+    assert search_calls["count"] == 2
+    assert bootstraps["count"] == 2
+
+
+def test_fetch_morningstar_exposure_connection_error_does_not_retry(monkeypatch):
+    sessions = {"count": 0}
+
+    def fake_credentials():
+        sessions["count"] += 1
+        return "tok", {}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_search_payload())
+        raise requests.ConnectionError("connection reset by peer")
+
+    monkeypatch.setattr("app.morningstar._session_credentials", fake_credentials)
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+
+    with pytest.raises(MorningstarDataError) as err:
+        fetch_morningstar_exposure(ISIN)
+    assert "upstream request failed" in str(err.value)
+    # Non-WAF transport errors are wrapped immediately: no re-bootstrap loop.
+    assert sessions["count"] == 1
+
+
+# ---------- browser bootstrap resilience (Chrome session crashes) ----------
+
+def test_session_credentials_retries_bootstrap_after_chrome_crash(monkeypatch):
+    from selenium.common.exceptions import SessionNotCreatedException
+
+    boots = {"count": 0}
+    kills = {"count": 0}
+
+    def fake_bootstrap():
+        boots["count"] += 1
+        if boots["count"] == 1:
+            raise SessionNotCreatedException("session not created: Chrome instance exited")
+        return "bearer-fresh", {"aws-waf-token": "tok"}
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr("app.morningstar._bootstrap_cache", {})
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    monkeypatch.setattr(
+        "app.morningstar._kill_stale_browsers",
+        lambda: kills.__setitem__("count", kills["count"] + 1),
+    )
+
+    bearer, cookies = morningstar._session_credentials()
+    assert bearer == "bearer-fresh"
+    assert cookies == {"aws-waf-token": "tok"}
+    # Exactly one cleanup between the crashed bootstrap and the successful one.
+    assert boots["count"] == 2
+    assert kills["count"] == 1
+    assert morningstar._bootstrap_cache["creds"]["bearer"] == "bearer-fresh"
+
+
+def test_session_credentials_gives_up_after_two_crashed_bootstraps(monkeypatch):
+    from selenium.common.exceptions import WebDriverException
+
+    boots = {"count": 0}
+    kills = {"count": 0}
+
+    def fake_bootstrap():
+        boots["count"] += 1
+        raise WebDriverException("chrome not reachable")
+
+    def expired_token():
+        import base64
+
+        claims = base64.urlsafe_b64encode(b'{"exp": 1}').rstrip(b"=").decode()
+        return f"a.{claims}.c"
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr(
+        "app.morningstar._bootstrap_cache",
+        {"creds": {"bearer": expired_token(), "cookies": {}}},
+    )
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    monkeypatch.setattr(
+        "app.morningstar._kill_stale_browsers",
+        lambda: kills.__setitem__("count", kills["count"] + 1),
+    )
+
+    with pytest.raises(MorningstarDataError) as err:
+        morningstar._session_credentials()
+    assert "Chrome headless could not start" in str(err.value)
+    # Bounded at two bootstraps (no infinite loop), each failure cleans up and
+    # invalidates the cache so no poisoned credentials linger.
+    assert boots["count"] == 2
+    assert kills["count"] == 2
+    assert "creds" not in morningstar._bootstrap_cache
+
+
+def test_kill_stale_browsers_runs_pkill_and_swallows_errors(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        raise OSError("pkill: command not found")
+
+    monkeypatch.setattr(morningstar.subprocess, "run", fake_run)
+    morningstar._kill_stale_browsers()  # must never raise
+
+    cmd, kwargs = calls[0]
+    assert cmd[:3] == ["pkill", "-9", "-f"]
+    pattern = cmd[3]
+    assert "chromedriver" in pattern and "chrome_crashpad" in pattern and "chromium" in pattern
+    assert "python" not in pattern  # must not target the service process itself
+    assert kwargs.get("check") is False
+    assert kwargs.get("timeout") == 5
+
+
+def test_exposure_flow_crashed_chrome_does_not_break_waf_retry(monkeypatch):
+    # A WAF-challenge retry calls _session_credentials again; the browser
+    # bootstrap there now goes through the crash-retry wrapper transparently.
+    bootstraps = {"count": 0}
+
+    def fake_bootstrap():
+        bootstraps["count"] += 1
+        return f"bearer-{bootstraps['count']}", {}
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr("app.morningstar._bootstrap_cache", {})
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    kills = []
+    monkeypatch.setattr(
+        "app.morningstar._kill_stale_browsers", lambda: kills.append(True)
+    )
+
+    bearer, _ = morningstar._session_credentials()
+    assert bearer == "bearer-1"
+    assert kills == []  # healthy bootstrap must not trigger any cleanup
+
+    morningstar._invalidate_bootstrap_cache()
+    bearer, _ = morningstar._session_credentials()
+    assert bearer == "bearer-2"
+    assert kills == []
+
+
 # ---------- endpoint tests ----------
 
 def test_morningstar_exposure_ok(monkeypatch):
@@ -504,6 +713,37 @@ def test_morningstar_exposure_request_error_502(monkeypatch):
     response = client.get(f"/api/v1/etf/{ISIN}/morningstar-exposure")
     assert response.status_code == 502
     assert "detail" in response.json()
+
+
+def test_morningstar_exposure_waf_persists_502(monkeypatch):
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_search_payload())
+        raise requests.exceptions.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setattr("app.morningstar._session_credentials", lambda: ("tok", {}))
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+    response = client.get(f"/api/v1/etf/{ISIN}/morningstar-exposure")
+    assert response.status_code == 502
+    assert "WAF challenge could not be passed" in response.json()["detail"]
+
+
+def test_morningstar_exposure_chrome_crash_502_clear_detail(monkeypatch):
+    from selenium.common.exceptions import SessionNotCreatedException
+
+    def fake_bootstrap():
+        raise SessionNotCreatedException("session not created: Chrome instance exited")
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr("app.morningstar._bootstrap_cache", {})
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    monkeypatch.setattr("app.morningstar._kill_stale_browsers", lambda: None)
+
+    response = client.get(f"/api/v1/etf/{ISIN}/morningstar-exposure")
+    assert response.status_code == 502
+    # No raw "Message: session not created" leaking through the generic handler.
+    assert "Chrome headless could not start" in response.json()["detail"]
 
 # ---------- market-suffix resolution tests ----------
 
@@ -556,3 +796,55 @@ def test_search_etf_morningstar_uses_resolve(monkeypatch):
     )
     out = morningstar.search_etf_morningstar("XMME.MI")
     assert out[0].isin == "IE00BTJRMP35"
+
+
+def test_search_etf_morningstar_retries_with_fresh_session_on_challenge(monkeypatch):
+    attempts = {"count": 0}
+
+    def fake_get(url, *a, **k):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            # Stale WAF session: challenge page instead of JSON.
+            raise requests.exceptions.JSONDecodeError("Expecting value", "", 0)
+        return FakeResponse(
+            {
+                "results": [
+                    {
+                        "value": {
+                            "isin": ISIN,
+                            "name": "iShares Core MSCI World UCITS ETF",
+                            "investmentType": "FE",
+                            "ticker": "SWDA",
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.morningstar._session_credentials", lambda: ("tok", {}))
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+    monkeypatch.setattr(
+        "app.morningstar.scraper_search_etf",
+        lambda q: pytest.fail("JustETF fallback must not run when the retry succeeds"),
+    )
+
+    out = morningstar.search_etf_morningstar("SWDA")
+    assert attempts["count"] == 2
+    assert out[0].isin == ISIN
+
+
+def test_search_etf_morningstar_falls_back_when_challenge_persists(monkeypatch):
+    from app.schemas import EtfSearchResult
+
+    def fake_get(url, *a, **k):
+        raise requests.exceptions.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setattr("app.morningstar._session_credentials", lambda: ("tok", {}))
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+    monkeypatch.setattr(
+        "app.morningstar.scraper_search_etf",
+        lambda q: [EtfSearchResult(isin="FAKEISIN", name="from justetf", ticker=q)],
+    )
+
+    out = morningstar.search_etf_morningstar("SWDA")
+    assert out[0].name == "from justetf"

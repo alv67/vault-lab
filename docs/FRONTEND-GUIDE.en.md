@@ -615,10 +615,16 @@ quote/prices.
       not jump). The bar colour matches the page-card palette by rank, so the
       modal previews the card. An `add-country` native select + "Aggiungi"
       button lets the user add any canonical code not already present (focus
-      then moves to its weight input). A totals footer shows "Totale X%" plus a
+      then moves to its weight input). The list is **flexible**
+      (`min-h-0 flex-1 overflow-y-auto`): it grows to fill the box so the
+      "Totale" footer and the Save button sit at the bottom, aligned with the
+      regions box, and long lists scroll inside the list area instead of
+      growing the modal. A totals footer shows "Totale X%" plus a
       progress meter; **save is disabled when the sum exceeds 100** (a sum
-      below 100 is allowed). An info line explains the residual goes to
-      "Other / Not Classified" on save. **No donut** in this box.
+      below 100 is allowed). An info line reports the unattributed residual
+      and reminds that regions are **not** re-derived on save — they update
+      only via the regions box's "Calcola da paesi" button. **No donut** in
+      this box.
     - **Regioni box**: a **fixed table of the 10 canonical regions** (no
       add/remove, no "Other / Not Classified" row — Other is filtered out at
       the page so it never enters `regionsEdit`), each row with a colour
@@ -658,7 +664,11 @@ quote/prices.
   on the slices).
   Saving sends **only the edited dimension**
   (`PUT /assets/{id}/exposure` with `{countries}` or `{regions}` — omitting a
-  key leaves the other untouched), then reloads the canonical response. The
+  key leaves the other untouched), then reloads the canonical response. Saving
+  countries **no longer re-derives the regions server-side**: the stored
+  regions come back unchanged and the regions provenance badge is left
+  untouched — regions are recomputed only when the user clicks
+  **"Calcola da paesi"** in the regions box. The
   page strips any "Other / Not Classified" row from the regions response
   before feeding the UI; the server keeps re-adding the residual internally so
   stored regions still sum to 100 for portfolio aggregation. The

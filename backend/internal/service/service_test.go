@@ -45,6 +45,9 @@ type fakeExposureRepo struct {
 	regions   map[string][]model.ExposureRow
 	sectors   map[string][]model.ExposureRow
 	countries map[string][]model.ExposureRow
+	// replaceRegionsCalls records every region write so tests can assert that
+	// saving countries alone never rewrites the regions dimension.
+	replaceRegionsCalls int
 }
 
 func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
@@ -57,12 +60,25 @@ func (f *fakeExposureRepo) FindCountries(ctx context.Context, assetID uuid.UUID)
 	return f.countries[assetID.String()], nil
 }
 func (f *fakeExposureRepo) ReplaceRegions(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	f.replaceRegionsCalls++
+	if f.regions == nil {
+		f.regions = map[string][]model.ExposureRow{}
+	}
+	f.regions[assetID.String()] = rows
 	return nil
 }
 func (f *fakeExposureRepo) ReplaceSectors(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	if f.sectors == nil {
+		f.sectors = map[string][]model.ExposureRow{}
+	}
+	f.sectors[assetID.String()] = rows
 	return nil
 }
 func (f *fakeExposureRepo) ReplaceCountries(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	if f.countries == nil {
+		f.countries = map[string][]model.ExposureRow{}
+	}
+	f.countries[assetID.String()] = rows
 	return nil
 }
 func (f *fakeExposureRepo) FindRegionsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
@@ -783,6 +799,114 @@ func TestDeriveRegions_EmptyCountries(t *testing.T) {
 		if !r.Weight.IsZero() {
 			t.Fatalf("region %q weight = %v, want zero", r.Name, r.Weight)
 		}
+	}
+}
+
+func exposureRowsByName(rows []model.ExposureRow) map[string]decimal.Decimal {
+	byName := map[string]decimal.Decimal{}
+	for _, r := range rows {
+		byName[r.Name] = r.Weight
+	}
+	return byName
+}
+
+func TestSaveExposureDimensions_CountriesDoNotTouchRegions(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		regions: map[string][]model.ExposureRow{
+			key: {{Name: "North America", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "United States", Weight: decimal.NewFromInt(60)},
+			{Name: "JP", Weight: decimal.NewFromInt(35)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.replaceRegionsCalls != 0 {
+		t.Fatalf("ReplaceRegions calls = %d, want 0 (saving countries must not rewrite the regions dimension)", ex.replaceRegionsCalls)
+	}
+	gotRegions := ex.regions[key]
+	if len(gotRegions) != 1 || gotRegions[0].Name != "North America" || !gotRegions[0].Weight.Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("stored regions = %+v, want the pre-existing [North America 100]", gotRegions)
+	}
+	gotCountries := exposureRowsByName(ex.countries[key])
+	if len(gotCountries) != 2 || !gotCountries["US"].Equal(decimal.NewFromInt(60)) || !gotCountries["JP"].Equal(decimal.NewFromInt(35)) {
+		t.Fatalf("stored countries = %+v, want normalized US 60 + JP 35", ex.countries[key])
+	}
+	if _, ok := ex.sectors[key]; ok {
+		t.Fatalf("sectors written for an absent dimension: %+v", ex.sectors[key])
+	}
+}
+
+func TestSaveExposureDimensions_ExplicitRegionsStillSaved(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		regions: map[string][]model.ExposureRow{
+			key: {{Name: "North America", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Regions: []model.ExposureRow{
+			{Name: "North America", Weight: decimal.NewFromInt(60)},
+			{Name: "United Kingdom", Weight: decimal.NewFromInt(25)},
+			{Name: "Japan", Weight: decimal.NewFromInt(10)},
+		},
+		Countries: []model.ExposureRow{
+			{Name: "US", Weight: decimal.NewFromInt(60)},
+			{Name: "GB", Weight: decimal.NewFromInt(25)},
+			{Name: "JP", Weight: decimal.NewFromInt(10)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.replaceRegionsCalls != 1 {
+		t.Fatalf("ReplaceRegions calls = %d, want 1 (explicit regions must persist)", ex.replaceRegionsCalls)
+	}
+	gotRegions := exposureRowsByName(ex.regions[key])
+	if !gotRegions["North America"].Equal(decimal.NewFromInt(60)) || !gotRegions["United Kingdom"].Equal(decimal.NewFromInt(25)) ||
+		!gotRegions["Japan"].Equal(decimal.NewFromInt(10)) {
+		t.Fatalf("stored regions = %+v, want the explicit 60/25/10", ex.regions[key])
+	}
+	if !gotRegions[geo.OtherRegion].Equal(decimal.NewFromInt(5)) {
+		t.Fatalf("residual %q = %v, want 5 (prepareRegions invariant)", geo.OtherRegion, gotRegions[geo.OtherRegion])
+	}
+	if gotCountries := exposureRowsByName(ex.countries[key]); len(gotCountries) != 3 || !gotCountries["GB"].Equal(decimal.NewFromInt(25)) {
+		t.Fatalf("stored countries = %+v, want US/GB/JP 60/25/10", ex.countries[key])
+	}
+}
+
+func TestSaveExposureDimensions_EmptyPayloadWritesNothing(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		regions:   map[string][]model.ExposureRow{key: {{Name: "Japan", Weight: decimal.NewFromInt(100)}}},
+		sectors:   map[string][]model.ExposureRow{key: {{Name: "Health Care", Weight: decimal.NewFromInt(100)}}},
+		countries: map[string][]model.ExposureRow{key: {{Name: "JP", Weight: decimal.NewFromInt(100)}}},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	if err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.replaceRegionsCalls != 0 {
+		t.Fatalf("ReplaceRegions calls = %d, want 0", ex.replaceRegionsCalls)
+	}
+	if got := exposureRowsByName(ex.regions[key]); !got["Japan"].Equal(decimal.NewFromInt(100)) || len(got) != 1 {
+		t.Fatalf("stored regions = %+v, want the pre-existing [Japan 100]", ex.regions[key])
+	}
+	if got := exposureRowsByName(ex.countries[key]); !got["JP"].Equal(decimal.NewFromInt(100)) || len(got) != 1 {
+		t.Fatalf("stored countries = %+v, want the pre-existing [JP 100]", ex.countries[key])
 	}
 }
 

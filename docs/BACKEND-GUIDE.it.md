@@ -531,8 +531,10 @@ sessione a vita breve, vedi `meta.go`):
   `unitedKingdom`, `japan`, `australasia`, ...) sono mappate 1:1 sulla
   tassonomia canonica VaultLab e restituite come dimensione `regions`. Il
   backend salva paesi, settori e regioni ufficiali quando presenti; altrimenti
-  (o per JustETF) le regioni vengono
-  ricalcolate dai paesi lato server e il residuo (100 − somma paesi) confluisce
+  (o per JustETF) è il fetch a derivare le regioni dai paesi lato server e
+  persistere le regioni come dimensione esplicita (la derivazione appartiene
+  solo al prefill dai provider: il `PUT` manuale con `{countries}` **non**
+  riscrive le regioni); il residuo (100 − somma paesi) confluisce
   nella regione `Other / Not Classified`, così le regioni sommano sempre a 100.
   Dopo l'allineamento tassonomico le regioni canoniche sono **10 + `Other`**:
   North America, Latin America, United Kingdom, Europe Developed, Europe
@@ -561,9 +563,11 @@ espone la dimensione **countries** zero-filled sull'intera lista ISO canonica, e
 `PUT /assets/{id}/exposure` accetta un array opzionale `countries`: tiene solo
 codici ISO canonici e **rifiuta una somma paesi sopra 100** (una somma sotto
 100 è legittima — la copertura dei provider è spesso ~92–95%, e non c'è un
-minimo). Quando i countries sono forniti il backend ricalcola e persiste le
-regions da quei paesi (il residuo 100 − somma paesi confluisce in
-`Other / Not Classified`). Gli utenti possono
+minimo). Il salvataggio dei paesi **non** tocca la dimensione regioni: ogni
+dimensione nel body della `PUT` è salvata indipendentemente, quindi un body
+`{countries}` lascia le regioni memorizzate esattamente come sono. Le regioni
+si ricalcolano dai paesi solo tramite l'endpoint esplicito di derivazione (o
+vengono aggiornate esplicitamente via `{regions}`). Gli utenti possono
 aggiungere/rimuovere paesi dalla lista canonica e modificarne i singoli pesi.
 Un endpoint complementare `POST /assets/{id}/exposure/derive` calcola le regioni
 da un body `{countries}` **senza persistire** (usato dal pulsante "Calcola da
@@ -701,7 +705,8 @@ L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&fu
 
 L'utente modifica l'esposizione ──► PUT /assets/{id}/exposure
     → salva asset_country_weights / asset_region_weights / asset_sector_weights
-      (regioni ricalcolate quando vengono forniti i paesi; somma paesi non vincolante) → bumpRev
+      (ogni dimensione salvata indipendentemente: i paesi non riscrivono le
+       regioni; somma paesi non vincolante) → bumpRev
 
 L'utente clicca "Calcola da paesi" ──► POST /assets/{id}/exposure/derive
     → {countries} → {regions} derivate via AggregateRegions (nessuna persistenza) → riempie la tabella regioni

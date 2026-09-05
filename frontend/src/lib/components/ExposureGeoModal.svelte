@@ -58,8 +58,13 @@
   /** Country codes currently present in the countries edit list. */
   const presentCodes = $derived(new Set(countriesEdit.map((r) => r.name)))
 
-  /** Canonical codes not yet in the edit list — available for the add dropdown. */
-  const availableCodes = $derived(CANONICAL_COUNTRIES.filter((c) => !presentCodes.has(c)))
+  /** Canonical codes not yet in the edit list — available for the add
+   *  dropdown, ordered by friendly country name (not ISO code). */
+  const availableCodes = $derived(
+    CANONICAL_COUNTRIES.filter((c) => !presentCodes.has(c)).sort((a, b) =>
+      countryDisplayName(a).localeCompare(countryDisplayName(b), 'it'),
+    ),
+  )
 
   let addCountryCode = $state('')
 
@@ -136,9 +141,11 @@
     countriesEdit = [...countriesEdit, { name: code, weight: '0' }]
     onCountriesDirty()
     resort()
-    // Reset selection to next available
-    const next = CANONICAL_COUNTRIES.find((c) => !countriesEdit.some((r) => r.name === c))
-    addCountryCode = next ?? ''
+    // Reset selection to the first country by name (availableCodes is
+    // name-ordered, so the dropdown always proposes the alphabetically
+    // first not-yet-added country).
+    const next = availableCodes[0] ?? ''
+    addCountryCode = next
     await tick()
     // Land the user straight on the new row's weight input.
     const input = document.querySelector<HTMLInputElement>(
@@ -173,8 +180,11 @@
     aria-label="Modifica distribuzione geografica"
     tabindex="-1"
   >
+    <!-- max-w-6xl (1152px): with the lg:grid-cols-2 split each box gets ~536px
+         of width, so the regions table (~264px after the 224px donut) has room
+         for long region names like "Africa / Middle East" on one line. -->
     <div
-      class="relative mx-4 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      class="relative mx-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
     >
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-lg font-semibold">Modifica distribuzione geografica</h2>
@@ -188,7 +198,7 @@
       </div>
 
       <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <!-- Countries (primary: regions are derived from them) -->
+        <!-- Countries (regions update only manually, via "Calcola da paesi") -->
         <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
@@ -233,90 +243,117 @@
             </div>
           </div>
 
-          {#if visibleCountries.length === 0}
-            <div class="flex flex-col items-center justify-center py-10 text-center">
-              <Globe2 class="h-8 w-8 text-gray-300" />
-              <p class="text-sm text-gray-500">Nessun paese inserito</p>
-              <p class="text-xs text-gray-500">
-                Aggiungi un paese qui sotto, oppure usa un prefill JustETF / Morningstar
-              </p>
+          <!-- Fixed-height middle area: EXACTLY the same quota as the regions
+               box (h-[38rem] fits the header row + 10 region rows + side
+               donut), so both boxes and their footers (hr / total / messages
+               / Save) stay aligned. The taller quota keeps the regions table
+               fully visible without a scrollbar; the countries list scrolls
+               INSIDE this quota only as a last resort (min-h-0 flex-1 on the
+               ul): few countries leave empty space below, many never widen or
+               lengthen the box. -->
+          <div class="flex h-[38rem] flex-col">
+            <!-- Table-style header row, columns aligned with the rows below. -->
+            <div
+              class="flex items-center gap-3 border-b border-gray-300 pb-2 pl-2 pr-3 text-sm text-gray-500"
+            >
+              <span class="min-w-0 flex-1 truncate">Paese</span>
+              <span class="w-20 shrink-0 text-right">Peso %</span>
+              <!-- Spacer matching the remove-button column of the rows. -->
+              <span class="w-[22px] shrink-0" aria-hidden="true"></span>
             </div>
-          {:else}
-            <ul class="max-h-[400px] space-y-1 overflow-y-auto pr-1">
-              {#each visibleCountries as row, i (row.name)}
-                {@const weight = Number(row.weight) || 0}
-                {@const displayName = countryDisplayName(row.name)}
-                {@const barPct =
-                  maxCountryWeight > 0 ? ((weight / maxCountryWeight) * 100).toFixed(1) : '0'}
-                <li
-                  data-code={row.name}
-                  class="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-gray-100 motion-reduce:transition-none"
-                >
-                  <span class="w-7 shrink-0 text-xs font-medium text-gray-500">{row.name}</span>
-                  <span
-                    class="w-32 shrink-0 truncate text-sm text-gray-700 sm:w-40"
-                    title="{row.name} — {displayName}"
-                  >{displayName}</span>
-                  <div
-                    class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200"
-                    aria-hidden="true"
+
+            {#if visibleCountries.length === 0}
+              <div class="flex min-h-0 flex-1 flex-col items-center justify-center py-10 text-center">
+                <Globe2 class="h-8 w-8 text-gray-300" />
+                <p class="text-sm text-gray-500">Nessun paese inserito</p>
+                <p class="text-xs text-gray-500">
+                  Aggiungi un paese qui sotto, oppure usa un prefill JustETF / Morningstar
+                </p>
+              </div>
+            {:else}
+              <ul
+                class="min-h-0 flex-1 divide-y divide-gray-200 overflow-y-auto py-1 pr-1"
+              >
+                {#each visibleCountries as row, i (row.name)}
+                  {@const weight = Number(row.weight) || 0}
+                  {@const displayName = countryDisplayName(row.name)}
+                  {@const barPct =
+                    maxCountryWeight > 0 ? ((weight / maxCountryWeight) * 100).toFixed(1) : '0'}
+                  <li
+                    data-code={row.name}
+                    class="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-gray-100 motion-reduce:transition-none"
                   >
+                    <span class="w-7 shrink-0 text-xs font-medium text-gray-500">{row.name}</span>
+                    <span
+                      class="w-32 shrink-0 truncate text-sm text-gray-700 sm:w-40"
+                      title="{row.name} — {displayName}"
+                    >{displayName}</span>
                     <div
-                      class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none"
-                      style="width: {barPct}%; background-color: {CHART_PALETTE[i % CHART_PALETTE.length]};"
-                    ></div>
-                  </div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    inputmode="decimal"
-                    value={row.weight}
-                    aria-label="Peso di {displayName}"
-                    oninput={(e) => {
-                      row.weight = e.currentTarget.value
-                      onCountriesDirty()
-                    }}
-                    onchange={resort}
-                    class="w-20 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                  <button
-                    onclick={() => removeCountry(row.name)}
-                    class="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
-                    title="Rimuovi {displayName}"
-                    aria-label="Rimuovi {displayName}"
-                  >
-                    <Trash2 class="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-
-          {#if availableCodes.length > 0}
-            <div class="mt-3 flex items-center gap-2">
-              <select
-                bind:value={addCountryCode}
-                aria-label="Paese da aggiungere"
-                class="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              >
-                {#each availableCodes as code (code)}
-                  <option value={code}>{code} — {countryDisplayName(code)}</option>
+                      class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200"
+                      aria-hidden="true"
+                    >
+                      <div
+                        class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none"
+                        style="width: {barPct}%; background-color: {CHART_PALETTE[i % CHART_PALETTE.length]};"
+                      ></div>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      inputmode="decimal"
+                      value={row.weight}
+                      aria-label="Peso di {displayName}"
+                      oninput={(e) => {
+                        row.weight = e.currentTarget.value
+                        onCountriesDirty()
+                      }}
+                      onchange={resort}
+                      class="w-20 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <button
+                      onclick={() => removeCountry(row.name)}
+                      class="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                      title="Rimuovi {displayName}"
+                      aria-label="Rimuovi {displayName}"
+                    >
+                      <Trash2 class="h-3.5 w-3.5" />
+                    </button>
+                  </li>
                 {/each}
-              </select>
-              <button
-                onclick={addCountry}
-                disabled={!addCountryCode}
-                class="flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Plus class="h-4 w-4" />
-                Aggiungi
-              </button>
-            </div>
-          {/if}
+              </ul>
+            {/if}
 
-          <div class="mt-3 border-t border-gray-200 pt-3">
+            {#if availableCodes.length > 0}
+              <div class="flex items-center gap-2 pt-3">
+                <select
+                  bind:value={addCountryCode}
+                  aria-label="Paese da aggiungere"
+                  class="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  {#each availableCodes as code (code)}
+                    <option value={code}>{code} — {countryDisplayName(code)}</option>
+                  {/each}
+                </select>
+                <button
+                  onclick={addCountry}
+                  disabled={!addCountryCode}
+                  class="flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus class="h-4 w-4" />
+                  Aggiungi
+                </button>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Footer rows (identical in both boxes so they line up):
+               separator, fixed-height total, reserved 3-line message area,
+               fixed-height Save area. -->
+          <div class="mt-3 border-t border-gray-200" aria-hidden="true"></div>
+
+          <div class="mt-3 h-8">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium text-gray-700">Totale</span>
               <span
@@ -331,21 +368,22 @@
                   : '#2563eb'};"
               ></div>
             </div>
+          </div>
+
+          <div class="h-[3.75rem] overflow-hidden pt-1 text-xs leading-5">
             {#if countriesOver}
-              <p role="alert" class="mt-2 text-sm text-red-600">
+              <p role="alert" class="text-red-600">
                 La somma supera il 100% — attuale {sumCountries.toFixed(2)}%.
-                Riduci i pesi per poter salvare.
+                Riduci i pesi per salvare.
               </p>
             {:else if sumCountries < 99.5}
-              <p class="mt-2 text-xs text-gray-500">
+              <p class="text-gray-500">
                 Residuo non attribuito: {(100 - sumCountries).toFixed(2)}%.
-                Al salvataggio le regioni vengono ricalcolate dai paesi e la quota
-                non classificata confluisce in «Other / Not Classified».
               </p>
             {/if}
           </div>
 
-          <div class="mt-auto flex justify-end pt-4">
+          <div class="flex h-12 items-center justify-end">
             <button
               onclick={saveCountries}
               disabled={savingCountries || countriesOver}
@@ -403,7 +441,11 @@
             </div>
           </div>
 
-          <div class="flex flex-1 flex-col gap-4 md:flex-row">
+          <!-- Fixed-height middle area: same quota as the countries box
+               (h-[38rem] fits the header row + 10 region rows and the side
+               donut completely, no scrollbar). Stacked on small screens it
+               scrolls within this quota instead of growing the box. -->
+          <div class="flex h-[38rem] flex-col gap-4 overflow-y-auto md:flex-row">
             <div class="min-w-0 flex-1">
               <table class="w-full text-left text-sm">
                 <thead>
@@ -416,7 +458,11 @@
                   {#each regionsEdit as r (r.name)}
                     <tr class="border-b last:border-0 hover:bg-gray-100/70">
                       <td class="py-2">
-                        <span class="flex items-center gap-2">
+                        <!-- nowrap only once the panel truly reaches max-w-6xl
+                             (viewport ≥ 1184px = 1152 + 2×mx-4); below that the
+                             two-column table is too narrow for nowrap without
+                             overflowing into the donut, so wrapping is allowed. -->
+                        <span class="flex items-center gap-2 min-[1184px]:whitespace-nowrap">
                           <span
                             class="inline-block h-3 w-3 shrink-0 rounded"
                             style="background-color: {colorForRow(r, regionsEdit)};"
@@ -450,7 +496,12 @@
             </div>
           </div>
 
-          <div class="mt-3 border-t border-gray-200 pt-3">
+          <!-- Footer rows (identical in both boxes so they line up):
+               separator, fixed-height total, reserved 3-line message area,
+               fixed-height Save area. -->
+          <div class="mt-3 border-t border-gray-200" aria-hidden="true"></div>
+
+          <div class="mt-3 h-8">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium text-gray-700">Totale</span>
               <span
@@ -465,20 +516,23 @@
                   : '#2563eb'};"
               ></div>
             </div>
+          </div>
+
+          <div class="h-[3.75rem] overflow-hidden pt-1 text-xs leading-5">
             {#if regionsOver}
-              <p role="alert" class="mt-2 text-sm text-red-600">
+              <p role="alert" class="text-red-600">
                 La somma supera il 100% — attuale {sumRegions.toFixed(2)}%.
-                Riduci i pesi per poter salvare.
+                Riduci i pesi per salvare.
               </p>
             {:else if sumRegions < 99.5}
-              <p class="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+              <p class="flex items-center gap-1.5 text-gray-500">
                 <Info class="h-3.5 w-3.5 shrink-0" />
                 Residuo non classificato: {(100 - sumRegions).toFixed(2)}% — escluso dal grafico.
               </p>
             {/if}
           </div>
 
-          <div class="mt-auto flex justify-end pt-4">
+          <div class="flex h-12 items-center justify-end">
             <button
               onclick={saveRegions}
               disabled={savingRegions || regionsOver}
