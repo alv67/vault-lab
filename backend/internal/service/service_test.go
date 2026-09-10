@@ -13,6 +13,7 @@ import (
 	"github.com/amelamela/vault-lab/internal/cache"
 	"github.com/amelamela/vault-lab/internal/geo"
 	"github.com/amelamela/vault-lab/internal/model"
+	"github.com/amelamela/vault-lab/internal/price"
 	"github.com/amelamela/vault-lab/internal/repository"
 )
 
@@ -45,9 +46,11 @@ type fakeExposureRepo struct {
 	regions   map[string][]model.ExposureRow
 	sectors   map[string][]model.ExposureRow
 	countries map[string][]model.ExposureRow
-	// replaceRegionsCalls records every region write so tests can assert that
-	// saving countries alone never rewrites the regions dimension.
-	replaceRegionsCalls int
+	// replace*Calls record every dimension write so tests can assert which
+	// operations persist (PUT/save) and which stay read-only previews.
+	replaceRegionsCalls   int
+	replaceSectorsCalls   int
+	replaceCountriesCalls int
 }
 
 func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
@@ -68,6 +71,7 @@ func (f *fakeExposureRepo) ReplaceRegions(ctx context.Context, assetID uuid.UUID
 	return nil
 }
 func (f *fakeExposureRepo) ReplaceSectors(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	f.replaceSectorsCalls++
 	if f.sectors == nil {
 		f.sectors = map[string][]model.ExposureRow{}
 	}
@@ -75,6 +79,7 @@ func (f *fakeExposureRepo) ReplaceSectors(ctx context.Context, assetID uuid.UUID
 	return nil
 }
 func (f *fakeExposureRepo) ReplaceCountries(ctx context.Context, assetID uuid.UUID, rows []model.ExposureRow) error {
+	f.replaceCountriesCalls++
 	if f.countries == nil {
 		f.countries = map[string][]model.ExposureRow{}
 	}
@@ -121,12 +126,18 @@ func (f *fakeFXRepo) History(ctx context.Context, base, quote string) ([]model.F
 type fakeAssetRepo struct {
 	asset *model.Asset
 	err   error
+	// updateCalls and lastUpdate record asset writes so tests can assert the
+	// exposure fetches persist nothing but the auto-resolved ISIN.
+	updateCalls int
+	lastUpdate  *model.Asset
 }
 
 func (f *fakeAssetRepo) Create(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
 	return asset, nil
 }
 func (f *fakeAssetRepo) Update(ctx context.Context, asset *model.Asset) (*model.Asset, error) {
+	f.updateCalls++
+	f.lastUpdate = asset
 	return asset, nil
 }
 func (f *fakeAssetRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Asset, error) {
@@ -189,6 +200,82 @@ func newTestServiceWithAsset(t *testing.T, a *fakeAssetRepo) *Service {
 		FX:        &fakeFXRepo{},
 	}
 	return New(repos, nil, nil, nil, time.Minute, cache.New(nil), 0, 0, nil)
+}
+
+// fakeYahooFetcher stubs the yahooFetcher seam; only the profile calls carry
+// canned data, the rest are inert zero-value stubs.
+type fakeYahooFetcher struct {
+	sector   string
+	industry string
+	country  string
+	// weightings is what the provider reports as sectorWeightings; gotISIN
+	// style counters record the calls so tests can assert the fetch ran.
+	weightings           []model.ExposureRow
+	profileExtendedCalls int
+}
+
+func (f *fakeYahooFetcher) FetchAssetProfile(ctx context.Context, ticker string) (string, string, string, error) {
+	return f.sector, f.industry, f.country, nil
+}
+func (f *fakeYahooFetcher) FetchAssetProfileExtended(ctx context.Context, ticker string) (string, string, string, []model.ExposureRow, error) {
+	f.profileExtendedCalls++
+	return f.sector, f.industry, f.country, f.weightings, nil
+}
+func (f *fakeYahooFetcher) FetchMeta(ctx context.Context, ticker string) (*price.AssetMeta, error) {
+	return nil, nil
+}
+func (f *fakeYahooFetcher) FetchFXRate(ctx context.Context, quote string) (decimal.Decimal, error) {
+	return decimal.Zero, nil
+}
+func (f *fakeYahooFetcher) RefreshFX(ctx context.Context) ([]price.FetchIssue, error) {
+	return nil, nil
+}
+func (f *fakeYahooFetcher) RefreshStale(ctx context.Context, assets []*model.Asset) (price.RefreshReport, error) {
+	return price.RefreshReport{}, nil
+}
+func (f *fakeYahooFetcher) RefreshStaleForPortfolio(ctx context.Context, portfolioID uuid.UUID) (price.RefreshReport, error) {
+	return price.RefreshReport{}, nil
+}
+func (f *fakeYahooFetcher) EnsureHistory(ctx context.Context, assets []price.HistoryAsset) error {
+	return nil
+}
+func (f *fakeYahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) error {
+	return nil
+}
+
+// fakeETFFetcher stubs price.ETFFetcher and records the ISIN each fetch ran
+// with so tests can assert the ticker→ISIN auto-resolution result is used.
+type fakeETFFetcher struct {
+	exposure        *model.AssetExposure
+	morningstar     *model.AssetExposure
+	search          []price.EtfSearchResult
+	exposureISIN    string
+	morningstarISIN string
+	searchTicker    string
+}
+
+func (f *fakeETFFetcher) FetchExposure(ctx context.Context, isin string) (*model.AssetExposure, error) {
+	f.exposureISIN = isin
+	return f.exposure, nil
+}
+func (f *fakeETFFetcher) FetchMorningstarExposure(ctx context.Context, isin string) (*model.AssetExposure, error) {
+	f.morningstarISIN = isin
+	return f.morningstar, nil
+}
+func (f *fakeETFFetcher) SearchTicker(ctx context.Context, query string) ([]price.EtfSearchResult, error) {
+	f.searchTicker = query
+	return f.search, nil
+}
+
+func newFetchTestService(t *testing.T, a *fakeAssetRepo, e *fakeExposureRepo, yf yahooFetcher, etf price.ETFFetcher) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:     a,
+		Portfolio: &fakePortfolioRepo{},
+		Exposure:  e,
+		FX:        &fakeFXRepo{},
+	}
+	return New(repos, nil, yf, etf, time.Minute, cache.New(nil), 0, 0, nil)
 }
 
 func holding(id, currency, country, sector string, typ model.AssetType, qty, lastClose decimal.Decimal) *model.Holding {
@@ -1242,5 +1329,223 @@ func TestPrepareSectorsKeepsExactRule(t *testing.T) {
 	})
 	if err := validateExposureWeights(sectors, weightSumExact100); !errors.Is(err, ErrInvalidWeights) {
 		t.Fatalf("95%% sectors err = %v, want ErrInvalidWeights (sectors keep the exact-100 rule)", err)
+	}
+}
+
+// assertNoExposureWrites checks that a preview fetch wrote no exposure
+// dimension at all.
+func assertNoExposureWrites(t *testing.T, e *fakeExposureRepo, what string) {
+	t.Helper()
+	if e.replaceCountriesCalls != 0 || e.replaceRegionsCalls != 0 || e.replaceSectorsCalls != 0 {
+		t.Fatalf("%s persisted exposure: ReplaceCountries=%d ReplaceRegions=%d ReplaceSectors=%d, want all 0",
+			what, e.replaceCountriesCalls, e.replaceRegionsCalls, e.replaceSectorsCalls)
+	}
+}
+
+func TestFetchETFExposure_PreviewDoesNotPersist(t *testing.T) {
+	assetID := uuid.New()
+	a := &fakeAssetRepo{asset: &model.Asset{ID: assetID, Ticker: "SXR8.DE", Type: model.AssetTypeETF, ISIN: "IE00B4L5Y983"}}
+	e := &fakeExposureRepo{}
+	etf := &fakeETFFetcher{exposure: &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "United States", Weight: decimal.NewFromInt(60)},
+			{Name: "Germany", Weight: decimal.NewFromInt(40)},
+		},
+		Sectors: []model.ExposureRow{
+			{Name: "Technology", Weight: decimal.NewFromInt(50)},
+			{Name: "Healthcare", Weight: decimal.NewFromInt(50)},
+		},
+	}}
+	svc := newFetchTestService(t, a, e, nil, etf)
+
+	got, err := svc.FetchETFExposure(context.Background(), assetID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertNoExposureWrites(t, e, "FetchETFExposure")
+	if a.updateCalls != 0 {
+		t.Fatalf("asset.Update calls = %d, want 0 (an asset with an ISIN must not be touched)", a.updateCalls)
+	}
+	if etf.exposureISIN != "IE00B4L5Y983" {
+		t.Fatalf("provider called with ISIN %q, want IE00B4L5Y983", etf.exposureISIN)
+	}
+	if got.ISIN != "IE00B4L5Y983" {
+		t.Fatalf("response ISIN = %q, want IE00B4L5Y983", got.ISIN)
+	}
+	if len(got.Countries) != len(geo.Countries) || len(got.Regions) != len(geo.Regions) || len(got.Sectors) != len(geo.GICSSectors) {
+		t.Fatalf("preview not canonical: countries=%d regions=%d sectors=%d", len(got.Countries), len(got.Regions), len(got.Sectors))
+	}
+	countries := exposureRowsByName(got.Countries)
+	if !countries["US"].Equal(decimal.NewFromInt(60)) || !countries["DE"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("preview countries = %+v, want normalized US 60 + DE 40", got.Countries)
+	}
+	regions := exposureRowsByName(got.Regions)
+	if !regions["North America"].Equal(decimal.NewFromInt(60)) || !regions["Europe Developed"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("preview regions = %+v, want aggregated North America 60 + Europe Developed 40", got.Regions)
+	}
+	sectors := exposureRowsByName(got.Sectors)
+	if !sectors["Information Technology"].Equal(decimal.NewFromInt(50)) || !sectors["Health Care"].Equal(decimal.NewFromInt(50)) {
+		t.Fatalf("preview sectors = %+v, want aggregated Info Tech 50 + Health Care 50", got.Sectors)
+	}
+}
+
+func TestFetchETFExposure_PreviewPersistsOnlyResolvedISIN(t *testing.T) {
+	assetID := uuid.New()
+	a := &fakeAssetRepo{asset: &model.Asset{ID: assetID, Ticker: "CW9", Name: "iShares Core MSCI World UCITS ETF USD (Acc)", Type: model.AssetTypeETF}}
+	e := &fakeExposureRepo{}
+	etf := &fakeETFFetcher{
+		search: []price.EtfSearchResult{{ISIN: "IE00B4L5Y983", Ticker: "CW9", Name: "iShares Core MSCI World UCITS ETF USD (Acc)"}},
+		exposure: &model.AssetExposure{
+			Countries: []model.ExposureRow{{Name: "US", Weight: decimal.NewFromInt(100)}},
+			Sectors:   []model.ExposureRow{{Name: "Technology", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	svc := newFetchTestService(t, a, e, nil, etf)
+
+	got, err := svc.FetchETFExposure(context.Background(), assetID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.updateCalls != 1 {
+		t.Fatalf("asset.Update calls = %d, want 1 (only the resolved ISIN is persisted)", a.updateCalls)
+	}
+	if a.lastUpdate == nil || a.lastUpdate.ISIN != "IE00B4L5Y983" {
+		t.Fatalf("updated asset = %+v, want ISIN IE00B4L5Y983", a.lastUpdate)
+	}
+	if etf.exposureISIN != "IE00B4L5Y983" {
+		t.Fatalf("provider called with ISIN %q, want the resolved IE00B4L5Y983", etf.exposureISIN)
+	}
+	assertNoExposureWrites(t, e, "FetchETFExposure")
+	if got.ISIN != "IE00B4L5Y983" {
+		t.Fatalf("response ISIN = %q, want IE00B4L5Y983", got.ISIN)
+	}
+}
+
+func TestFetchMorningstarExposure_PreviewDoesNotPersist(t *testing.T) {
+	assetID := uuid.New()
+	a := &fakeAssetRepo{asset: &model.Asset{ID: assetID, Ticker: "SXR8.DE", Type: model.AssetTypeETF, ISIN: "IE00B4L5Y983"}}
+	e := &fakeExposureRepo{}
+	etf := &fakeETFFetcher{morningstar: &model.AssetExposure{
+		Countries: []model.ExposureRow{
+			{Name: "United States", Weight: decimal.NewFromInt(60)},
+			{Name: "Germany", Weight: decimal.NewFromInt(40)},
+		},
+		Regions: []model.ExposureRow{
+			{Name: "North America", Weight: decimal.NewFromInt(60)},
+			{Name: "Europe Developed", Weight: decimal.NewFromInt(40)},
+		},
+		Sectors: []model.ExposureRow{
+			{Name: "Technology", Weight: decimal.NewFromInt(100)},
+		},
+	}}
+	svc := newFetchTestService(t, a, e, nil, etf)
+
+	got, err := svc.FetchMorningstarExposure(context.Background(), assetID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertNoExposureWrites(t, e, "FetchMorningstarExposure")
+	if a.updateCalls != 0 {
+		t.Fatalf("asset.Update calls = %d, want 0 (an asset with an ISIN must not be touched)", a.updateCalls)
+	}
+	if etf.morningstarISIN != "IE00B4L5Y983" {
+		t.Fatalf("provider called with ISIN %q, want IE00B4L5Y983", etf.morningstarISIN)
+	}
+	countries := exposureRowsByName(got.Countries)
+	if !countries["US"].Equal(decimal.NewFromInt(60)) || !countries["DE"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("preview countries = %+v, want normalized US 60 + DE 40", got.Countries)
+	}
+	regions := exposureRowsByName(got.Regions)
+	if !regions["North America"].Equal(decimal.NewFromInt(60)) || !regions["Europe Developed"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("preview regions = %+v, want official North America 60 + Europe Developed 40", got.Regions)
+	}
+	sectors := exposureRowsByName(got.Sectors)
+	if !sectors["Information Technology"].Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("preview sectors = %+v, want aggregated Information Technology 100", got.Sectors)
+	}
+	if len(got.Regions) != len(geo.Regions) || len(got.Sectors) != len(geo.GICSSectors) {
+		t.Fatalf("preview not canonical: regions=%d sectors=%d", len(got.Regions), len(got.Sectors))
+	}
+}
+
+func TestFetchMorningstarExposure_PreviewPersistsOnlyResolvedISIN(t *testing.T) {
+	assetID := uuid.New()
+	a := &fakeAssetRepo{asset: &model.Asset{ID: assetID, Ticker: "CW9", Name: "iShares Core MSCI World UCITS ETF USD (Acc)", Type: model.AssetTypeETF}}
+	e := &fakeExposureRepo{}
+	etf := &fakeETFFetcher{
+		search: []price.EtfSearchResult{{ISIN: "IE00B4L5Y983", Ticker: "CW9", Name: "iShares Core MSCI World UCITS ETF USD (Acc)"}},
+		morningstar: &model.AssetExposure{
+			Countries: []model.ExposureRow{{Name: "US", Weight: decimal.NewFromInt(100)}},
+		},
+	}
+	svc := newFetchTestService(t, a, e, nil, etf)
+
+	got, err := svc.FetchMorningstarExposure(context.Background(), assetID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.updateCalls != 1 {
+		t.Fatalf("asset.Update calls = %d, want 1 (only the resolved ISIN is persisted)", a.updateCalls)
+	}
+	if a.lastUpdate == nil || a.lastUpdate.ISIN != "IE00B4L5Y983" {
+		t.Fatalf("updated asset = %+v, want ISIN IE00B4L5Y983", a.lastUpdate)
+	}
+	if etf.morningstarISIN != "IE00B4L5Y983" {
+		t.Fatalf("provider called with ISIN %q, want the resolved IE00B4L5Y983", etf.morningstarISIN)
+	}
+	assertNoExposureWrites(t, e, "FetchMorningstarExposure")
+	if got.ISIN != "IE00B4L5Y983" {
+		t.Fatalf("response ISIN = %q, want IE00B4L5Y983", got.ISIN)
+	}
+}
+
+func TestFetchAssetExposure_PreviewDoesNotPersist(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	a := &fakeAssetRepo{asset: &model.Asset{ID: assetID, Ticker: "AAPL", Type: model.AssetTypeStock, Country: "US", Sector: "Utilities"}}
+	e := &fakeExposureRepo{
+		regions:   map[string][]model.ExposureRow{key: {{Name: "North America", Weight: decimal.NewFromInt(100)}}},
+		countries: map[string][]model.ExposureRow{key: {{Name: "US", Weight: decimal.NewFromInt(100)}}},
+	}
+	yf := &fakeYahooFetcher{
+		sector:   "Technology",
+		industry: "Consumer Electronics",
+		country:  "United States",
+		weightings: []model.ExposureRow{
+			{Name: "Information Technology", Weight: decimal.NewFromInt(60)},
+			{Name: "Health Care", Weight: decimal.NewFromInt(40)},
+		},
+	}
+	svc := newFetchTestService(t, a, e, yf, nil)
+
+	got, err := svc.FetchAssetExposure(context.Background(), assetID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if yf.profileExtendedCalls != 1 {
+		t.Fatalf("provider calls = %d, want 1", yf.profileExtendedCalls)
+	}
+	assertNoExposureWrites(t, e, "FetchAssetExposure")
+	if a.updateCalls != 0 {
+		t.Fatalf("asset.Update calls = %d, want 0 (profile fields are preview-only)", a.updateCalls)
+	}
+	if a.asset.Sector != "Utilities" || a.asset.Country != "US" {
+		t.Fatalf("asset profile mutated by preview: sector=%q country=%q", a.asset.Sector, a.asset.Country)
+	}
+	sectors := exposureRowsByName(got.Sectors)
+	if !sectors["Information Technology"].Equal(decimal.NewFromInt(60)) || !sectors["Health Care"].Equal(decimal.NewFromInt(40)) {
+		t.Fatalf("preview sectors = %+v, want the provider's Info Tech 60 + Health Care 40", got.Sectors)
+	}
+	if len(got.Sectors) != len(geo.GICSSectors) {
+		t.Fatalf("preview sectors len = %d, want %d (canonical)", len(got.Sectors), len(geo.GICSSectors))
+	}
+	// The stored regions/countries dimensions are read back into the preview.
+	regions := exposureRowsByName(got.Regions)
+	if !regions["North America"].Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("preview regions = %+v, want the stored North America 100", got.Regions)
+	}
+	countries := exposureRowsByName(got.Countries)
+	if !countries["US"].Equal(decimal.NewFromInt(100)) {
+		t.Fatalf("preview countries = %+v, want the stored US 100", got.Countries)
 	}
 }

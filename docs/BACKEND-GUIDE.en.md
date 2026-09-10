@@ -500,7 +500,10 @@ see `meta.go`):
   `sector` and `industry` of a single stock.
 - **Sector exposure (`FetchAssetExposure`)**: for an ETF, the `topHoldings`
   module exposes `sectorWeightings` (a fraction per sector key), which the
-  backend converts to our canonical 11 GICS sectors (percentage).
+  backend converts to our canonical 11 GICS sectors (percentage). This fetch is
+  a **read-only preview**: neither the sector weights nor the profile fields
+  (sector/industry/country) are persisted — saving happens only through
+  `PUT /assets/{id}/exposure`.
 - **ETF exposure via JustETF (`FetchETFExposure`)**: since B.5, the backend can
   fetch the **complete** country/region and sector exposure of an ETF from the
   `python-service` microservice (`POST /assets/{id}/fetch-etf-exposure`). The
@@ -508,11 +511,12 @@ see `meta.go`):
   Go `geo` package maps each country to a macro-region and normalizes sectors
   to the GICS set. If the asset has no ISIN, it is **resolved automatically
   from the ticker** (the `.MI/.DE/.L...` suffix is stripped, results are ranked
-  by name similarity against the asset) and persisted on the asset. Since B.13
-  the raw countries are **kept**: the backend stores them (normalized to
-  ISO-3166 alpha-2 codes) in the `asset_country_weights` table, and the
-  exposure response carries three dimensions — `countries`, `regions` and
-  `sectors`.
+  by name similarity against the asset) and persisted on the asset — that ISIN
+  write is the only thing the fetch stores. The fetch is otherwise a **read-only
+  preview**: the raw countries (normalized to ISO-3166 alpha-2 codes), the
+  derived regions and the GICS sectors come back in the three dimensions —
+  `countries`, `regions` and `sectors` — but are NOT persisted; they reach the
+  database only when the user saves with `PUT /assets/{id}/exposure`.
 - **ETF exposure via Morningstar (`FetchMorningstarExposure`)**: since B.14, a
   second source is available: `POST /assets/{id}/fetch-morningstar-exposure`
   (ETF-only; when the ISIN is missing it is auto-resolved via Morningstar on the
@@ -534,14 +538,16 @@ see `meta.go`):
   country, so the weights sum to ~95% (no forced scaling to 100).
   The Morningstar region keys (`northAmerica`, `unitedKingdom`, `japan`,
   `australasia`, ...) are mapped 1:1 onto the canonical VaultLab taxonomy and
-  returned as the `regions` dimension. The backend saves countries, sectors and
-  the official regions when present; otherwise (or for JustETF) the fetch
-  derives the regions from the countries server-side via
-  `price.AggregateRegions` and persists them as an explicit region dimension
-  (this derivation belongs to the provider prefill only: the manual
+  returned as the `regions` dimension. Like the other fetches this endpoint is a
+  **read-only preview**: countries, sectors and the official regions (when
+  present) are returned but NOT persisted — the only write is an auto-resolved
+  ISIN; saving happens through `PUT /assets/{id}/exposure`. Otherwise (or for
+  JustETF) the preview derives the regions from the countries server-side via
+  `price.AggregateRegions` as an explicit region dimension (this derivation
+  belongs to the provider prefill only: the manual
   `PUT` with `{countries}` never rewrites the regions). The residual
   (100 − country sum) lands in the `Other / Not Classified` region,
-  so regions always sum to 100. Since the taxonomy alignment, the canonical
+  so the previewed regions always sum to 100. Since the taxonomy alignment, the canonical
   regions are **10 + `Other`**: North America, Latin America, United Kingdom,
   Europe Developed, Europe Emerging, Africa / Middle East, Japan, Australasia,
   Asia Developed, Asia Emerging, Other / Not Classified (UK/Japan/Australasia
@@ -719,11 +725,15 @@ The user clicks "Calcola da paesi" ──► POST /assets/{id}/exposure/derive
     → {countries} → {regions} derived via AggregateRegions (no persistence) → fills the regions table
 
 The user clicks "Aggiorna da Yahoo" ──► POST /assets/{id}/fetch-profile
-    → quoteSummary (crumb) → sector/industry (+ sectorWeightings) → saved via PATCH/fetch-exposure
+    → quoteSummary (crumb) → sector/industry (+ issuer country) → saved on the asset
 
-The user prefills from Morningstar ──► POST /assets/{id}/fetch-morningstar-exposure
-    → python-service GET /api/v1/etf/{isin}/morningstar-exposure (custom resolver, headless Chromium bootstrap)
-    → countries + sectors + official regions saved → bumpRev
+The user prefills the exposure ──► POST /assets/{id}/fetch-exposure
+                                 | /fetch-etf-exposure | /fetch-morningstar-exposure
+    → provider data (Yahoo sectors | python-service countries + sectors
+      + official regions, GET /api/v1/etf/{isin}/[morningstar-]exposure)
+      returned as a READ-ONLY preview — nothing persisted except an
+      auto-resolved ISIN → bumpRev on that ISIN write only
+    → the user confirms with the Save buttons → PUT /assets/{id}/exposure (persistence)
 ```
 
 ---

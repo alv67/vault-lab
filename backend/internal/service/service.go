@@ -92,10 +92,24 @@ const (
 	cacheTTLPrices = time.Hour
 )
 
+// yahooFetcher is the subset of *price.YahooFetcher consumed by the service.
+// The interface lets tests stub the Yahoo provider calls.
+type yahooFetcher interface {
+	FetchAssetProfile(ctx context.Context, ticker string) (sector, industry, country string, err error)
+	FetchAssetProfileExtended(ctx context.Context, ticker string) (sector, industry, country string, sectorWeightings []model.ExposureRow, err error)
+	FetchMeta(ctx context.Context, ticker string) (*price.AssetMeta, error)
+	FetchFXRate(ctx context.Context, quote string) (decimal.Decimal, error)
+	RefreshFX(ctx context.Context) ([]price.FetchIssue, error)
+	RefreshStale(ctx context.Context, assets []*model.Asset) (price.RefreshReport, error)
+	RefreshStaleForPortfolio(ctx context.Context, portfolioID uuid.UUID) (price.RefreshReport, error)
+	EnsureHistory(ctx context.Context, assets []price.HistoryAsset) error
+	EnsureSplits(ctx context.Context, assets []*model.Asset) error
+}
+
 type Service struct {
 	repos           *repository.Repository
 	jwtAuth         *auth.JWTAuth
-	fetcher         *price.YahooFetcher
+	fetcher         yahooFetcher
 	etfFetcher      price.ETFFetcher
 	lookupCacheTTL  time.Duration
 	cache           *cache.Cache
@@ -104,7 +118,7 @@ type Service struct {
 	Health          *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher *price.YahooFetcher, etfFetcher price.ETFFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher yahooFetcher, etfFetcher price.ETFFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
@@ -635,8 +649,11 @@ func (s *Service) DeriveRegions(ctx context.Context, id uuid.UUID, countries []m
 	return canonicalExposureRows(geo.Regions, derived, false, ""), nil
 }
 
-// FetchAssetExposure fetches sector/industry + sector weights from Yahoo,
-// persists them into the exposure tables and returns the complete exposure.
+// FetchAssetExposure previews the sector exposure of an asset from Yahoo: it
+// fetches sector/industry + sector weights and returns the canonical exposure
+// built from the provider sectors and the stored regions/countries. Nothing is
+// persisted (neither the profile fields nor the sector weights): saving
+// happens only through PUT /assets/{id}/exposure.
 func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -646,7 +663,7 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	sector, industry, country, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
+	sector, _, _, weightings, err := s.fetcher.FetchAssetProfileExtended(ctx, asset.Ticker)
 	if err != nil {
 		return nil, err
 	}
@@ -664,17 +681,6 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		sectors = []model.ExposureRow{{Name: geo.NormalizeSector(sector), Weight: decimal.NewFromInt(100)}}
 	}
 
-	// Keep existing non-empty profile fields untouched when Yahoo returns empty.
-	if sector != "" {
-		asset.Sector = geo.NormalizeSector(sector)
-	}
-	if industry != "" {
-		asset.Industry = industry
-	}
-	if asset.Type == model.AssetTypeStock && country != "" {
-		asset.Country = geo.NormalizeCountry(country)
-	}
-
 	regions, err := s.repos.Exposure.FindRegions(ctx, id)
 	if err != nil {
 		return nil, err
@@ -684,23 +690,15 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 		return nil, err
 	}
 
-	err = s.repos.WithTx(ctx, func(rx *repository.Repository) error {
-		if _, err := rx.Asset.Update(ctx, asset); err != nil {
-			return err
-		}
-		return rx.Exposure.ReplaceSectors(ctx, id, sectors)
-	})
-	if err != nil {
-		return nil, err
-	}
-	s.bumpRev(ctx)
 	return s.buildExposure(asset, regions, sectors, countries), nil
 }
 
-// FetchETFExposure fetches the country and sector exposure of an ETF from the
-// python-service, keeps the raw countries (normalized to ISO codes), derives
-// macro-regions and canonical GICS sectors, then persists and returns the
-// complete exposure.
+// FetchETFExposure previews the country and sector exposure of an ETF from the
+// python-service: it keeps the raw countries (normalized to ISO codes), derives
+// macro-regions and canonical GICS sectors and returns the canonical exposure.
+// Nothing from the provider is persisted (saving happens through
+// PUT /assets/{id}/exposure); the only write is persisting the ISIN when the
+// asset had none and it gets auto-resolved from the ticker.
 func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -721,6 +719,7 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 		if _, err := s.repos.Asset.Update(ctx, asset); err != nil {
 			return nil, err
 		}
+		s.bumpRev(ctx)
 	}
 
 	raw, err := s.etfFetcher.FetchExposure(ctx, asset.ISIN)
@@ -728,21 +727,10 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 		return nil, err
 	}
 
-	mapped := &model.AssetExposure{}
-	// Keep the raw countries (normalized to ISO codes), not aggregated.
-	if countries := normalizeCountries(raw.Countries); len(countries) > 0 {
-		mapped.Countries = countries
-	}
-	// Derive regions from the raw country rows: a provider prefill always
-	// persists its explicit region dimension (saving countries alone never
-	// rewrites regions).
-	if regions := price.AggregateRegions(raw.Countries); len(regions) > 0 {
-		mapped.Regions = regions
-	}
-	if sectors := price.AggregateSectors(raw.Sectors); len(sectors) > 0 {
-		mapped.Sectors = sectors
-	}
-	return s.SaveAssetExposure(ctx, id, mapped)
+	countries := normalizeCountries(raw.Countries)
+	regions := price.AggregateRegions(raw.Countries)
+	sectors := price.AggregateSectors(raw.Sectors)
+	return s.buildExposure(asset, regions, sectors, countries), nil
 }
 
 // resolveETFISIN looks up the ISIN of an ETF from its ticker through the
@@ -927,12 +915,13 @@ func normalizeCountries(rows []model.ExposureRow) []model.ExposureRow {
 	return out
 }
 
-// FetchMorningstarExposure fetches the country, region and sector exposure of
-// an ETF from the python-service using Morningstar as the data source, keeps
-// the raw countries (normalized to ISO codes), derives canonical GICS sectors,
-// then persists and returns the complete exposure. When Morningstar returns
-// official region rows they are kept as-is (they are already canonical);
-// otherwise the regions are derived from the country rows.
+// FetchMorningstarExposure previews the country, region and sector exposure of
+// an ETF from the python-service using Morningstar as the data source. When
+// Morningstar returns official region rows they are kept as-is (they are
+// already canonical); otherwise the regions are derived from the country rows.
+// Nothing from the provider is persisted (saving happens through
+// PUT /assets/{id}/exposure); the only write is persisting the ISIN when the
+// asset had none and it gets auto-resolved from the ticker.
 func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -953,6 +942,7 @@ func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*
 		if _, err := s.repos.Asset.Update(ctx, asset); err != nil {
 			return nil, err
 		}
+		s.bumpRev(ctx)
 	}
 
 	raw, err := s.etfFetcher.FetchMorningstarExposure(ctx, asset.ISIN)
@@ -960,7 +950,8 @@ func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*
 		return nil, err
 	}
 
-	return s.SaveAssetExposure(ctx, id, mapMorningstarExposure(raw))
+	mapped := mapMorningstarExposure(raw)
+	return s.buildExposure(asset, mapped.Regions, mapped.Sectors, mapped.Countries), nil
 }
 
 // mapMorningstarExposure builds the exposure payload to persist from the raw

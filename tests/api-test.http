@@ -72,9 +72,13 @@ Content-Type: application/json
   "currency": "EUR"
 }
 
-### 5. NEW — fetch ETF exposure. The `.MI` suffix is stripped and the ISIN is
-### resolved from the ticker (expected IE00B4K48X80), then countries/regions and
-### GICS sectors are fetched from JustETF and persisted.
+### 5. NEW — fetch ETF exposure (READ-ONLY PREVIEW). The `.MI` suffix is
+### stripped and the ISIN is resolved from the ticker (expected IE00B4K48X80) —
+### the ISIN is the ONLY thing persisted. countries/regions and GICS sectors
+### from JustETF are returned as a preview and NOT stored: same for
+### POST /assets/{id}/fetch-exposure (Yahoo sectors) and
+### POST /assets/{id}/fetch-morningstar-exposure. Persist them with the "Save"
+### buttons / PUT /assets/{id}/exposure.
 # @name fetchEtfExposure
 POST {{baseUrl}}/assets/{{assetId}}/fetch-etf-exposure
 Authorization: Bearer {{token}}
@@ -84,8 +88,9 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/assets/{{assetId}}
 Authorization: Bearer {{token}}
 
-### 7. Read the persisted exposure (regions: Europe Developed ~96.57 + Other 3.43;
-### sectors: Financials/Industrials/Health Care/...)
+### 7. Read the persisted exposure: the fetch above is a preview, so dimensions
+### only appear here after an explicit PUT (see 11d). The GET always answers
+### with the full canonical lists (zero-filled when nothing was saved).
 # @name getExposure
 GET {{baseUrl}}/assets/{{assetId}}/exposure
 Authorization: Bearer {{token}}
@@ -121,20 +126,23 @@ Content-Type: application/json
 }
 
 ### 10. NEW — fetch ETF exposure for the S&P 500 fund (ISIN IE00B5BMR087):
-### regions tilt to North America, sectors to Information Technology.
+### read-only PREVIEW (regions tilt to North America, sectors to Information
+### Technology). Nothing is persisted by the fetch — use PUT /assets/{id}/exposure.
 # @name fetchEtfExposure2
 POST {{baseUrl}}/assets/{{asset2Id}}/fetch-etf-exposure
 Authorization: Bearer {{token}}
 
-### 11. Read the persisted exposure for SXR8.DE
+### 11. Read the persisted exposure for SXR8.DE (unchanged by the preview fetch #10)
 # @name getExposure2
 GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
 
 ### 11b. NEW — fetch ETF exposure from Morningstar (countries + sectors + official
-### regions). Uses the custom resolver (headless Chromium bootstrap) in the
-### python-service; falls back to 502 if Morningstar is unreachable in the
-### sandbox (Yahoo disabled, external calls may be blocked).
+### regions), also a read-only PREVIEW: nothing is persisted except the resolved
+### ISIN; save the preview with PUT /assets/{id}/exposure. Uses the custom
+### resolver (headless Chromium bootstrap) in the python-service; falls back to
+### 502 if Morningstar is unreachable in the sandbox (Yahoo disabled, external
+### calls may be blocked).
 # @name fetchMorningstarExposure
 POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure
 Authorization: Bearer {{token}}
@@ -156,8 +164,10 @@ Content-Type: application/json
   ]
 }
 
-### 11c. Read the persisted exposure: should now include `countries` (canonical,
-### zero-filled across all ~89 canonical ISO codes) alongside regions + sectors.
+### 11c. Read the persisted exposure: fetches #10/#11b are previews and store
+### nothing, so this only reflects what a previous PUT saved (the GET is always
+### canonical: zero-filled `countries` across all ~89 canonical ISO codes when
+### nothing was stored). Use 11d to persist a preview's values.
 # @name getExposure3
 GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}

@@ -138,8 +138,10 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
   aggregazione `AggregateRegions`/`AggregateSectors` (paesi→macro-regioni + alias settori),
   nuova rotta **`POST /assets/{id}/fetch-etf-exposure`**: se l'asset non ha ISIN lo **auto-risolve
   dal ticker** (preferenza ticker esatto, poi similarità nome con `asset.Name`; il valore viene
-  persistito sull'asset), poi scarica paesi/regioni + settori e li salva (`asset_region_weights` /
-  `asset_sector_weights`). Config `VAULT_PYTHON_SERVICE_URL`; servizio `python-service` presente
+  persistito sull'asset), poi scarica paesi/regioni + settori e li restituisce come
+  **anteprima non persistente** (vedi «Redesign modale distribuzione geografica»: la
+  persistenza avviene solo via `PUT /assets/{id}/exposure`). Config `VAULT_PYTHON_SERVICE_URL`;
+  servizio `python-service` presente
   sia in `docker-compose.yml` sia in `docker-compose.test.yml`.
 - **Asset duplicato** — `POST /assets` con ticker già esistente ora risponde **409 Conflict** con
   messaggio chiaro e l'id dell'asset esistente (`asset_id` + `id`).
@@ -213,8 +215,9 @@ e Morningstar permette di cercare sul mercato esatto.
   dashboard espongono `covered_value`/`excluded_value` e i grafici mostrano la
   nota di copertura.
 - **Editor asset (follow-up B.8)** — pulsante **"Carica da JustETF"**
-  (`POST /assets/{id}/fetch-etf-exposure`) che scarica regioni+settori e
-  sincronizza l'**ISIN** risolto nel form; campo ISIN anche nel form di
+  (`POST /assets/{id}/fetch-etf-exposure`) che scarica regioni+settori come
+  **anteprima** (non persiste; salvataggio solo col PUT) e sincronizza l'**ISIN**
+  risolto nel form; campo ISIN anche nel form di
   creazione asset; banner "solo asset azionari" quando l'asset non è
   azionabile.
 - **B.9 (issue #44, PR #61)** — storico tassi di cambio per-data (`fx_history`)
@@ -250,8 +253,9 @@ e Morningstar permette di cercare sul mercato esatto.
     `Other / Not Classified` (coerenza automatica a somma 100 per le regioni).
     _(Auto-derivation al save poi **rimossa** dal redesign modale: vedi
     «Redesign modale distribuzione geografica (paesi-first)」.)_
-  - JustETF ora salva i countries raw (normalizzati a codici ISO) invece di
-    scartarli, e il backend li archivia in `asset_country_weights`.
+  - JustETF ora espone i countries raw (normalizzati a codici ISO) invece di
+    scartarli; il backend li include nella preview e li archivia in
+    `asset_country_weights` solo al salvataggio (`PUT`).
 - **B.14 — Morningstar come fonte esposizione** (#59):
   - **python-service**: nuovo endpoint `GET /api/v1/etf/{isin}/morningstar-exposure`
     (modulo `python-service/app/morningstar.py`, **resolver custom senza mstarpy**).
@@ -370,6 +374,21 @@ e Morningstar permette di cercare sul mercato esatto.
   le regioni si ricalcolano solo via `POST /assets/{id}/exposure/derive` o
   salvando regioni esplicite.
   `derive` invariato (restituisce Other; filtra il frontend).
+- **Prefill/fetch = anteprime non persistenti**: i tre endpoint di fetch
+  (`POST /assets/{id}/fetch-exposure`, `/fetch-etf-exposure`,
+  `/fetch-morningstar-exposure`) **non salvano più** le dimensioni di
+  esposizione (countries/regions/sectors) né i campi profilo dell'asset:
+  restituiscono una **preview canonica** costruita dai dati del provider
+  (per `fetch-exposure` le dimensioni geo memorizzate restano lette dallo
+  stato attuale). L'unica eccezione concordata resta l'**ISIN auto-risolto**,
+  che continua a essere persistito sulla tabella `assets` (con `bumpRev`).
+  La persistenza avviene **solo** con `PUT /assets/{id}/exposure` (pulsanti
+  Salva); `POST /assets/{id}/exposure/derive` era e resta non persistente.
+  Smoke e2e aggiornato: `tests/test-epic-b.sh` FASE 4 fa ora un PUT esplicito
+  dei valori in preview dopo il fetch. Test:
+  `TestFetchETFExposure_PreviewDoesNotPersist` / `...PersistsOnlyResolvedISIN`,
+  `TestFetchMorningstarExposure_PreviewDoesNotPersist` /
+  `...PersistsOnlyResolvedISIN`, `TestFetchAssetExposure_PreviewDoesNotPersist`.
 - **Verifica**: Go build/vet/test green (nuovi `TestPrepareRegions`/
   `TestPrepareCountries`/`TestValidateExposureWeights`/
   `TestSaveExposureDimensions_*`); pytest 51;

@@ -67,6 +67,10 @@
   let prices = $state<Price[]>([])
   let splits = $state<SplitInfo[]>([])
   let exposure = $state<AssetExposure | null>(null)
+  // Working copy of the modals. Prefill handlers write provider data here as a
+  // non-persisted preview: the page cards never read these lists, they render
+  // the stored `exposure` (see the display* derivations below), so an unsaved
+  // preview only lives inside the modal until the user presses Save.
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
   let countriesEdit = $state<ExposureRow[]>([])
@@ -185,32 +189,89 @@
   }
 
   /**
-   * Copy backend country rows keeping only positive weights: the exposure
-   * endpoints answer with the full canonical zero-filled list, while the edit
-   * list must stay minimal (the backend drops non-positive rows on save, so
-   * sending only the > 0 rows is lossless).
+   * Normalise a provider import whose 2-decimal weights slightly exceed 100:
+   * some providers (e.g. JustETF on LYSX.DE) publish pre-rounded weights that
+   * sum to 100.01; the backend accepts up to 100.5 (`weightSumMax100`) but the
+   * UI save guard blocks anything > 100, so the import would be unsavable.
+   * Totals in (100, 100.5] are shaved down to exactly 100 by subtracting the
+   * excess from the single heaviest row (first row wins ties, weight kept as a
+   * 2-decimal string via `roundWeight`). This is an IMPORT-time fix only: it
+   * runs at the bottom of `positiveCountries`/`withoutOther`, which every
+   * provider assignment and canonical reload passes through; manual edits
+   * bypass these helpers and stay blocked by the guard when they exceed 100.
+   * Totals ≤ 100 are returned unchanged (no-op for normal load/save/display),
+   * and totals > 100.5 are a genuine provider anomaly the guard must keep
+   * surfacing, so they are also left untouched. Negative weights are never
+   * introduced: if the excess exceeds the heaviest row (extreme case) the
+   * rows are returned unchanged.
    */
-  function positiveCountries(rows: ExposureRow[]): ExposureRow[] {
-    return rows
-      .filter((r) => Number(r.weight) > 0)
-      .map((r) => ({ ...r, weight: roundWeight(r.weight) }))
+  function capAtHundred(rows: ExposureRow[]): ExposureRow[] {
+    const total =
+      Math.round(rows.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100) / 100
+    if (total <= 100 || total > 100.5) return rows
+    const excess = Math.round((total - 100) * 100) / 100
+    let maxIdx = 0
+    for (let i = 1; i < rows.length; i++) {
+      if ((Number(rows[i].weight) || 0) > (Number(rows[maxIdx].weight) || 0)) maxIdx = i
+    }
+    const maxWeight = Number(rows[maxIdx]?.weight) || 0
+    if (excess > maxWeight) return rows
+    return rows.map((r, i) =>
+      i === maxIdx ? { ...r, weight: roundWeight(maxWeight - excess) } : r,
+    )
   }
 
   /**
-   * Copy backend region rows in canonical order, dropping the «Other / Not
-   * Classified» residual: sums, donut and table then work on visible rows
-   * only (the page re-adds the open-donut gap via complete={false}).
+   * Copy backend/provider country rows keeping only positive weights, rounded
+   * to 2 decimals and normalised to ≤ 100 via `capAtHundred` (slightly-over
+   * provider totals are shaved at import, manual over-100 edits are not). The
+   * exposure endpoints answer with the full canonical zero-filled list, while
+   * the edit list must stay minimal (the backend drops non-positive rows on
+   * save, so sending only the > 0 rows is lossless).
    */
-  function withoutOther(rows: ExposureRow[]): ExposureRow[] {
-    return rows
-      .filter((r) => r.name !== OTHER_REGION)
-      .map((r) => ({ ...r, weight: roundWeight(r.weight) }))
+  function positiveCountries(rows: ExposureRow[]): ExposureRow[] {
+    return capAtHundred(
+      rows
+        .filter((r) => Number(r.weight) > 0)
+        .map((r) => ({ ...r, weight: roundWeight(r.weight) })),
+    )
   }
 
-  // Top 15 countries by weight (desc, > 0) for the geographic card bar list.
+  /**
+   * Copy backend/provider region rows in canonical order, dropping the
+   * «Other / Not Classified» residual, rounding weights and normalising
+   * slightly-over-100 provider totals via `capAtHundred`: sums, donut and
+   * table then work on visible rows only (the page re-adds the open-donut
+   * gap via complete={false}).
+   */
+  function withoutOther(rows: ExposureRow[]): ExposureRow[] {
+    return capAtHundred(
+      rows
+        .filter((r) => r.name !== OTHER_REGION)
+        .map((r) => ({ ...r, weight: roundWeight(r.weight) })),
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // Display vs edit split: the cards always render the STORED exposure (the
+  // `GET /assets/{id}/exposure` response, refreshed by `load` and by every
+  // successful save). The edit lists are the modals' working copy and may hold
+  // unsaved manual edits or provider prefill previews; they never leak into the
+  // cards. After a save the canonical response updates `exposure` and re-syncs
+  // the edit lists, so card and modal become consistent again.
+  // ---------------------------------------------------------------------------
+  const displayCountries = $derived(
+    (exposure?.countries ?? []).filter((c) => Number(c.weight) > 0),
+  )
+  // Stored regions without the «Other / Not Classified» residual (same filter
+  // the edit list applies at assignment time, here re-used for display).
+  const displayRegions = $derived(exposure ? withoutOther(exposure.regions) : [])
+  const displaySectors = $derived(exposure?.sectors ?? [])
+
+  // Top 15 stored countries by weight (desc, > 0) for the geographic card bar
+  // list. The copy-then-sort keeps the derived displayCountries array pristine.
   const topCountries = $derived.by(() =>
-    countriesEdit
-      .filter((c) => Number(c.weight) > 0)
+    [...displayCountries]
       .sort((a, b) => Number(b.weight) - Number(a.weight))
       .slice(0, 15),
   )
@@ -381,16 +442,18 @@
     }
   }
 
-  // Prefill da JustETF: popola SOLO la distribuzione paesi (raw JustETF).
+  // Prefill da JustETF: popola SOLO la lista paesi della modale (raw JustETF).
+  // È un'anteprima NON persistita: `exposure` (e quindi le card) resta ai dati
+  // salvati; solo «Salva paesi» invierà la lista al backend. L'ISIN arriva già
+  // persistito dal server, quindi lo sincronizziamo nel form.
   async function prefillCountriesFromETF(): Promise<void> {
     if (!id || !asset) return
     fetchingETF = true
     try {
-      const saved = await assetApi.fetchETFExposure(id)
-      exposure = saved
-      countriesEdit = positiveCountries(saved.countries)
+      const preview = await assetApi.fetchETFExposure(id)
+      countriesEdit = positiveCountries(preview.countries)
       countriesSource = 'justetf'
-      if (saved.isin) form.isin = saved.isin
+      if (preview.isin) form.isin = preview.isin
       toast.success('Paesi precompilati da JustETF')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Download fallito'
@@ -423,16 +486,17 @@
     }
   }
 
-  // Prefill da Morningstar: popola SOLO le regioni ufficiali Morningstar.
+  // Prefill da Morningstar: popola SOLO la lista regioni della modale con le
+  // regioni ufficiali Morningstar. Anteprima NON persistita: la card regioni
+  // continua a mostrare le regioni salvate finché non si preme «Salva regioni».
   async function prefillRegionsFromMorningstar(): Promise<void> {
     if (!id || !asset) return
     fetchingMorningstar = true
     try {
-      const saved = await assetApi.fetchMorningstarExposure(id)
-      exposure = saved
-      regionsEdit = withoutOther(saved.regions)
+      const preview = await assetApi.fetchMorningstarExposure(id)
+      regionsEdit = withoutOther(preview.regions)
       regionsSource = 'morningstar-regions'
-      if (saved.isin) form.isin = saved.isin
+      if (preview.isin) form.isin = preview.isin
       toast.success('Regioni precompilate da Morningstar')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Download fallito'
@@ -442,15 +506,15 @@
     }
   }
 
-  // Prefill da JustETF: popola SOLO la distribuzione settoriale.
+  // Prefill da JustETF: popola SOLO la lista settori della modale. Anteprima
+  // NON persistita: la card settori resta ai dati salvati finché non si salva.
   async function prefillSectorsFromETF(): Promise<void> {
     if (!id || !asset) return
     fetchingETF = true
     try {
-      const saved = await assetApi.fetchETFExposure(id)
-      exposure = saved
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
-      if (saved.isin) form.isin = saved.isin
+      const preview = await assetApi.fetchETFExposure(id)
+      sectorsEdit = preview.sectors.map((r) => ({ ...r }))
+      if (preview.isin) form.isin = preview.isin
       toast.success('Distribuzione settoriale precompilata da JustETF')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Download fallito'
@@ -460,15 +524,16 @@
     }
   }
 
-  // Prefill da Yahoo: popola SOLO la distribuzione settoriale (topHoldings). Per
-  // le azioni singole ricade sul settore unico al 100% (assetProfile).
+  // Prefill da Yahoo: popola SOLO la lista settori della modale (topHoldings).
+  // Per le azioni singole ricade sul settore unico al 100% (assetProfile).
+  // Anteprima NON persistita: la card settori mostra i dati salvati finché non
+  // si preme «Salva».
   async function prefillSectorsFromYahoo(): Promise<void> {
     if (!id) return
     prefilling = true
     try {
-      const saved = await assetApi.fetchExposure(id)
-      exposure = saved
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      const preview = await assetApi.fetchExposure(id)
+      sectorsEdit = preview.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione settoriale precompilata da Yahoo')
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status
@@ -486,8 +551,11 @@
 
   // Il backend salva ogni dimensione indipendentemente: ogni sezione invia
   // SOLO la propria dimensione (l'altra viene omessa dal JSON → nil → non
-  // toccata). Dopo il successo ricarichiamo entrambe le tabelle dalla risposta
-  // canonica (regioni + settori memorizzati).
+  // toccata). Dopo il successo la risposta canonica rinfresca `exposure`
+  // (quindi le card) e risincronizza SOLO la lista di edit della dimensione
+  // salvata: le altre liste di edit sono la working copy della modale e
+  // possono contenere modifiche pendenti non salvate, quindi non vanno
+  // mai toccate qui.
   async function saveRegions(): Promise<void> {
     if (!id || !exposure || !regionsValid) return
     savingRegions = true
@@ -497,7 +565,6 @@
       })
       exposure = saved
       regionsEdit = withoutOther(saved.regions)
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione geografica salvata')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Save failed'
@@ -515,7 +582,6 @@
         sectors: sectorsEdit,
       })
       exposure = saved
-      regionsEdit = withoutOther(saved.regions)
       sectorsEdit = saved.sectors.map((r) => ({ ...r }))
       toast.success('Distribuzione settoriale salvata')
     } catch (err: unknown) {
@@ -526,17 +592,18 @@
     }
   }
 
-  // Prefill da Morningstar: popola paesi e settori (ETF only).
+  // Prefill da Morningstar: popola paesi e settori della modale (ETF only).
+  // Anteprima NON persistita: le card restano ai dati salvati; ogni dimensione
+  // va salvata con il proprio pulsante Salva.
   async function prefillCountriesFromMorningstar(): Promise<void> {
     if (!id || !asset) return
     fetchingMorningstar = true
     try {
-      const saved = await assetApi.fetchMorningstarExposure(id)
-      exposure = saved
-      countriesEdit = positiveCountries(saved.countries)
+      const preview = await assetApi.fetchMorningstarExposure(id)
+      countriesEdit = positiveCountries(preview.countries)
       countriesSource = 'morningstar'
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
-      if (saved.isin) form.isin = saved.isin
+      sectorsEdit = preview.sectors.map((r) => ({ ...r }))
+      if (preview.isin) form.isin = preview.isin
       toast.success('Paesi e settori precompilati da Morningstar')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Download fallito'
@@ -555,13 +622,12 @@
       })
       exposure = saved
       countriesEdit = positiveCountries(saved.countries)
-      // Saving countries no longer re-derives the regions server-side: the
-      // response carries back the stored regions unchanged (they are
-      // recomputed only via the modal's «Calcola da paesi» button). The
-      // canonical reload is harmless, and regionsSource must NOT be touched
-      // so the regions provenance badge keeps reflecting its real source.
-      regionsEdit = withoutOther(saved.regions)
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      // Regions and sectors are deliberately NOT touched here: saving one
+      // dimension must never clobber the other dimensions' edit lists, which
+      // are the modal's working copy and may hold unsaved pending edits
+      // (manual or from a prefill). The stored data still refreshes via
+      // `exposure` (cards), and regionsSource is left alone so the regions
+      // provenance badge keeps reflecting its real source.
       toast.success('Distribuzione paesi salvata')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Save failed'
@@ -789,7 +855,8 @@
     </div>
 
     {#if exposureApplicable && exposure}
-      <!-- Geographic distribution card: countries bar list + regions pie -->
+      <!-- Geographic distribution card (stored exposure): countries bar list +
+           regions pie -->
       <div class="mb-6 rounded-xl bg-white p-4 shadow">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 class="font-semibold">Distribuzione geografica</h2>
@@ -833,12 +900,13 @@
           </div>
           <div class="rounded-xl border bg-gray-50 p-4">
             <h3 class="mb-2 font-medium">Regioni</h3>
-            <!-- regionsEdit never carries the «Other / Not Classified» row
-                 (filtered at assignment time), so the donut renders open:
-                 complete={false} adds the transparent residual gap. -->
-            <ExposurePie data={regionsEdit} title="Distribuzione geografica" complete={false} />
+            <!-- displayRegions never carries the «Other / Not Classified» row
+                 (withoutOther filters it out of the stored exposure), so the
+                 donut renders open: complete={false} adds the transparent
+                 residual gap. -->
+            <ExposurePie data={displayRegions} title="Distribuzione geografica" complete={false} />
             <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
-              {#each regionsEdit.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
+              {#each displayRegions.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
                 <div class="flex items-center gap-1.5 text-xs">
                   <span
                     class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
@@ -868,9 +936,9 @@
         </div>
         <div class="rounded-xl border bg-gray-50 p-4">
           <h3 class="mb-2 font-medium">Settori</h3>
-          <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" />
+          <ExposurePie data={displaySectors} title="Distribuzione settoriale" />
           <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
-            {#each sectorsEdit.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
+            {#each displaySectors.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
               <div class="flex items-center gap-1.5 text-xs">
                 <span
                   class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"

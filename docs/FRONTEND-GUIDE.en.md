@@ -595,7 +595,11 @@ quote/prices.
 - **Storico prezzo**: `PriceChart` with the 1M/3M/1Y/YTD/MAX selector (in-place zoom).
 - **Distribuzione geografica** and **Distribuzione settoriale** are **two
   separate cards** (split after B.13/B.14, when countries were added). Editing
-  happens **only inside the modals**; the page keeps the presentation:
+  happens **only inside the modals**; the page keeps the presentation. The
+  cards always render the **stored exposure** (`displayCountries` /
+  `displayRegions` / `displaySectors`, derived from the `exposure` state
+  loaded/saved via the API) — unsaved modal edits and prefill previews never
+  appear on the cards:
   - The **geographic card** groups two side-by-side boxes: **Paesi** — a
     horizontal **bar list of the top 15 countries** (weight > 0, sorted desc,
     bar width scaled against the largest weight, friendly names from
@@ -643,7 +647,11 @@ quote/prices.
   - **`ExposureSectorModal`** has the sector table, validated to 100 ± 0.5
     (unchanged — sectors still require an exact total).
   - The **prefill buttons live only inside the modals**, next to each part's
-    title (boxed favicon icons with tooltip), placed where the data comes from:
+    title (boxed favicon icons with tooltip), placed where the data comes from.
+    They are **non-persisted previews**: each one writes only into the modal's
+    edit lists (`countriesEdit` / `regionsEdit` / `sectorsEdit`) — `exposure`
+    (and therefore the cards) keeps showing the stored data until you press
+    the matching **Save** button:
     - **countries** (`ExposureGeoModal`): **"Prefill JustETF"**
       (`fetchETFExposure`, applies `countries` only — JustETF provides the
       country list) and **"Prefill Morningstar"** (`fetchMorningstarExposure`,
@@ -664,7 +672,9 @@ quote/prices.
   on the slices).
   Saving sends **only the edited dimension**
   (`PUT /assets/{id}/exposure` with `{countries}` or `{regions}` — omitting a
-  key leaves the other untouched), then reloads the canonical response. Saving
+  key leaves the other untouched), then reloads the canonical response, which
+  refreshes `exposure` (the cards) and re-syncs the modal's edit lists, so
+  after a save card and modal are consistent again. Saving
   countries **no longer re-derives the regions server-side**: the stored
   regions come back unchanged and the regions provenance badge is left
   untouched — regions are recomputed only when the user clicks
@@ -679,20 +689,38 @@ quote/prices.
   distribution only applies to equity assets.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, the Yahoo `topHoldings` sector weights)
-  pre-fills the sector table.
+  pre-fills the sector table **inside the modal**: a non-persisted preview,
+  the sector card keeps showing the stored data until you press Save.
 - **Prefill da Morningstar (B.14)** — `assetApi.fetchMorningstarExposure(id)`
   (`POST /assets/{id}/fetch-morningstar-exposure`): fetches country and sector
   exposure from Morningstar (via the python-service, custom resolver with
-  headless Chromium bootstrap) and populates
-  both the countries and the sectors tables; regions are re-derived server-side.
-  Only visible for ETF assets (same rule as "Carica da JustETF").
+  headless Chromium bootstrap) and **previews** it in the geo modal's countries
+  edit list and the sector modal's edit list; **nothing is persisted** — each
+  dimension is stored only when you press its own Save button. Only visible
+  for ETF assets (same rule as "Carica da JustETF").
 - **Carica da JustETF** — `assetApi.fetchETFExposure(id)`
   (`POST /assets/{id}/fetch-etf-exposure`): fetches from the JustETF
-  microservice and saves the geographic distribution (countries →
+  microservice and **previews** the geographic distribution (countries →
   canonical macro-regions, and since B.13 the raw countries) and the GICS
-  sectors; only visible for ETF assets
+  sectors **in the modal edit lists without saving them** (persisting happens
+  only via the Save buttons); only visible for ETF assets
   (`asset.type !== 'etf'` ⇒ button disabled). It also syncs the ISIN resolved
-  by the backend into the form's ISIN field.
+  by the backend into the form's ISIN field (the ISIN itself is still
+  persisted server-side by the fetch).
+- **Import normalisation (slightly-over-100 totals)** — some providers (e.g.
+  JustETF on LYSX.DE) publish weights already rounded to 2 decimals whose sum
+  is 100.01: the backend accepts up to **100.5** (`weightSumMax100`), but the
+  UI save guard blocks anything above 100, which would make such imports
+  unsavable. Instead of raising the threshold, the page **normalises at
+  import**: `capAtHundred` (applied at the bottom of `positiveCountries` /
+  `withoutOther`, hence on every prefill, region derivation and canonical
+  reload) takes a total in **(100, 100.5]** and subtracts the excess from the
+  **heaviest row**, so the list sums to exactly 100 (first row wins ties;
+  weights stay 2-decimal strings). Totals ≤ 100 are a no-op (load/save/display
+  unchanged); totals > 100.5 are treated as a genuine provider anomaly and
+  left untouched so the guard keeps surfacing them. **Manual edits that
+  exceed 100 do NOT pass through these helpers and stay blocked** by the
+  guard. Sectors are never normalised (they already allow 100 ± 0.5).
 
 ### `/settings` — Settings (`routes/settings/+page.svelte`)
 

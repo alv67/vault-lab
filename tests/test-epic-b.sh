@@ -4,9 +4,10 @@
 # endpoints (EPIC B.6/B.7).
 #
 # It walks the whole flow: register/login, ETF asset creation (with the idempotent
-# reuse of the existing id on 409), ETF exposure fetch (soft-fail), reading the
-# persisted exposure, portfolio + buys, then the class/geography/sector allocations
-# with reconciliation checks (sum of weights ~ 100, class cost basis).
+# reuse of the existing id on 409), ETF exposure fetch preview (soft-fail) followed
+# by an explicit PUT to persist it, reading the persisted exposure, portfolio +
+# buys, then the class/geography/sector allocations with reconciliation checks
+# (sum of weights ~ 100, class cost basis).
 #
 # Preconditions:
 #   - jq is installed; curl available; the test postgres container reachable (only
@@ -175,24 +176,41 @@ DUP2=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/assets" \
 [ "$DUP2" = "409" ] && ok "duplicato SXR8.DE -> 409 (atteso)" || bad "duplicato SXR8.DE -> $DUP2 (atteso 409)"
 pause
 
-# --- FASE 4: fetch exposure ETF (SOFT-FAIL) -----------------------------------------
-note "FASE 4 — Fetch ETF exposure (richiede python-service + internet JustETF; soft-fail)"
+# --- FASE 4: fetch exposure ETF (preview) + PUT di persistenza (SOFT-FAIL) ---------
+note "FASE 4 — Fetch ETF exposure (preview non persistente) + PUT exposure (richiede python-service + internet JustETF; soft-fail)"
 for spec in "$AI1:SMEA.MI" "$AI2:SXR8.DE"; do
   aid="${spec%%:*}"; tkr="${spec##*:}"
   RES=$(curl -s -w '\n%{http_code}' -X POST "$API/assets/$aid/fetch-etf-exposure" \
     -H "Authorization: Bearer $TOK")
   BODY="${RES%$'\n'*}"; CODE="${RES##*$'\n'}"
   if [ "$CODE" = "200" ] || [ "$CODE" = "201" ]; then
-    printf '    %s exposure fetch ok (http %s)\n' "$tkr" "$CODE"
+    printf '    %s exposure fetch ok (http %s, preview NON persistita)\n' "$tkr" "$CODE"
     jq . <<<"$BODY" 2>/dev/null || printf '    raw: %s\n' "$BODY"
-    ok "exposure fetched per $tkr"
+    ok "exposure preview fetched per $tkr"
+    # Il fetch e' una preview read-only (solo l'ISIN viene persistito): la
+    # persistenza avviene SOLO con il PUT esplicito.
+    PUT_BODY=$(jq -c '{countries, regions, sectors}' <<<"$BODY" 2>/dev/null)
+    if [ -n "$PUT_BODY" ] && [ "$PUT_BODY" != "null" ]; then
+      PUT_RES=$(curl -s -w '\n%{http_code}' -X PUT "$API/assets/$aid/exposure" \
+        -H "Authorization: Bearer $TOK" \
+        -H 'Content-Type: application/json' \
+        -d "$PUT_BODY")
+      PUT_BODY_RES="${PUT_RES%$'\n'*}"; PUT_CODE="${PUT_RES##*$'\n'}"
+      if [ "$PUT_CODE" = "200" ]; then
+        ok "exposure salvata con PUT per $tkr (http $PUT_CODE)"
+      else
+        warn "$tkr: PUT exposure -> http $PUT_CODE (${PUT_BODY_RES}) — exposure non persistita, allocazioni 0 per questo asset"
+      fi
+    else
+      warn "$tkr: risposta fetch senza dimensions estraibili (jq) — PUT saltato, allocazioni resteranno 0 per questo asset"
+    fi
   else
     warn "$tkr: fetch-etf-exposure -> http $CODE (python-service/internet non disponibili?) — allocazioni resteranno 0 per questo asset"
   fi
 done
 
-# --- FASE 5: lettura exposure persistita --------------------------------------------
-note "FASE 5 — Lettura exposure persistita (GET /assets/{id}/exposure)"
+# --- FASE 5: lettura exposure persistita (dal PUT della FASE 4) ----------------------
+note "FASE 5 — Lettura exposure persistita (GET /assets/{id}/exposure, salvata con PUT in FASE 4)"
 for spec in "$AI1:SMEA.MI" "$AI2:SXR8.DE"; do
   aid="${spec%%:*}"; tkr="${spec##*:}"
   EXP=$(curl -s "$API/assets/$aid/exposure" -H "Authorization: Bearer $TOK")
