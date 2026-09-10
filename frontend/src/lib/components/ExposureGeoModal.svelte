@@ -166,6 +166,14 @@
       onClose()
     }
   }
+
+  // Height of the regions middle area, measured from its NATURAL content via
+  // bind:clientHeight (region table + side donut fully visible, no quota) and
+  // mirrored onto the countries middle area so both boxes — and their identical
+  // footer rows — stay aligned. When the modal is closed the content is not
+  // rendered and the binding does not measure; the last value is kept and the
+  // regions box is re-measured on every reopen.
+  let regionsMidHeight = $state(0)
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -243,15 +251,18 @@
             </div>
           </div>
 
-          <!-- Fixed-height middle area: EXACTLY the same quota as the regions
-               box (h-[38rem] fits the header row + 10 region rows + side
-               donut), so both boxes and their footers (hr / total / messages
-               / Save) stay aligned. The taller quota keeps the regions table
-               fully visible without a scrollbar; the countries list scrolls
-               INSIDE this quota only as a last resort (min-h-0 flex-1 on the
+          <!-- Middle area height = the regions middle area's measured natural
+               height (regionsMidHeight, via bind:clientHeight on the regions
+               box), so both boxes and their footers (hr / total / messages /
+               Save) stay aligned without any fixed quota. Before the first
+               measurement the height is auto. The countries list scrolls
+               INSIDE this height only as a last resort (min-h-0 flex-1 on the
                ul): few countries leave empty space below, many never widen or
                lengthen the box. -->
-          <div class="flex h-[38rem] flex-col">
+          <div
+            class="flex min-h-0 flex-col"
+            style="height: {regionsMidHeight > 0 ? regionsMidHeight + 'px' : 'auto'}"
+          >
             <!-- Table-style header row, columns aligned with the rows below. -->
             <div
               class="flex items-center gap-3 border-b border-gray-300 pb-2 pl-2 pr-3 text-sm text-gray-500"
@@ -441,11 +452,12 @@
             </div>
           </div>
 
-          <!-- Fixed-height middle area: same quota as the countries box
-               (h-[38rem] fits the header row + 10 region rows and the side
-               donut completely, no scrollbar). Stacked on small screens it
-               scrolls within this quota instead of growing the box. -->
-          <div class="flex h-[38rem] flex-col gap-4 overflow-y-auto md:flex-row">
+          <!-- Middle area at NATURAL height (header row + 10 region rows and
+               the side donut fully visible, no fixed quota, no scrollbar): its
+               measured clientHeight (regionsMidHeight) is applied to the
+               countries middle area so both boxes match. Stacked on small
+               screens the countries box inherits this same height. -->
+          <div class="flex flex-col gap-4 md:flex-row" bind:clientHeight={regionsMidHeight}>
             <div class="min-w-0 flex-1">
               <table class="w-full text-left text-sm">
                 <thead>
