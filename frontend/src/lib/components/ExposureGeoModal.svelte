@@ -316,7 +316,7 @@
                       type="number"
                       min="0"
                       max="100"
-                      step="0.1"
+                      step="0.01"
                       inputmode="decimal"
                       value={row.weight}
                       aria-label="Peso di {displayName}"
@@ -325,7 +325,7 @@
                         onCountriesDirty()
                       }}
                       onchange={resort}
-                      class="w-20 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      class="no-spinner w-20 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                     <button
                       onclick={() => removeCountry(row.name)}
@@ -491,7 +491,7 @@
                           type="number"
                           min="0"
                           max="100"
-                          step="0.1"
+                          step="0.01"
                           inputmode="decimal"
                           value={r.weight}
                           aria-label="Peso di {r.name}"
@@ -499,7 +499,7 @@
                             r.weight = e.currentTarget.value
                             onRegionsDirty()
                           }}
-                          class="w-24 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          class="no-spinner w-24 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </td>
                     </tr>

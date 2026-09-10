@@ -169,13 +169,13 @@
                         type="number"
                         min="0"
                         max="100"
-                        step="0.1"
+                        step="0.01"
                         value={s.weight}
                         oninput={(e) => {
                           s.weight = e.currentTarget.value
                           onSectorsDirty()
                         }}
-                        class="w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
+                        class="no-spinner w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
                       />
                     </td>
                   </tr>
