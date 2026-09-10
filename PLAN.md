@@ -51,6 +51,13 @@
 - [x] Endpoint allocazione settore (weighted sum by GICS) — **EPIC B.7 (#13)**
 - [x] Chart dashboard/portafoglio geo & settore (GeographyChart + SectorChart, universo equity-only + coverage) — **EPIC B.8 (#14)**
 - [x] Storico tassi di cambio (FX history, per-date nei series) — **EPIC B.9 (#44)**
+- [x] Asset con ticker non-Yahoo: price_source (yahoo/manual/none) — **EPIC G.7 (#53)**
+- [x] Chart storico asset: zoom in-place + selettore YTD — **EPIC F.9 (#52)**
+- [x] Pagina asset: solo pie chart + modale di modifica esposizione — **EPIC F.10 (#64)**
+- [x] Split come marcatori sul chart storico asset (`GET /assets/{id}/splits` + markLine)
+- [x] Per-country exposure: tabella `asset_country_weights` + 3 dimensioni (countries/regions/sectors) — **EPIC B.13 (#58)**
+- [x] Morningstar exposure source: resolver custom (bootstrap Chromium headless per WAF+JWT, poi SAL service via requests), rotta backend `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend — **EPIC B.14 (#59)**
+- [x] Follow-up B.13/B.14: fetch provider come anteprima non persistente, cache Redis (TTL + `?refresh=1`), provenienza persistita (sorgente + data), prefill settori da Morningstar, redesign modali geo/settore (paesi-first, badge sorgente) — **PR #67**
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -77,12 +84,14 @@
 ```
 User         → id, email, name, password_hash, role, created_at
 Portfolio    → id, user_id, name, description, currency, created_at
-Asset        → id, isin, ticker, name, type, asset_class, country, exchange, currency, sector, industry
+Asset        → id, isin, ticker, name, type, asset_class, price_source, country, exchange, currency, sector, industry
 Transaction  → id, portfolio_id, asset_id, type (buy/sell), quantity, price, date, fees, notes
 Price        → id, asset_id, date, open, high, low, close, volume, source
 FxHistory    → base_currency, quote_currency, date, rate, source
-AssetRegion  → asset_id, region, weight, source
-AssetSector  → asset_id, sector, weight, source
+AssetRegion  → asset_id, region, weight
+AssetSector  → asset_id, sector, weight
+AssetCountry → asset_id, country, weight (ISO-3166 alpha-2, from B.13)
+AssetExposureProvenance → asset_id, dimension, source, updated_at (where each dimension came from + last update, from B.14)
 ```
 
 ### Finanza (Fase 4)
@@ -164,17 +173,21 @@ vault-lab/
 
 ---
 
-## Stato attuale (28 Ago 2026)
+## Stato attuale (11 Set 2026)
 
-**Release v0.1.0** pubblicata su `main` (prima release ufficiale).
+**Release v0.3.0** pubblicata su `main` (asset editing overhaul e editing dell'esposizione per-paese).
+Precedenti release: **v0.1.0** (25 Ago 2026, prima release ufficiale) e **v0.2.0** (30 Ago 2026, EPIC A + EPIC B).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
-procede su `develop` (feature branch `feat/B.8-allocation-charts`, PR #62, e `feat/B.9-fx-history`,
-PR #61, per la parte finale EPIC B). Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
+procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
 il **backfill country/ISO** (B.3), il **microservizio Python JustETF** per l'esposizione ETF e
 l'auto-resolve ISIN (B.5), le asset class con allocazione per classi (B.11/B.12), gli **endpoint di
 allocazione geo/settore a livello portafoglio** (B.6/B.7), le **chart dashboard/portafoglio** con
-universo equity-only e metadati di copertura (B.8, #14) e lo **storico FX per-data** (B.9, #44).
+universo equity-only e metadati di copertura (B.8, #14), lo **storico FX per-data** (B.9, #44),
+il **per-country exposure storage** (B.13, #58: tabella `asset_country_weights`, 3 dimensioni
+countries/regions/sectors) e **Morningstar come fonte esposizione** (B.14, #59: resolver custom con
+bootstrap Chromium headless per WAF+JWT, rotta backend
+`POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend).
 Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
 di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

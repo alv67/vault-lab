@@ -49,3 +49,9 @@ export const ASSET_CLASS_LABELS: Record<string, string> = {
   mixed: 'Misto',
   other: 'Altro',
 }
+
+export const PRICE_SOURCE_LABELS: Record<string, string> = {
+  yahoo: 'Yahoo Finance',
+  manual: 'Prezzo manuale',
+  none: 'Nessun prezzo',
+}

@@ -1,6 +1,7 @@
 ---
 description: Esperto UX/UI e designer di interfacce per VaultLab. Consiglia struttura, look and feel, palette, tipografia e componenti del frontend. Invocalo quando serve decidere l'architettura o l'aspetto della UI.
 mode: subagent
+model: opencode-go/qwen3.8-max
 permission:
   bash: deny
   edit: deny

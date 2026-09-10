@@ -1,6 +1,7 @@
 ---
 description: Esperto di analisi finanziaria e statistica per VaultLab. ROI, gain/loss, allocazione, metriche di rischio, multi-valuta, fonti prezzi. Solo analisi, nessuna modifica al codice.
 mode: subagent
+model: opencode-go/minimax-m3
 permission:
   bash: deny
   edit: deny

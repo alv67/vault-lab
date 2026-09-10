@@ -3,11 +3,17 @@
   import { Chart } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
   import { LineChart } from 'echarts/charts'
-  import { DataZoomComponent, GridComponent, TooltipComponent } from 'echarts/components'
+  import {
+    DataZoomComponent,
+    GridComponent,
+    MarkLineComponent,
+    TooltipComponent,
+  } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency } from '$lib/format'
+  import type { SplitInfo } from '$lib/services/api'
 
-  use([LineChart, DataZoomComponent, GridComponent, TooltipComponent, CanvasRenderer])
+  use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
   interface PricePoint {
     date: string
@@ -21,7 +27,27 @@
     axisValue?: string | number
   }
 
-  let { series = [] as PricePoint[], currency = 'USD' } = $props()
+  let {
+    series = [] as PricePoint[],
+    currency = 'USD',
+    zoomStart = null as string | 'MAX' | null,
+    onDataZoom = null as (() => void) | null,
+    splits = [] as SplitInfo[],
+  } = $props()
+
+  const zoomOption = $derived.by(() => {
+    if (zoomStart === 'MAX') return { start: 0, end: 100 }
+    if (zoomStart && series.length > 0) {
+      const times = series.map((p) => new Date(p.date).getTime())
+      const min = Math.min(...times)
+      const max = Math.max(...times)
+      const start = new Date(zoomStart).getTime()
+      const startPct =
+        max === min ? 0 : Math.max(0, Math.min(100, ((start - min) / (max - min)) * 100))
+      return { start: startPct, end: 100 }
+    }
+    return {}
+  })
 
   const options = $derived.by((): EChartsOption => ({
     color: ['#2563eb'],
@@ -43,8 +69,17 @@
     },
     grid: { left: 48, right: 16, top: 24, bottom: 52 },
     dataZoom: [
-      { type: 'inside', xAxisIndex: 0 },
-      { type: 'slider', xAxisIndex: 0, bottom: 0 },
+      {
+        type: 'inside',
+        xAxisIndex: 0,
+        ...zoomOption,
+      },
+      {
+        type: 'slider',
+        xAxisIndex: 0,
+        bottom: 0,
+        ...zoomOption,
+      },
     ],
     xAxis: {
       type: 'time',
@@ -66,6 +101,26 @@
         symbol: 'none',
         sampling: 'lttb',
         lineStyle: { width: 2 },
+        ...(splits.length > 0
+          ? {
+              markLine: {
+                symbol: 'none',
+                silent: true,
+                lineStyle: { type: 'dashed', color: '#7c3aed', width: 1 },
+                label: {
+                  show: true,
+                  position: 'insideEndTop',
+                  formatter: '{b}',
+                  color: '#7c3aed',
+                  fontSize: 10,
+                },
+                data: splits.map((s) => ({
+                  xAxis: new Date(s.date).getTime(),
+                  name: `Split ${s.ratio}`,
+                })),
+              },
+            }
+          : {}),
       },
     ],
   }))
@@ -77,6 +132,6 @@
   </div>
 {:else}
   <div class="h-[340px] w-full">
-    <Chart {init} {options} />
+    <Chart {init} {options} notMerge={false} ondatazoom={() => onDataZoom?.()} />
   </div>
 {/if}

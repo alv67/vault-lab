@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
@@ -37,6 +38,13 @@ func respond(w http.ResponseWriter, status int, data interface{}) {
 
 func respondError(w http.ResponseWriter, status int, msg string) {
 	respond(w, status, map[string]string{"error": msg})
+}
+
+// refreshRequested reports whether the caller asked to bypass the provider
+// exposure cache via ?refresh=1 (or refresh=true).
+func refreshRequested(r *http.Request) bool {
+	flag := r.URL.Query().Get("refresh")
+	return flag == "1" || strings.EqualFold(flag, "true")
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -322,6 +330,10 @@ func (h *Handler) UpdateAsset(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if err == service.ErrInvalidPriceSource {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		log.Error().Err(err).Msg("update asset failed")
 		respondError(w, http.StatusInternalServerError, "update failed")
 		return
@@ -350,6 +362,28 @@ func (h *Handler) GetAssetQuote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, http.StatusOK, quote)
+}
+
+func (h *Handler) AssetSplits(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	splits, err := h.svc.AssetSplits(r.Context(), uid)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("get asset splits failed")
+		respondError(w, http.StatusInternalServerError, "splits failed")
+		return
+	}
+
+	respond(w, http.StatusOK, splits)
 }
 
 func (h *Handler) FetchAssetProfile(w http.ResponseWriter, r *http.Request) {
@@ -457,7 +491,7 @@ func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exposure, err := h.svc.FetchETFExposure(r.Context(), uid)
+	exposure, err := h.svc.FetchETFExposure(r.Context(), uid, refreshRequested(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
@@ -472,6 +506,63 @@ func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond(w, http.StatusOK, exposure)
+}
+
+func (h *Handler) FetchMorningstarExposure(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	exposure, err := h.svc.FetchMorningstarExposure(r.Context(), uid, refreshRequested(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, service.ErrNotETF), errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, err.Error())
+		default:
+			log.Error().Err(err).Msg("fetch morningstar exposure failed")
+			respondError(w, http.StatusBadGateway, "morningstar exposure fetch failed")
+		}
+		return
+	}
+
+	respond(w, http.StatusOK, exposure)
+}
+
+// DeriveAssetRegions previews how a country weight distribution maps onto the
+// canonical macro-regions for an asset. Nothing is persisted.
+func (h *Handler) DeriveAssetRegions(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	uid, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid asset id")
+		return
+	}
+
+	var req struct {
+		Countries []model.ExposureRow `json:"countries"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	regions, err := h.svc.DeriveRegions(r.Context(), uid, req.Countries)
+	if err != nil {
+		if err == service.ErrAssetNotFound {
+			respondError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		log.Error().Err(err).Msg("derive asset regions failed")
+		respondError(w, http.StatusInternalServerError, "derive failed")
+		return
+	}
+
+	respond(w, http.StatusOK, map[string][]model.ExposureRow{"regions": regions})
 }
 
 func (h *Handler) BackfillAssetHistory(w http.ResponseWriter, r *http.Request) {

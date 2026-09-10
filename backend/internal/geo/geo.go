@@ -5,16 +5,51 @@ package geo
 
 import "strings"
 
-// Regions is the canonical list of macro-regions in display order.
+// Regions is the canonical list of macro-regions in display order. It follows
+// Morningstar's official region taxonomy so a provider prefill can map 1:1.
 var Regions = []string{
 	"North America",
 	"Latin America",
+	"United Kingdom",
 	"Europe Developed",
 	"Europe Emerging",
 	"Africa / Middle East",
+	"Japan",
+	"Australasia",
 	"Asia Developed",
 	"Asia Emerging",
 	"Other / Not Classified",
+}
+
+// OtherRegion is the canonical name of the fallback macro-region that absorbs
+// country weights that map to no specific region (or the residual when the
+// country weights of a provider do not cover 100%).
+const OtherRegion = "Other / Not Classified"
+
+// Countries is the canonical list of ISO alpha-2 country codes in display
+// order (grouped by macro-region, then code). It contains exactly the keys of
+// the regionByCountry map below, so every canonical country maps to a region.
+var Countries = []string{
+	// North America
+	"CA", "US",
+	// Latin America
+	"AR", "BO", "BR", "CL", "CO", "CR", "CU", "DO", "EC", "GT", "HN", "MX", "NI", "PA", "PE", "PY", "SV", "UY", "VE",
+	// United Kingdom
+	"GB",
+	// Europe Developed
+	"AT", "BE", "CH", "CY", "DE", "DK", "ES", "FI", "FR", "GR", "IE", "IS", "IT", "LU", "MT", "NL", "NO", "PT", "SE", "SI",
+	// Europe Emerging
+	"BG", "CZ", "EE", "HR", "HU", "LT", "LV", "PL", "RO", "RS", "RU", "SK", "TR", "UA",
+	// Africa / Middle East
+	"AE", "BH", "DZ", "EG", "IL", "JO", "KE", "KW", "LB", "MA", "NG", "OM", "QA", "SA", "TN", "ZA",
+	// Japan
+	"JP",
+	// Australasia
+	"AU", "NZ",
+	// Asia Developed
+	"HK", "KR", "SG", "TW",
+	// Asia Emerging
+	"BD", "CN", "ID", "IN", "LK", "MY", "PH", "PK", "TH", "VN",
 }
 
 // GICSSectors is the canonical list of GICS sectors.
@@ -56,8 +91,9 @@ var regionByCountry = map[string]string{
 	"SV": "Latin America",
 	"NI": "Latin America",
 	"CU": "Latin America",
+	// United Kingdom
+	"GB": "United Kingdom",
 	// Europe Developed
-	"GB": "Europe Developed",
 	"FR": "Europe Developed",
 	"DE": "Europe Developed",
 	"IT": "Europe Developed",
@@ -77,6 +113,7 @@ var regionByCountry = map[string]string{
 	"GR": "Europe Developed",
 	"MT": "Europe Developed",
 	"CY": "Europe Developed",
+	"SI": "Europe Developed",
 	// Europe Emerging
 	"PL": "Europe Emerging",
 	"CZ": "Europe Emerging",
@@ -86,7 +123,6 @@ var regionByCountry = map[string]string{
 	"RO": "Europe Emerging",
 	"BG": "Europe Emerging",
 	"SK": "Europe Emerging",
-	"SI": "Europe Emerging",
 	"HR": "Europe Emerging",
 	"RS": "Europe Emerging",
 	"UA": "Europe Emerging",
@@ -110,17 +146,19 @@ var regionByCountry = map[string]string{
 	"BH": "Africa / Middle East",
 	"JO": "Africa / Middle East",
 	"LB": "Africa / Middle East",
+	// Japan
+	"JP": "Japan",
+	// Australasia
+	"AU": "Australasia",
+	"NZ": "Australasia",
 	// Asia Developed
-	"JP": "Asia Developed",
-	"AU": "Asia Developed",
-	"NZ": "Asia Developed",
+	"KR": "Asia Developed",
+	"TW": "Asia Developed",
 	"SG": "Asia Developed",
 	"HK": "Asia Developed",
 	// Asia Emerging
 	"CN": "Asia Emerging",
 	"IN": "Asia Emerging",
-	"KR": "Asia Emerging",
-	"TW": "Asia Emerging",
 	"TH": "Asia Emerging",
 	"ID": "Asia Emerging",
 	"MY": "Asia Emerging",

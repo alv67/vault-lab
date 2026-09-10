@@ -10,7 +10,7 @@ Track your investments, monitor asset performance, and gain insights into your f
 - **Portfolio management** — Multiple portfolios per user, export/import, ownership enforced on all endpoints
 - **Asset tracking** — Stocks, ETFs, bonds, crypto, commodities with auto-complete and sync via Yahoo Finance
 - **Asset detail page** — Editable metadata (exchange, ISIN), full price history with backfill, and editable geographic/sector exposure with charts
-- **ETF exposure from JustETF** — a Python microservice resolves the ISIN from a ticker and fetches full country/region + GICS sector weights (`POST /assets/{id}/fetch-etf-exposure`)
+- **ETF exposure from JustETF and Morningstar** — a Python microservice resolves the ISIN from a ticker and fetches full country/region + GICS sector weights from JustETF (`POST /assets/{id}/fetch-etf-exposure`) and official regions from Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`); each distribution keeps its source and last-update date
 - **Transaction history** — Buy, sell, dividends, splits, fees with multi-currency support
 - **Dashboard** — Portfolio value, gain/loss, allocation, performance charts, ROI by asset
 - **Market prices** — Yahoo Finance with Redis caching, rate-limit/backoff, series materialization, price health dashboard
@@ -54,8 +54,10 @@ and send the requests in order.
 ## Project Status
 
 Releases on [`main`](https://github.com/alv67/vault-lab/tree/main): **v0.1.0** (25 Aug 2026,
-first official release) and **v0.2.0** (30 Aug 2026, EPIC A — data correctness & security —
-and EPIC B — geographic/sector distribution, asset classes, FX history, charts).
+first official release), **v0.2.0** (30 Aug 2026, EPIC A — data correctness & security —
+and EPIC B — geographic/sector distribution, asset classes, FX history, charts) and
+**v0.3.0** (11 Sep 2026, asset editing overhaul and per-country exposure editing with
+Morningstar/JustETF prefill).
 
 Active development on the [`develop`](https://github.com/alv67/vault-lab/tree/develop) branch — see [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md) for the roadmap.
 
