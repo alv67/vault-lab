@@ -47,11 +47,15 @@ type fakeExposureRepo struct {
 	regions   map[string][]model.ExposureRow
 	sectors   map[string][]model.ExposureRow
 	countries map[string][]model.ExposureRow
+	// provenance mirrors the asset_exposure_provenance table, keyed by asset id
+	// then by dimension ("countries"/"regions"/"sectors").
+	provenance map[string]map[string]model.ExposureProvenance
 	// replace*Calls record every dimension write so tests can assert which
 	// operations persist (PUT/save) and which stay read-only previews.
 	replaceRegionsCalls   int
 	replaceSectorsCalls   int
 	replaceCountriesCalls int
+	setProvenanceCalls    int
 }
 
 func (f *fakeExposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]model.ExposureRow, error) {
@@ -95,6 +99,24 @@ func (f *fakeExposureRepo) FindSectorsByAssets(ctx context.Context, assetIDs []u
 }
 func (f *fakeExposureRepo) FindCountriesByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error) {
 	return f.countries, nil
+}
+func (f *fakeExposureRepo) FindProvenance(ctx context.Context, assetID uuid.UUID) (map[string]model.ExposureProvenance, error) {
+	if f.provenance == nil {
+		return nil, nil
+	}
+	return f.provenance[assetID.String()], nil
+}
+func (f *fakeExposureRepo) SetProvenance(ctx context.Context, assetID uuid.UUID, dimension, source string) error {
+	f.setProvenanceCalls++
+	if f.provenance == nil {
+		f.provenance = map[string]map[string]model.ExposureProvenance{}
+	}
+	key := assetID.String()
+	if f.provenance[key] == nil {
+		f.provenance[key] = map[string]model.ExposureProvenance{}
+	}
+	f.provenance[key][dimension] = model.ExposureProvenance{Source: source, UpdatedAt: time.Now().UTC()}
+	return nil
 }
 
 type fakeFXRepo struct {
@@ -1034,6 +1056,102 @@ func TestSaveExposureDimensions_EmptyPayloadWritesNothing(t *testing.T) {
 	if got := exposureRowsByName(ex.countries[key]); !got["JP"].Equal(decimal.NewFromInt(100)) || len(got) != 1 {
 		t.Fatalf("stored countries = %+v, want the pre-existing [JP 100]", ex.countries[key])
 	}
+	if ex.setProvenanceCalls != 0 {
+		t.Fatalf("SetProvenance calls = %d, want 0 (an empty payload must not write provenance)", ex.setProvenanceCalls)
+	}
+}
+
+func TestSaveExposureDimensions_RecordsProvenance(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{
+		provenance: map[string]map[string]model.ExposureProvenance{
+			key: {
+				model.ExposureDimensionRegions: {Source: "yahoo", UpdatedAt: time.Now().Add(-24 * time.Hour).UTC()},
+			},
+		},
+	}
+	repos := &repository.Repository{Exposure: ex}
+
+	err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Countries:       []model.ExposureRow{{Name: "US", Weight: decimal.NewFromInt(100)}},
+		CountriesSource: "morningstar",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ex.setProvenanceCalls != 1 {
+		t.Fatalf("SetProvenance calls = %d, want 1 (only the saved dimension)", ex.setProvenanceCalls)
+	}
+	got := ex.provenance[key]
+	if got[model.ExposureDimensionCountries].Source != "morningstar" {
+		t.Fatalf("countries provenance = %+v, want source morningstar", got[model.ExposureDimensionCountries])
+	}
+	if got[model.ExposureDimensionCountries].UpdatedAt.IsZero() {
+		t.Fatalf("countries provenance updated_at is zero, want a timestamp")
+	}
+	if got[model.ExposureDimensionRegions].Source != "yahoo" {
+		t.Fatalf("regions provenance = %+v, want the pre-existing yahoo (saving countries must not touch it)", got[model.ExposureDimensionRegions])
+	}
+	if _, ok := got[model.ExposureDimensionSectors]; ok {
+		t.Fatalf("sectors provenance written for an absent dimension: %+v", got[model.ExposureDimensionSectors])
+	}
+}
+
+func TestSaveExposureDimensions_DefaultsManualSource(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	ex := &fakeExposureRepo{}
+	repos := &repository.Repository{Exposure: ex}
+
+	err := saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Regions: []model.ExposureRow{{Name: "North America", Weight: decimal.NewFromInt(100)}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := ex.provenance[key][model.ExposureDimensionRegions].Source; got != "manual" {
+		t.Fatalf("regions provenance = %q, want manual (absent source means a manual edit)", got)
+	}
+
+	err = saveExposureDimensions(context.Background(), repos, assetID, &model.AssetExposure{
+		Sectors:       []model.ExposureRow{{Name: "Technology", Weight: decimal.NewFromInt(100)}},
+		SectorsSource: "justetf",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := ex.provenance[key][model.ExposureDimensionSectors].Source; got != "justetf" {
+		t.Fatalf("sectors provenance = %q, want justetf (explicit source must win)", got)
+	}
+}
+
+func TestGetAssetExposure_ReturnsStoredProvenance(t *testing.T) {
+	assetID := uuid.New()
+	key := assetID.String()
+	updatedAt := time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)
+	a := &fakeAssetRepo{asset: &model.Asset{ID: assetID, Ticker: "SXR8.DE", Type: model.AssetTypeETF, ISIN: "IE00B4L5Y983"}}
+	ex := &fakeExposureRepo{
+		countries: map[string][]model.ExposureRow{key: {{Name: "US", Weight: decimal.NewFromInt(100)}}},
+		provenance: map[string]map[string]model.ExposureProvenance{
+			key: {
+				model.ExposureDimensionCountries: {Source: "morningstar", UpdatedAt: updatedAt},
+			},
+		},
+	}
+	svc := newFetchTestService(t, a, ex, nil, nil, nil)
+
+	got, err := svc.GetAssetExposure(context.Background(), assetID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.Provenance) != 1 {
+		t.Fatalf("provenance = %+v, want only the stored countries entry", got.Provenance)
+	}
+	prov, ok := got.Provenance[model.ExposureDimensionCountries]
+	if !ok || prov.Source != "morningstar" || !prov.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("countries provenance = %+v, want morningstar @ %s", prov, updatedAt)
+	}
 }
 
 func TestMapMorningstarExposure_UsesOfficialRegions(t *testing.T) {
@@ -1372,12 +1490,15 @@ func TestPrepareSectorsKeepsExactRule(t *testing.T) {
 }
 
 // assertNoExposureWrites checks that a preview fetch wrote no exposure
-// dimension at all.
+// dimension and no provenance at all.
 func assertNoExposureWrites(t *testing.T, e *fakeExposureRepo, what string) {
 	t.Helper()
 	if e.replaceCountriesCalls != 0 || e.replaceRegionsCalls != 0 || e.replaceSectorsCalls != 0 {
 		t.Fatalf("%s persisted exposure: ReplaceCountries=%d ReplaceRegions=%d ReplaceSectors=%d, want all 0",
 			what, e.replaceCountriesCalls, e.replaceRegionsCalls, e.replaceSectorsCalls)
+	}
+	if e.setProvenanceCalls != 0 {
+		t.Fatalf("%s persisted provenance: SetProvenance=%d, want 0", what, e.setProvenanceCalls)
 	}
 }
 

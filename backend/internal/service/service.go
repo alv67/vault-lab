@@ -515,10 +515,12 @@ func (s *Service) FetchAssetProfile(ctx context.Context, id uuid.UUID) (*model.A
 }
 
 // GetAssetExposure returns the country, region and sector weight distribution
-// of an asset. The output always contains every canonical country, region and
-// GICS sector, in canonical order, with zero weight when not stored. When no
-// weights are stored for a dimension, stocks fall back to a single 100% entry
-// derived from the asset country and sector.
+// of an asset, together with the persisted `provenance` of each dimension
+// (source + last update, only for dimensions saved at least once). The output
+// always contains every canonical country, region and GICS sector, in
+// canonical order, with zero weight when not stored. When no weights are
+// stored for a dimension, stocks fall back to a single 100% entry derived from
+// the asset country and sector.
 func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -540,7 +542,13 @@ func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.As
 	if err != nil {
 		return nil, err
 	}
-	return s.buildExposure(asset, regions, sectors, countries), nil
+	ex := s.buildExposure(asset, regions, sectors, countries)
+	provenance, err := s.repos.Exposure.FindProvenance(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ex.Provenance = provenance
+	return ex, nil
 }
 
 // SaveAssetExposure validates and persists the weight distribution for an
@@ -558,6 +566,11 @@ func (s *Service) GetAssetExposure(ctx context.Context, id uuid.UUID) (*model.As
 // (POST /assets/{id}/exposure/derive) or updated explicitly via {regions};
 // explicit regions (e.g. the official ones returned by Morningstar) are always
 // saved as sent.
+// Each dimension present in the body may carry its provenance source via
+// countries_source / regions_source / sectors_source (e.g. "morningstar",
+// "justetf"); when the source is absent or empty the dimension is recorded as
+// "manual". Provenance is persisted only for the dimensions actually saved and
+// is returned back in the response `provenance` map.
 // Returns the complete output built from the stored state.
 func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure *model.AssetExposure) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
@@ -590,7 +603,13 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 	if err != nil {
 		return nil, err
 	}
-	return s.buildExposure(asset, storedRegions, storedSectors, storedCountries), nil
+	saved := s.buildExposure(asset, storedRegions, storedSectors, storedCountries)
+	provenance, err := s.repos.Exposure.FindProvenance(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	saved.Provenance = provenance
+	return saved, nil
 }
 
 // saveExposureDimensions validates and persists each dimension present in the
@@ -598,6 +617,9 @@ func (s *Service) SaveAssetExposure(ctx context.Context, id uuid.UUID, exposure 
 // stored dimension untouched". Saving countries never rewrites the regions
 // dimension — the country→region aggregation only runs through the explicit
 // derive endpoint (DeriveRegions) or when the caller saves explicit regions.
+// Each dimension actually written also gets its provenance recorded
+// (countries_source/regions_source/sectors_source from the payload, defaulting
+// to "manual"); dimensions left untouched keep their stored provenance.
 func saveExposureDimensions(ctx context.Context, rx *repository.Repository, id uuid.UUID, exposure *model.AssetExposure) error {
 	if exposure.Regions != nil {
 		prepared, err := prepareRegions(exposure.Regions)
@@ -605,6 +627,9 @@ func saveExposureDimensions(ctx context.Context, rx *repository.Repository, id u
 			return err
 		}
 		if err := rx.Exposure.ReplaceRegions(ctx, id, prepared); err != nil {
+			return err
+		}
+		if err := rx.Exposure.SetProvenance(ctx, id, model.ExposureDimensionRegions, sourceOrDefault(exposure.RegionsSource)); err != nil {
 			return err
 		}
 	}
@@ -616,6 +641,9 @@ func saveExposureDimensions(ctx context.Context, rx *repository.Repository, id u
 		if err := rx.Exposure.ReplaceSectors(ctx, id, sectors); err != nil {
 			return err
 		}
+		if err := rx.Exposure.SetProvenance(ctx, id, model.ExposureDimensionSectors, sourceOrDefault(exposure.SectorsSource)); err != nil {
+			return err
+		}
 	}
 	if exposure.Countries != nil {
 		prepared, err := prepareCountries(exposure.Countries)
@@ -625,8 +653,20 @@ func saveExposureDimensions(ctx context.Context, rx *repository.Repository, id u
 		if err := rx.Exposure.ReplaceCountries(ctx, id, prepared); err != nil {
 			return err
 		}
+		if err := rx.Exposure.SetProvenance(ctx, id, model.ExposureDimensionCountries, sourceOrDefault(exposure.CountriesSource)); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// sourceOrDefault normalizes an optional provenance source coming from the PUT
+// payload: a missing or empty source means the edit was manual.
+func sourceOrDefault(s string) string {
+	if s == "" {
+		return "manual"
+	}
+	return s
 }
 
 // DeriveRegions aggregates raw country rows into canonical macro-regions for an

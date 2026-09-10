@@ -638,19 +638,27 @@ quote/prices.
       the sum exceeds 100** (a sum below 100 is valid — this replaces the old
       `100 ± 0.5` rule).
     - **Provenance badges**: each box header shows a `ProvenanceBadge` pill
-      (a coloured dot + label) with the source of its current data —
-      `manuale`, `da JustETF`, `da Morningstar` / `da Morningstar (regioni
-      ufficiali)`, `calcolato dai paesi`, `da JustETF via paesi`. A prefill or
-      derive sets the badge; **any manual edit flips it to "manuale"**. The
-      state is session-scoped in the page (nothing is persisted), so the badge
-      is hidden on a fresh reload.
+      (a coloured dot + label, plus the last-update date once the dimension is
+      persisted — e.g. "da Morningstar (2026-09-05)") with the source of its
+      current data — `manuale`, `da JustETF`, `da Morningstar` / `da Morningstar
+      (regioni ufficiali)`, `calcolato dai paesi`, `da JustETF via paesi`. A
+      prefill or derive sets the badge; **any manual edit flips it to
+      "manuale"**. Provenance is now **persisted per dimension** by the backend
+      (`GET/PUT /assets/{id}/exposure` answer with `provenance.{countries,
+      regions, sectors}` = `{source, updated_at}` for persisted dimensions
+      only), so badges — with their date — survive a reload. Fetch/prefill
+      responses carry no provenance (previews are not persisted): right after
+      a prefill or a manual edit the badge shows the **label only**, and the
+      date appears once the dimension is saved again.
   - **`ExposureSectorModal`** has the sector table, validated to 100 ± 0.5
     (unchanged — sectors still require an exact total). Its header shows the
     same `ProvenanceBadge` pill as the geo boxes, driven by the page-owned
-    `sectorsSource` (`da JustETF`, `da Yahoo`, `da Morningstar`, `manuale`):
-    each sector prefill sets the badge, the first manual weight edit flips it
-    to "manuale" (via `onSectorsDirty`), and it stays hidden on a fresh reload
-    — saving never changes the provenance. Prefilled/loaded sector weights are
+    `sectorsSource` + `sectorsUpdatedAt` (`da JustETF`, `da Yahoo`,
+    `da Morningstar`, `manuale`): each sector prefill sets the badge (label
+    only, no date — the preview is not persisted), the first manual weight
+    edit flips it to "manuale" (via `onSectorsDirty`, also clearing the date),
+    and saving persists the source with a fresh `updated_at` that the badge
+    then shows on every reload. Prefilled/loaded sector weights are
     rounded to 2 decimals and slightly-over-100 totals are shaved at import
     through `sectorsList` (which wraps `roundWeight` + `capAtHundred`, see the
     import-normalisation note below), so provider float noise (e.g. Yahoo
@@ -682,11 +690,14 @@ quote/prices.
   colour in the chart, so square and chart always match. The charts inside the
   modals are **mute** (`mute` on `ExposurePie`: no value labels and no tooltip
   on the slices).
-  Saving sends **only the edited dimension**
-  (`PUT /assets/{id}/exposure` with `{countries}` or `{regions}` — omitting a
-  key leaves the other untouched), then reloads the canonical response, which
-  refreshes `exposure` (the cards) and re-syncs the modal's edit lists, so
-  after a save card and modal are consistent again. Saving
+  Saving sends **only the edited dimension together with its provenance
+  source** (`PUT /assets/{id}/exposure` with `{countries, countries_source}`
+  or `{regions, regions_source}` — omitting a key leaves the other untouched;
+  a dimension sent without a source defaults to `manual` server-side), then
+  reloads the canonical response, which refreshes `exposure` (the cards),
+  re-syncs the modal's edit lists and updates the saved dimension's
+  provenance badge with the persisted `updated_at`, so after a save card and
+  modal are consistent again. Saving
   countries **no longer re-derives the regions server-side**: the stored
   regions come back unchanged and the regions provenance badge is left
   untouched — regions are recomputed only when the user clicks
@@ -807,7 +818,8 @@ events (timestamp, type, status badge, code, message, duration), with a
   donut), a fixed 10-region table with "Other / Not Classified" removed and an
   **open** donut (`complete={false}`) when the total is < 100, ≤100 save
   validation, and **provenance badges** (manuale / da JustETF / da Morningstar /
-  calcolato dai paesi).
+  calcolato dai paesi), now persisted per dimension by the backend and shown
+  with the last-update date (e.g. "da Morningstar (2026-09-05)").
 - **Equity-only universe (B.8 follow-up)** — the geo/sector allocations cover
   only equity holdings (stocks always; ETFs/mutual funds only when
   `asset_class` is `equity` or `real_estate`). Bonds, crypto, commodities and

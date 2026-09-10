@@ -27,6 +27,8 @@
     prefillCountriesFromMorningstar,
     countriesSource = null as string | null,
     regionsSource = null as string | null,
+    countriesUpdatedAt = null as string | null,
+    regionsUpdatedAt = null as string | null,
     onCountriesDirty,
     onRegionsDirty,
     assetType = 'stock',
@@ -50,6 +52,8 @@
     prefillCountriesFromMorningstar: () => void
     countriesSource: string | null
     regionsSource: string | null
+    countriesUpdatedAt: string | null
+    regionsUpdatedAt: string | null
     onCountriesDirty: () => void
     onRegionsDirty: () => void
     assetType: string
@@ -211,7 +215,7 @@
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <h3 class="font-medium">Paesi</h3>
-              <ProvenanceBadge source={countriesSource} />
+              <ProvenanceBadge source={countriesSource} updatedAt={countriesUpdatedAt} />
             </div>
             <div class="flex items-center gap-1.5">
               <button
@@ -416,7 +420,7 @@
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <h3 class="font-medium">Regioni</h3>
-              <ProvenanceBadge source={regionsSource} />
+              <ProvenanceBadge source={regionsSource} updatedAt={regionsUpdatedAt} />
             </div>
             <div class="flex items-center gap-1.5">
               <button

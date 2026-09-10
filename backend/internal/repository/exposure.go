@@ -19,6 +19,8 @@ type ExposureRepository interface {
 	FindRegionsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error)
 	FindSectorsByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error)
 	FindCountriesByAssets(ctx context.Context, assetIDs []uuid.UUID) (map[string][]model.ExposureRow, error)
+	FindProvenance(ctx context.Context, assetID uuid.UUID) (map[string]model.ExposureProvenance, error)
+	SetProvenance(ctx context.Context, assetID uuid.UUID, dimension, source string) error
 }
 
 type exposureRepo struct {
@@ -162,4 +164,41 @@ func (r *exposureRepo) replace(ctx context.Context, assetID uuid.UUID, rows []mo
 		}
 	}
 	return nil
+}
+
+// FindProvenance returns the persisted provenance of each exposure dimension
+// of an asset, keyed by dimension name ("countries", "regions", "sectors").
+// Dimensions never saved are simply absent from the map.
+func (r *exposureRepo) FindProvenance(ctx context.Context, assetID uuid.UUID) (map[string]model.ExposureProvenance, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT dimension, source, updated_at FROM asset_exposure_provenance WHERE asset_id = $1 ORDER BY dimension`,
+		assetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]model.ExposureProvenance{}
+	for rows.Next() {
+		var dimension string
+		var prov model.ExposureProvenance
+		if err := rows.Scan(&dimension, &prov.Source, &prov.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out[dimension] = prov
+	}
+	return out, rows.Err()
+}
+
+// SetProvenance upserts the provenance of one exposure dimension, refreshing
+// updated_at on every write.
+func (r *exposureRepo) SetProvenance(ctx context.Context, assetID uuid.UUID, dimension, source string) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO asset_exposure_provenance (asset_id, dimension, source)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (asset_id, dimension) DO UPDATE SET source = EXCLUDED.source, updated_at = now()`,
+		assetID, dimension, source,
+	)
+	return err
 }

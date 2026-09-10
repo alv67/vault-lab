@@ -591,6 +591,19 @@ edits "Other / Not Classified", so when the client sends regions summing below
 `Other / Not Classified` before persisting**, keeping the stored invariant
 "regions sum to 100" that portfolio geography aggregation relies on. Sectors
 keep the exact 100 ± 0.5 rule.
+**Exposure provenance**: every saved dimension also records *where it came
+from*. `PUT /assets/{id}/exposure` accepts optional `countries_source`,
+`regions_source` and `sectors_source` strings (e.g. `morningstar`, `justetf`,
+`yahoo`); when a dimension is present in the body but its source is missing or
+empty it is recorded as `manual`. The `GET/PUT /assets/{id}/exposure` responses
+then include a `provenance` map — only for the dimensions persisted at least
+once, omitted when empty — with one `{ "source", "updated_at" }` entry per
+dimension, e.g. `"countries": { "source": "morningstar", "updated_at":
+"2026-09-05T10:00:00Z" }`, so the UI can render "da Morningstar (2026-09-05)"
+badges that survive a reload (persisted in `asset_exposure_provenance`,
+migration `000017`). The fetch/prefill responses (`fetch-exposure`,
+`fetch-etf-exposure`, `fetch-morningstar-exposure`) are previews and
+deliberately carry **no** provenance: nothing is written until the user saves.
 
 ### Provider exposure cache (`exposure:<source>:<ISIN>`)
 

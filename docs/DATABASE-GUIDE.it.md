@@ -59,7 +59,7 @@ esterne sono le etichette che dicono "questa scatola appartiene a quest'altra".
 
 ## 2. Il quadro d'insieme
 
-Ci sono quindici tabelle, raggruppabili per argomento:
+Ci sono sedici tabelle, raggruppabili per argomento:
 
 | Ambito | Tabelle | Cosa rappresentano |
 |---|---|---|
@@ -68,7 +68,7 @@ Ci sono quindici tabelle, raggruppabili per argomento:
 | **Portafogli e operazioni** | `portfolios`, `transactions` | i portafogli e le operazioni comprate/vendute |
 | **Storia** | `portfolio_series`, `asset_series` | il valore e il costo giorno per giorno |
 | **Dati di mercato** | `prices`, `splits`, `fx_rates` | prezzi, split azionari e tassi di cambio |
-| **Esposizione** | `asset_country_weights`, `asset_region_weights`, `asset_sector_weights` | la distribuzione per-paese, geografica e settoriale di un titolo |
+| **Esposizione** | `asset_country_weights`, `asset_region_weights`, `asset_sector_weights`, `asset_exposure_provenance` | la distribuzione per-paese, geografica e settoriale di un titolo e la provenienza di ciascuna dimensione |
 | **Configurazione e cache** | `supported_currencies`, `lookup_cache` | le valute consentite e la cache della ricerca |
 
 ---
@@ -104,6 +104,7 @@ erDiagram
     assets ||--o{ asset_country_weights : "paesi (asset_id)"
     assets ||--o{ asset_region_weights : "geografia (asset_id)"
     assets ||--o{ asset_sector_weights : "settori (asset_id)"
+    assets ||--o{ asset_exposure_provenance : "provenienza (asset_id)"
 
     fx_rates {
         text base_currency PK
@@ -134,6 +135,7 @@ erDiagram
 | `asset_country_weights` | `asset_id` | `assets` | 1 titolo → N paesi | CASCADE |
 | `asset_region_weights` | `asset_id` | `assets` | 1 titolo → N regioni | CASCADE |
 | `asset_sector_weights` | `asset_id` | `assets` | 1 titolo → N settori | CASCADE |
+| `asset_exposure_provenance` | `asset_id` | `assets` | 1 titolo → fino a 3 provenienze | CASCADE |
 
 ---
 
@@ -308,6 +310,26 @@ sommare a 100%. Per una singola azione c'è una sola riga (il suo settore al
 | `sector` | TEXT (parte della PK) | il settore GICS, es. `Technology` |
 | `weight` | NUMERIC(10, 4) | il peso percentuale (es. `0.2340`) |
 
+### `asset_exposure_provenance` — da dove arriva ogni dimensione di esposizione
+
+Per ogni titolo, la **sorgente** e la **data dell'ultimo aggiornamento** di
+ogni dimensione di esposizione (`countries`, `regions`, `sectors`). Una riga
+per dimensione salvata: `PUT /assets/{id}/exposure` la scrive ogni volta che
+una dimensione viene salvata, usando i campi opzionali `countries_source` /
+`regions_source` / `sectors_source` del body (es. `morningstar`, `justetf`,
+`yahoo`) oppure `manual` se la sorgente è assente. L'UI la rilegge dal campo
+`provenance` delle risposte `GET/PUT /assets/{id}/exposure` e mostra badge tipo
+"da Morningstar (2026-09-05)" che sopravvivono a un reload. Le anteprime dei
+fetch non scrivono questa tabella: la provenienza si registra solo al
+salvataggio esplicito.
+
+| Colonna | Tipo | Spiegazione |
+|---|---|---|
+| `asset_id` | UUID (FK, parte della PK) | il titolo (→ `assets.id`) |
+| `dimension` | TEXT (parte della PK) | `countries`, `regions` o `sectors` |
+| `source` | TEXT | da dove arrivano i dati (es. `manual`, `morningstar`, `justetf`) |
+| `updated_at` | TIMESTAMPTZ | quando la dimensione è stata salvata l'ultima volta |
+
 ### `fx_rates` — i tassi di cambio
 
 Quanto vale **1 dollaro (USD)** in un'altra valuta. La chiave è la coppia
@@ -452,7 +474,10 @@ In sintesi, chi scrive e chi legge:
   automaticamente da JustETF tramite il `python-service`
   (`POST /assets/{id}/fetch-etf-exposure`); da B.13 i paesi raw vengono
   conservati in `asset_country_weights`. Da B.14 è disponibile una seconda
-  fonte via Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`).
+  fonte via Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`). Ogni
+  salvataggio esplicito registra anche la provenienza di ciascuna dimensione
+  salvata in `asset_exposure_provenance` (sorgente + timestamp, default
+  `manual`), così i badge dell'UI sopravvivono a un reload.
 - **La whitelist delle valute** la gestisce l'amministratore via API in
   `supported_currencies` (capitolo 11 della guida).
 

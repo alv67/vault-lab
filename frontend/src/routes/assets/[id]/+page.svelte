@@ -75,11 +75,18 @@
   let sectorsEdit = $state<ExposureRow[]>([])
   let countriesEdit = $state<ExposureRow[]>([])
   // Data provenance for the geo/sector modal badges: which source currently
-  // owns each dimension ('manual' once the user edits it). Null = unknown (no
-  // badge). Set by the prefill handlers, never by load or save.
+  // owns each dimension ('manual' once the user edits it) and when it was
+  // last persisted. Hydrated from `ex.provenance` on load, set by the
+  // prefill/dirty handlers and confirmed by every save. A null source means
+  // unknown (no badge); a null updatedAt means the shown source is not
+  // persisted yet (unsaved preview or fresh manual edit), so the badge shows
+  // the label without a date until the next successful save.
   let countriesSource = $state<string | null>(null)
   let regionsSource = $state<string | null>(null)
   let sectorsSource = $state<string | null>(null)
+  let countriesUpdatedAt = $state<string | null>(null)
+  let regionsUpdatedAt = $state<string | null>(null)
+  let sectorsUpdatedAt = $state<string | null>(null)
   let savingRegions = $state(false)
   let savingSectors = $state(false)
   let savingCountries = $state(false)
@@ -340,6 +347,15 @@
       regionsEdit = withoutOther(ex.regions)
       sectorsEdit = sectorsList(ex.sectors)
       countriesEdit = positiveCountries(ex.countries)
+      // Hydrate the persisted provenance per dimension (source + last-update
+      // date). Dimensions never persisted carry no provenance entry: badge
+      // hidden (source null).
+      countriesSource = ex.provenance?.countries?.source ?? null
+      countriesUpdatedAt = ex.provenance?.countries?.updated_at ?? null
+      regionsSource = ex.provenance?.regions?.source ?? null
+      regionsUpdatedAt = ex.provenance?.regions?.updated_at ?? null
+      sectorsSource = ex.provenance?.sectors?.source ?? null
+      sectorsUpdatedAt = ex.provenance?.sectors?.updated_at ?? null
       fillForm(a)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load asset'
@@ -462,6 +478,8 @@
       const preview = await assetApi.fetchETFExposure(id)
       countriesEdit = positiveCountries(preview.countries)
       countriesSource = 'justetf'
+      // Unsaved preview: no persisted date yet (badge shows the label only).
+      countriesUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
       toast.success('Paesi precompilati da JustETF')
     } catch (err: unknown) {
@@ -486,6 +504,8 @@
       // The residual «Other / Not Classified» row is filtered out: the modal's
       // totals line already explains what is left unattributed.
       regionsSource = countriesSource === 'justetf' ? 'derived-etf' : 'derived'
+      // Preview only: drop any previously persisted date until it is saved.
+      regionsUpdatedAt = null
       toast.success('Regioni ricalcolate dai paesi')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Calcolo fallito'
@@ -505,6 +525,7 @@
       const preview = await assetApi.fetchMorningstarExposure(id)
       regionsEdit = withoutOther(preview.regions)
       regionsSource = 'morningstar-regions'
+      regionsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
       toast.success('Regioni precompilate da Morningstar')
     } catch (err: unknown) {
@@ -524,6 +545,7 @@
       const preview = await assetApi.fetchETFExposure(id)
       sectorsEdit = sectorsList(preview.sectors)
       sectorsSource = 'justetf'
+      sectorsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
       toast.success('Distribuzione settoriale precompilata da JustETF')
     } catch (err: unknown) {
@@ -545,6 +567,7 @@
       const preview = await assetApi.fetchExposure(id)
       sectorsEdit = sectorsList(preview.sectors)
       sectorsSource = 'yahoo'
+      sectorsUpdatedAt = null
       toast.success('Distribuzione settoriale precompilata da Yahoo')
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status
@@ -572,6 +595,7 @@
       const preview = await assetApi.fetchMorningstarExposure(id)
       sectorsEdit = sectorsList(preview.sectors)
       sectorsSource = 'morningstar'
+      sectorsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
       toast.success('Distribuzione settoriale precompilata da Morningstar')
     } catch (err: unknown) {
@@ -584,20 +608,29 @@
 
   // Il backend salva ogni dimensione indipendentemente: ogni sezione invia
   // SOLO la propria dimensione (l'altra viene omessa dal JSON → nil → non
-  // toccata). Dopo il successo la risposta canonica rinfresca `exposure`
-  // (quindi le card) e risincronizza SOLO la lista di edit della dimensione
-  // salvata: le altre liste di edit sono la working copy della modale e
+  // toccata) insieme alla sua fonte di provenienza (`*_source`; senza fonte
+  // il backend usa 'manual'). Dopo il successo la risposta canonica rinfresca
+  // `exposure` (quindi le card), risincronizza SOLO la lista di edit della
+  // dimensione salvata e ne riporta la provenance persistita (source +
+  // data): le altre liste di edit sono la working copy della modale e
   // possono contenere modifiche pendenti non salvate, quindi non vanno
   // mai toccate qui.
   async function saveRegions(): Promise<void> {
     if (!id || !exposure || !regionsValid) return
     savingRegions = true
+    const sentSource = regionsSource ?? 'manual'
     try {
       const saved = await assetApi.saveExposure(id, {
         regions: regionsEdit,
+        regions_source: sentSource,
       })
       exposure = saved
       regionsEdit = withoutOther(saved.regions)
+      // Provenance confirmed by the canonical response; fall back to the
+      // sent source if the backend did not echo it, and drop the date when
+      // absent so the badge never shows a stale timestamp.
+      regionsSource = saved.provenance?.regions?.source ?? sentSource
+      regionsUpdatedAt = saved.provenance?.regions?.updated_at ?? null
       toast.success('Distribuzione geografica salvata')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Save failed'
@@ -610,12 +643,16 @@
   async function saveSectors(): Promise<void> {
     if (!id || !exposure || !sectorsValid) return
     savingSectors = true
+    const sentSource = sectorsSource ?? 'manual'
     try {
       const saved = await assetApi.saveExposure(id, {
         sectors: sectorsEdit,
+        sectors_source: sentSource,
       })
       exposure = saved
       sectorsEdit = sectorsList(saved.sectors)
+      sectorsSource = saved.provenance?.sectors?.source ?? sentSource
+      sectorsUpdatedAt = saved.provenance?.sectors?.updated_at ?? null
       toast.success('Distribuzione settoriale salvata')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Save failed'
@@ -635,8 +672,10 @@
       const preview = await assetApi.fetchMorningstarExposure(id)
       countriesEdit = positiveCountries(preview.countries)
       countriesSource = 'morningstar'
+      countriesUpdatedAt = null
       sectorsEdit = sectorsList(preview.sectors)
       sectorsSource = 'morningstar'
+      sectorsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
       toast.success('Paesi e settori precompilati da Morningstar')
     } catch (err: unknown) {
@@ -650,12 +689,16 @@
   async function saveCountries(): Promise<void> {
     if (!id || !exposure || !countriesValid) return
     savingCountries = true
+    const sentSource = countriesSource ?? 'manual'
     try {
       const saved = await assetApi.saveExposure(id, {
         countries: countriesEdit,
+        countries_source: sentSource,
       })
       exposure = saved
       countriesEdit = positiveCountries(saved.countries)
+      countriesSource = saved.provenance?.countries?.source ?? sentSource
+      countriesUpdatedAt = saved.provenance?.countries?.updated_at ?? null
       // Regions and sectors are deliberately NOT touched here: saving one
       // dimension must never clobber the other dimensions' edit lists, which
       // are the modal's working copy and may hold unsaved pending edits
@@ -673,16 +716,21 @@
 
   // Provenance flips to 'manual' on the first user mutation of a dimension
   // (invoked by the geo/sector modals at every add/remove/weight-edit point).
+  // The persisted date is dropped as well: the badge shows a date only once
+  // the new state has actually been saved.
   function markCountriesManual(): void {
     countriesSource = 'manual'
+    countriesUpdatedAt = null
   }
 
   function markRegionsManual(): void {
     regionsSource = 'manual'
+    regionsUpdatedAt = null
   }
 
   function markSectorsManual(): void {
     sectorsSource = 'manual'
+    sectorsUpdatedAt = null
   }
 </script>
 
@@ -1010,6 +1058,8 @@
         {prefillCountriesFromMorningstar}
         {countriesSource}
         {regionsSource}
+        {countriesUpdatedAt}
+        {regionsUpdatedAt}
         onCountriesDirty={markCountriesManual}
         onRegionsDirty={markRegionsManual}
         assetType={asset.type}
@@ -1030,6 +1080,7 @@
         {prefillSectorsFromYahoo}
         {prefillSectorsFromMorningstar}
         {sectorsSource}
+        {sectorsUpdatedAt}
         onSectorsDirty={markSectorsManual}
         assetType={asset.type}
       />

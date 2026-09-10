@@ -404,6 +404,15 @@ e Morningstar permette di cercare sul mercato esatto.
   regions 103 → 400; countries 120 → 400; countries 95 → 200 con regioni
   memorizzate invariate (nessuna riscrittura).
 
+### Provenienza persistita dell'esposizione (follow-up B.13/B.14)
+- **Backend**: nuova tabella `asset_exposure_provenance (asset_id, dimension, source, updated_at)`
+  (migrazione `000017`). `PUT /assets/{id}/exposure` accetta `countries_source` /
+  `regions_source` / `sectors_source` (default `manual`) e registra la provenienza di
+  ogni dimensione salvata; `GET`/`PUT /assets/{id}/exposure` rispondono la mappa
+  `provenance` (`omitempty`) così i badge "da Morningstar (2026-09-05)" dell'UI
+  sopravvivono al reload. Gli fetch/prefill restano anteprime senza provenienza.
+  3 nuovi test service + fake aggiornato; Go build/vet/test green.
+
 ### Altri EPIC Fase 2
 - EPIC G.7 (#53) — Asset con ticker non-Yahoo: no richiesta prezzo e no errori
   - Campo `price_source` su `assets` (`yahoo`/`manual`/`none`, default `yahoo`):

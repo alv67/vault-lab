@@ -588,6 +588,20 @@ invia regioni con somma sotto 100 senza riga Other, il backend **inietta il
 residuo in `Other / Not Classified` prima di persistere**, mantenendo
 l'invariante salvata «le regioni sommano a 100» su cui si basa l'aggregazione
 geografica del portafoglio. I settori conservano la regola esatta 100 ± 0,5.
+**Provenienza dell'esposizione**: ogni dimensione salvata registra anche *da
+dove arriva*. `PUT /assets/{id}/exposure` accetta le stringhe opzionali
+`countries_source`, `regions_source` e `sectors_source` (es. `morningstar`,
+`justetf`, `yahoo`); quando una dimensione è presente nel body ma la sua
+sorgente è assente o vuota viene registrata come `manual`. Le risposte
+`GET/PUT /assets/{id}/exposure` includono quindi una mappa `provenance` — solo
+per le dimensioni salvate almeno una volta, omessa se vuota — con una entry
+`{ "source", "updated_at" }` per dimensione, es. `"countries": { "source":
+"morningstar", "updated_at": "2026-09-05T10:00:00Z" }`, così l'UI può mostrare
+badge "da Morningstar (2026-09-05)" che sopravvivono a un reload (persistita in
+`asset_exposure_provenance`, migrazione `000017`). Le risposte dei fetch/prefill
+(`fetch-exposure`, `fetch-etf-exposure`, `fetch-morningstar-exposure`) sono
+anteprime e **non** portano provenienza: finché l'utente non salva non si
+scrive nulla.
 
 ### Cache dell'esposizione dei provider (`exposure:<source>:<ISIN>`)
 

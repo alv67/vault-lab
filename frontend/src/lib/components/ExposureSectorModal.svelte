@@ -20,6 +20,7 @@
     prefillSectorsFromYahoo,
     prefillSectorsFromMorningstar,
     sectorsSource = null as string | null,
+    sectorsUpdatedAt = null as string | null,
     onSectorsDirty,
     assetType = 'stock',
   }: {
@@ -37,6 +38,7 @@
     prefillSectorsFromYahoo: () => void
     prefillSectorsFromMorningstar: () => void
     sectorsSource: string | null
+    sectorsUpdatedAt: string | null
     onSectorsDirty: () => void
     assetType: string
   } = $props()
@@ -85,7 +87,7 @@
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <h3 class="font-medium">Distribuzione settoriale</h3>
-            <ProvenanceBadge source={sectorsSource} />
+            <ProvenanceBadge source={sectorsSource} updatedAt={sectorsUpdatedAt} />
           </div>
           <div class="flex items-center gap-1.5">
             <button

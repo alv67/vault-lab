@@ -111,20 +111,38 @@ export interface ExposureRow {
   weight: string
 }
 
+/** Persisted provenance of one exposure dimension: which source currently
+ * owns the stored weights and when they were last written. */
+export interface ExposureProvenance {
+  source: string
+  updated_at: string
+}
+
 export interface AssetExposure {
   countries: ExposureRow[]
   regions: ExposureRow[]
   sectors: ExposureRow[]
   isin?: string
+  /** Per-dimension persisted provenance, keyed by dimension name
+   * ('countries' | 'regions' | 'sectors'). Only persisted dimensions are
+   * present (each key omitted when empty), and the whole field is absent
+   * when nothing was ever saved. Fetch/prefill endpoints never include it:
+   * their preview is not persisted yet. */
+  provenance?: Record<string, ExposureProvenance>
 }
 
 // Body accettato da PUT /assets/{id}/exposure. Le dimensioni sono
 // indipendenti: omettendo una chiave la relativa distribuzione non viene
-// modificata.
+// modificata. Ogni dimensione inviata può portare la propria fonte di
+// provenienza (`*_source`); inviarla senza fonte fa usare 'manual' al
+// backend.
 export interface AssetExposurePatch {
   countries?: ExposureRow[]
   regions?: ExposureRow[]
   sectors?: ExposureRow[]
+  countries_source?: string
+  regions_source?: string
+  sectors_source?: string
 }
 
 export interface Currency {

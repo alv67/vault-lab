@@ -191,6 +191,10 @@ Authorization: Bearer {{token}}
 ### sum below 100 is valid). Saving countries does NOT touch the regions
 ### dimension: stored regions come back unchanged (recompute them explicitly
 ### with "Calcola da paesi" / POST /assets/{id}/exposure/derive).
+### countries_source records WHERE the saved dimension came from ("morningstar",
+### "justetf", "yahoo", ...); optional countries_source / regions_source /
+### sectors_source — absent or empty ⇒ "manual". The response (and the GET)
+### carries a `provenance` map with source + updated_at per saved dimension.
 # @name putCountries
 PUT {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
@@ -201,8 +205,17 @@ Content-Type: application/json
     { "name": "US", "weight": 70.0 },
     { "name": "DE", "weight": 15.0 },
     { "name": "FR", "weight": 15.0 }
-  ]
+  ],
+  "countries_source": "morningstar"
 }
+
+### 11d2. Read back the persisted provenance: the GET now includes
+### "provenance": { "countries": { "source": "morningstar", "updated_at": ... } }
+### (only for dimensions saved at least once, omitted when empty; fetch previews
+### never write it).
+# @name getExposureWithProvenance
+GET {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
 
 ### 12. Create a portfolio (EUR) — id is captured so the allocation and transaction
 ### requests below need no manual UUID editing, on a fresh stack or on reruns.

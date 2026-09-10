@@ -1,10 +1,17 @@
 <script lang="ts">
   /**
-   * Small pill that tells the user where the weights shown in a box come from.
-   * Unknown or null sources render nothing (e.g. right after page load, when
-   * the data provenance is not known to the UI).
+   * Small pill that tells the user where the weights shown in a box come from
+   * and — when the dimension has actually been persisted — when it was last
+   * updated (e.g. "da Morningstar (2026-09-05)"). Unknown or null sources
+   * render nothing (e.g. a dimension never persisted and never prefilled).
+   * A null/empty `updatedAt` means the shown source is not persisted yet
+   * (unsaved prefill or fresh manual edit): the badge shows the label only,
+   * and the date appears after the next successful save.
    */
-  let { source = null as string | null }: { source?: string | null } = $props()
+  let {
+    source = null as string | null,
+    updatedAt = null as string | null,
+  }: { source?: string | null; updatedAt?: string | null } = $props()
 
   interface Provenance {
     label: string
@@ -52,15 +59,22 @@
   }
 
   const info = $derived(source ? PROVENANCE[source] ?? null : null)
+
+  /** YYYY-MM-DD part of the last persisted update; '' when not persisted yet. */
+  const date = $derived(updatedAt ? updatedAt.slice(0, 10) : '')
+  const label = $derived(info ? (date ? `${info.label} (${date})` : info.label) : '')
+  const hint = $derived(
+    info ? (date ? `${info.description} — aggiornato al ${date}` : info.description) : '',
+  )
 </script>
 
 {#if info}
   <span
     class="inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600"
-    title={info.description}
-    aria-label={`${info.label}: ${info.description}`}
+    title={hint}
+    aria-label={`${label}: ${hint}`}
   >
     <span class="h-1.5 w-1.5 rounded-full" style={`background-color: ${info.dot}`}></span>
-    {info.label}
+    {label}
   </span>
 {/if}

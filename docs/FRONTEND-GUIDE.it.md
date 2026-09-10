@@ -656,19 +656,29 @@ freschi.
       Footer come i paesi; **salvataggio disabilitato se la somma supera 100**
       (sotto 100 è valido — sostituisce la vecchia regola `100 ± 0,5`).
     - **Badge di provenienza**: l'header di ogni box mostra una pillola
-      `ProvenanceBadge` (puntino colorato + etichetta) con la fonte dei dati —
-      `manuale`, `da JustETF`, `da Morningstar` / `da Morningstar (regioni
-      ufficiali)`, `calcolato dai paesi`, `da JustETF via paesi`. Prefill/derive
-      impostano il badge; **ogni modifica manuale lo riporta a "manuale"**. Lo
-      stato è session-scoped nella pagina (nulla è persistito), quindi il badge
-      è nascosto al primo reload.
+      `ProvenanceBadge` (puntino colorato + etichetta, con la data
+      dell'ultimo aggiornamento quando la dimensione è persistita — es.
+      "da Morningstar (2026-09-05)") con la fonte dei dati — `manuale`,
+      `da JustETF`, `da Morningstar` / `da Morningstar (regioni ufficiali)`,
+      `calcolato dai paesi`, `da JustETF via paesi`. Prefill/derive impostano
+      il badge; **ogni modifica manuale lo riporta a "manuale"**. La
+      provenienza è ora **persistita per dimensione** dal backend
+      (`GET/PUT /assets/{id}/exposure` rispondono con `provenance.{countries,
+      regions, sectors}` = `{source, updated_at}` solo per le dimensioni
+      persistite), quindi i badge — con la loro data — sopravvivono al reload.
+      Le risposte di fetch/prefill non includono provenienza (le anteprime
+      non sono persistite): subito dopo un prefill o una modifica manuale il
+      badge mostra **solo l'etichetta**, e la data compare quando la
+      dimensione viene di nuovo salvata.
   - **`ExposureSectorModal`** ha la tabella dei settori, validata a 100 ± 0,5
     (invariata — i settori richiedono ancora il totale esatto). Nell'header
-    mostra la stessa pillola `ProvenanceBadge` dei box geografici, guidata dal
-    `sectorsSource` di pagina (`da JustETF`, `da Yahoo`, `da Morningstar`,
-    `manuale`): ogni prefill dei settori imposta il badge, la prima modifica
-    manuale dei pesi lo riporta a "manuale" (via `onSectorsDirty`), e al primo
-    reload resta nascosto — il salvataggio non cambia mai la provenienza. I
+    mostra la stessa pillola `ProvenanceBadge` dei box geografici, guidata da
+    `sectorsSource` + `sectorsUpdatedAt` di pagina (`da JustETF`, `da Yahoo`,
+    `da Morningstar`, `manuale`): ogni prefill dei settori imposta il badge
+    (solo etichetta, niente data — l'anteprima non è persistita), la prima
+    modifica manuale dei pesi lo riporta a "manuale" (via `onSectorsDirty`,
+    azzerando anche la data) e il salvataggio persiste la fonte con una
+    `updated_at` fresca che il badge mostra a ogni reload. I
     pesi di prefill/caricamento vengono arrotondati a 2 decimali e i totali
     leggermente sopra 100 corretti all'import tramite `sectorsList` (che
     avvolge `roundWeight` + `capAtHundred`, vedi la nota sulla normalizzazione
@@ -701,10 +711,13 @@ freschi.
   quindi quadratino e grafico combaciano sempre. I grafici nelle modali sono
   **muti** (`mute` su `ExposurePie`: nessuna etichetta di valore né tooltip
   sulle fette).
-  Il salvataggio invia **solo la dimensione modificata**
-  (`PUT /assets/{id}/exposure` con `{countries}` o `{regions}` — omettere una
-  chiave lascia l'altra intatta), poi ricarica la risposta canonica, che
-  rinfresca `exposure` (le card) e risincronizza le liste di edit della modale:
+  Il salvataggio invia **solo la dimensione modificata con la sua fonte di
+  provenienza** (`PUT /assets/{id}/exposure` con `{countries,
+  countries_source}` o `{regions, regions_source}` — omettere una chiave
+  lascia l'altra intatta; una dimensione inviata senza fonte diventa `manual`
+  lato backend), poi ricarica la risposta canonica, che rinfresca `exposure`
+  (le card), risincronizza le liste di edit della modale e aggiorna il badge
+  di provenienza della dimensione salvata con l'`updated_at` persistita:
   dopo un salvataggio card e modale tornano coerenti. Salvare i
   paesi **non ricalcola più le regioni lato server**: le regioni memorizzate
   tornano invariate e il badge di provenienza delle regioni non viene
@@ -829,7 +842,9 @@ pulsante "Refresh Now".
   add/remove, niente donut), tabella fissa delle 10 regioni con "Other / Not
   Classified" rimossa e donut **aperto** (`complete={false}`) sotto il 100%,
   validazione di salvataggio ≤100 e **badge di provenienza** (manuale / da
-  JustETF / da Morningstar / calcolato dai paesi).
+  JustETF / da Morningstar / calcolato dai paesi), ora persistiti per
+  dimensione dal backend e mostrati con la data dell'ultimo aggiornamento
+  (es. "da Morningstar (2026-09-05)").
 - **Universo equity-only (follow-up B.8)** — le allocazioni geo/settoriali
   coprono solo le holding azionarie (azioni sempre; ETF/fondi solo quando
   `asset_class` è `equity` o `real_estate`). Bond, crypto, commodity e fondi

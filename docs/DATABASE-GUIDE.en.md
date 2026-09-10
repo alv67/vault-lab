@@ -57,7 +57,7 @@ keys are the labels saying "this box belongs to that one".
 
 ## 2. The big picture
 
-There are fifteen tables, which can be grouped by topic:
+There are sixteen tables, which can be grouped by topic:
 
 | Area | Tables | What they represent |
 |---|---|---|
@@ -66,7 +66,7 @@ There are fifteen tables, which can be grouped by topic:
 | **Portfolios and operations** | `portfolios`, `transactions` | the portfolios and the buy/sell operations |
 | **History** | `portfolio_series`, `asset_series` | value and cost day by day |
 | **Market data** | `prices`, `splits`, `fx_rates` | prices, stock splits and exchange rates |
-| **Exposure** | `asset_country_weights`, `asset_region_weights`, `asset_sector_weights` | the country, geographic and sector distribution of a security |
+| **Exposure** | `asset_country_weights`, `asset_region_weights`, `asset_sector_weights`, `asset_exposure_provenance` | the country, geographic and sector distribution of a security, and where each dimension came from |
 | **Configuration and cache** | `supported_currencies`, `lookup_cache` | the allowed currencies and the search cache |
 
 ---
@@ -102,6 +102,7 @@ erDiagram
     assets ||--o{ asset_country_weights : "countries (asset_id)"
     assets ||--o{ asset_region_weights : "geography (asset_id)"
     assets ||--o{ asset_sector_weights : "sectors (asset_id)"
+    assets ||--o{ asset_exposure_provenance : "provenance (asset_id)"
 
     fx_rates {
         text base_currency PK
@@ -132,6 +133,7 @@ erDiagram
 | `asset_country_weights` | `asset_id` | `assets` | 1 security → N countries | CASCADE |
 | `asset_region_weights` | `asset_id` | `assets` | 1 security → N regions | CASCADE |
 | `asset_sector_weights` | `asset_id` | `assets` | 1 security → N sectors | CASCADE |
+| `asset_exposure_provenance` | `asset_id` | `assets` | 1 security → up to 3 provenances | CASCADE |
 
 ---
 
@@ -306,6 +308,25 @@ it is the mix of `sectorWeightings` fetched from Yahoo.
 | `sector` | TEXT (part of the PK) | the GICS sector, e.g. `Technology` |
 | `weight` | NUMERIC(10, 4) | the percentage weight (e.g. `0.2340`) |
 
+### `asset_exposure_provenance` — where each exposure dimension came from
+
+For each security, the **source** and **last-update time** of every exposure
+dimension (`countries`, `regions`, `sectors`). One row per saved dimension: the
+`PUT /assets/{id}/exposure` endpoint writes it every time a dimension is saved,
+using the optional `countries_source` / `regions_source` / `sectors_source`
+fields of the body (e.g. `morningstar`, `justetf`, `yahoo`) or `manual` when
+the source is absent. The UI reads it back from the `provenance` field of the
+`GET/PUT /assets/{id}/exposure` responses and shows badges like
+"da Morningstar (2026-09-05)" that survive a reload. Fetch previews never write
+this table: provenance is recorded only on explicit saves.
+
+| Column | Type | Explanation |
+|---|---|---|
+| `asset_id` | UUID (FK, part of the PK) | the security (→ `assets.id`) |
+| `dimension` | TEXT (part of the PK) | `countries`, `regions` or `sectors` |
+| `source` | TEXT | where the data came from (e.g. `manual`, `morningstar`, `justetf`) |
+| `updated_at` | TIMESTAMPTZ | when that dimension was last saved |
+
 ### `fx_rates` — the exchange rates
 
 How much **1 dollar (USD)** is worth in another currency. The key is the pair
@@ -450,7 +471,10 @@ In short, who writes and who reads:
   from JustETF through the `python-service`
   (`POST /assets/{id}/fetch-etf-exposure`); since B.13 the raw countries are
   kept in `asset_country_weights`. Since B.14 a second source is available via
-  Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`).
+  Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`). Every explicit
+  save also records where each saved dimension came from in
+  `asset_exposure_provenance` (source + timestamp, `manual` by default), so the
+  UI badges survive a reload.
 - **The currency whitelist** is managed by the administrator via the API in
   `supported_currencies` (chapter 11 of the guide).
 
