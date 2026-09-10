@@ -173,9 +173,10 @@ vault-lab/
 
 ---
 
-## Stato attuale (28 Ago 2026)
+## Stato attuale (11 Set 2026)
 
-**Release v0.1.0** pubblicata su `main` (prima release ufficiale).
+**Release v0.3.0** pubblicata su `main` (asset editing overhaul e editing dell'esposizione per-paese).
+Precedenti release: **v0.1.0** (25 Ago 2026, prima release ufficiale) e **v0.2.0** (30 Ago 2026, EPIC A + EPIC B).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
 procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),

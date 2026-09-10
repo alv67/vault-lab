@@ -17,7 +17,10 @@
 **v0.1.0** — prima release ufficiale su `main` (25 Ago 2026).
 **v0.2.0** — seconda release su `main` (30 Ago 2026): EPIC A (data correctness & security)
 e EPIC B completo (distribuzione geo/settoriale, asset class, FX history, charts).
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0` su `main`.
+**v0.3.0** — terza release su `main` (11 Set 2026): asset editing overhaul (price_source
+Yahoo/Manual/None, chart in-place con YTD e marcatori split, modale esposizione) ed editing
+dell'esposizione per-paese con fonte Morningstar/JustETF, cache e provenienza.
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 
