@@ -36,6 +36,17 @@ view (what they see and use in the app — no internal/backend details).
 - Asset detail page with references, exposure and full price history
 - Automatic ETF exposure (countries/regions and sectors) and ticker-to-ISIN lookup
 
+## In progress — exposure editing (PR #67)
+
+### Features
+- Edit the geographic distribution with a per-country list (add/remove countries and set each weight), alongside the regions and sectors
+- Geographic and sector exposure can also be filled from Morningstar (official regions), alongside JustETF and Yahoo
+- Every distribution shows where its data comes from and when it was last updated (e.g. `from Morningstar (2026-09-05)`)
+- Provider lookups are cached, so opening the prefill again is immediate
+
+### Fixes
+- Reopening an exposure editor now always starts from the saved data: unsaved changes are discarded
+
 ## In progress — asset editing overhaul (PR #65)
 
 ### Features

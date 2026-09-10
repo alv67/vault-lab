@@ -57,6 +57,7 @@
 - [x] Split come marcatori sul chart storico asset (`GET /assets/{id}/splits` + markLine)
 - [x] Per-country exposure: tabella `asset_country_weights` + 3 dimensioni (countries/regions/sectors) — **EPIC B.13 (#58)**
 - [x] Morningstar exposure source: resolver custom (bootstrap Chromium headless per WAF+JWT, poi SAL service via requests), rotta backend `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend — **EPIC B.14 (#59)**
+- [x] Follow-up B.13/B.14: fetch provider come anteprima non persistente, cache Redis (TTL + `?refresh=1`), provenienza persistita (sorgente + data), prefill settori da Morningstar, redesign modali geo/settore (paesi-first, badge sorgente) — **PR #67**
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -87,9 +88,10 @@ Asset        → id, isin, ticker, name, type, asset_class, price_source, countr
 Transaction  → id, portfolio_id, asset_id, type (buy/sell), quantity, price, date, fees, notes
 Price        → id, asset_id, date, open, high, low, close, volume, source
 FxHistory    → base_currency, quote_currency, date, rate, source
-AssetRegion  → asset_id, region, weight, source
-AssetSector  → asset_id, sector, weight, source
+AssetRegion  → asset_id, region, weight
+AssetSector  → asset_id, sector, weight
 AssetCountry → asset_id, country, weight (ISO-3166 alpha-2, from B.13)
+AssetExposureProvenance → asset_id, dimension, source, updated_at (where each dimension came from + last update, from B.14)
 ```
 
 ### Finanza (Fase 4)

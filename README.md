@@ -10,7 +10,7 @@ Track your investments, monitor asset performance, and gain insights into your f
 - **Portfolio management** — Multiple portfolios per user, export/import, ownership enforced on all endpoints
 - **Asset tracking** — Stocks, ETFs, bonds, crypto, commodities with auto-complete and sync via Yahoo Finance
 - **Asset detail page** — Editable metadata (exchange, ISIN), full price history with backfill, and editable geographic/sector exposure with charts
-- **ETF exposure from JustETF** — a Python microservice resolves the ISIN from a ticker and fetches full country/region + GICS sector weights (`POST /assets/{id}/fetch-etf-exposure`)
+- **ETF exposure from JustETF and Morningstar** — a Python microservice resolves the ISIN from a ticker and fetches full country/region + GICS sector weights from JustETF (`POST /assets/{id}/fetch-etf-exposure`) and official regions from Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`); each distribution keeps its source and last-update date
 - **Transaction history** — Buy, sell, dividends, splits, fees with multi-currency support
 - **Dashboard** — Portfolio value, gain/loss, allocation, performance charts, ROI by asset
 - **Market prices** — Yahoo Finance with Redis caching, rate-limit/backoff, series materialization, price health dashboard

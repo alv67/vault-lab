@@ -37,6 +37,17 @@ interni/backend).
 - Pagina dettaglio asset con riferimenti, esposizione e storico prezzi completo
 - Esposizione ETF automatica (paesi/regioni e settori) con ricerca del codice ISIN partendo dal ticker
 
+## In corso — Editing dell'esposizione (PR #67)
+
+### Nuove funzionalità
+- Modifica la distribuzione geografica con un elenco per-paese (aggiungi/rimuovi paesi e imposta ogni peso), oltre a regioni e settori
+- L'esposizione geografica e settoriale può essere compilata anche da Morningstar (regioni ufficiali), oltre a JustETF e Yahoo
+- Ogni distribuzione mostra da dove arrivano i dati e quando sono stati aggiornati l'ultima volta (es. `da Morningstar (2026-09-05)`)
+- Le letture dai provider sono in cache, quindi riaprire i prefill è immediato
+
+### Correzioni
+- Riaprire un editor di esposizione ora riparte sempre dai dati salvati: le modifiche non salvate vengono scartate
+
 ## In corso — Asset editing overhaul (PR #65)
 
 ### Nuove funzionalità

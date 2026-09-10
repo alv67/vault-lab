@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (28 Ago 2026)
+# VaultLab — Stato Progetto (11 Set 2026)
 
 ## Infrastruttura
 
