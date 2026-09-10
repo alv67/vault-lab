@@ -589,6 +589,28 @@ residuo in `Other / Not Classified` prima di persistere**, mantenendo
 l'invariante salvata «le regioni sommano a 100» su cui si basa l'aggregazione
 geografica del portafoglio. I settori conservano la regola esatta 100 ± 0,5.
 
+### Cache dell'esposizione dei provider (`exposure:<source>:<ISIN>`)
+
+I due fetch di prefill che interrogano il python-service
+(`POST /assets/{id}/fetch-etf-exposure` e
+`POST /assets/{id}/fetch-morningstar-exposure`) memorizzano nella cache Redis
+delle lookup (`s.repos.Lookup`) il **payload grezzo del provider**, con chiave
+`exposure:<source>:<ISIN>` (source è `justetf` o `morningstar`, l'ISIN è
+maiuscolo; la chiave Redis completa è `vl:lookup:exposure:...`). La prima
+richiesta su un ISIN esegue il fetch pesante (Morningstar richiede una
+sessione Chromium/SAL) e lo salva; le successive rispondono dalla cache senza
+richiamare il provider. Ogni fonte ha la sua voce: prefillare da JustETF non
+scalda Morningstar e viceversa. Il TTL è `VAULT_EXPOSURE_CACHE_TTL` (default
+7 giorni). I risultati senza paesi non vengono mai cachati, così un fetch
+vuoto transitorio non resta in giro per una settimana. La cache accelera solo
+la lettura: le voci sono payload del provider, non pesi persistiti (il
+salvataggio continua ad avvenire solo con `PUT /assets/{id}/exposure`).
+`?refresh=1` (accettato anche `refresh=true`) su uno dei due endpoint forza un
+fetch fresco dal provider, saltando la lettura e riscrivendo la cache: è una
+leva lato backend che la UI potrà usare in seguito. `fetch-exposure` di Yahoo
+resta deliberatamente senza cache (è economico e condivide già la cache meta
+di Yahoo).
+
 ### Invalidation della cache (`bumpRev`)
 
 Ogni lettura in cache (`cached()`, capitolo 7) è chiavata su un **numero di

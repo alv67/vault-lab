@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
@@ -37,6 +38,13 @@ func respond(w http.ResponseWriter, status int, data interface{}) {
 
 func respondError(w http.ResponseWriter, status int, msg string) {
 	respond(w, status, map[string]string{"error": msg})
+}
+
+// refreshRequested reports whether the caller asked to bypass the provider
+// exposure cache via ?refresh=1 (or refresh=true).
+func refreshRequested(r *http.Request) bool {
+	flag := r.URL.Query().Get("refresh")
+	return flag == "1" || strings.EqualFold(flag, "true")
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -483,7 +491,7 @@ func (h *Handler) FetchETFExposure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exposure, err := h.svc.FetchETFExposure(r.Context(), uid)
+	exposure, err := h.svc.FetchETFExposure(r.Context(), uid, refreshRequested(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):
@@ -508,7 +516,7 @@ func (h *Handler) FetchMorningstarExposure(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	exposure, err := h.svc.FetchMorningstarExposure(r.Context(), uid)
+	exposure, err := h.svc.FetchMorningstarExposure(r.Context(), uid, refreshRequested(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAssetNotFound), errors.Is(err, service.ErrNotFound):

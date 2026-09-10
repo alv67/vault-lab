@@ -107,25 +107,26 @@ type yahooFetcher interface {
 }
 
 type Service struct {
-	repos           *repository.Repository
-	jwtAuth         *auth.JWTAuth
-	fetcher         yahooFetcher
-	etfFetcher      price.ETFFetcher
-	lookupCacheTTL  time.Duration
-	cache           *cache.Cache
-	seriesMaxPoints int
-	stalePriceDays  int
-	Health          *HealthService
+	repos            *repository.Repository
+	jwtAuth          *auth.JWTAuth
+	fetcher          yahooFetcher
+	etfFetcher       price.ETFFetcher
+	lookupCacheTTL   time.Duration
+	exposureCacheTTL time.Duration
+	cache            *cache.Cache
+	seriesMaxPoints  int
+	stalePriceDays   int
+	Health           *HealthService
 }
 
-func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher yahooFetcher, etfFetcher price.ETFFetcher, lookupCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
+func New(repos *repository.Repository, jwtAuth *auth.JWTAuth, fetcher yahooFetcher, etfFetcher price.ETFFetcher, lookupCacheTTL time.Duration, exposureCacheTTL time.Duration, c *cache.Cache, seriesMaxPoints int, stalePriceDays int, health *HealthService) *Service {
 	if seriesMaxPoints <= 0 {
 		seriesMaxPoints = 500
 	}
 	if stalePriceDays <= 0 {
 		stalePriceDays = 7
 	}
-	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, etfFetcher: etfFetcher, lookupCacheTTL: lookupCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
+	return &Service{repos: repos, jwtAuth: jwtAuth, fetcher: fetcher, etfFetcher: etfFetcher, lookupCacheTTL: lookupCacheTTL, exposureCacheTTL: exposureCacheTTL, cache: c, seriesMaxPoints: seriesMaxPoints, stalePriceDays: stalePriceDays, Health: health}
 }
 
 // cached implements the read-through cache pattern: it reads the current data
@@ -699,7 +700,11 @@ func (s *Service) FetchAssetExposure(ctx context.Context, id uuid.UUID) (*model.
 // Nothing from the provider is persisted (saving happens through
 // PUT /assets/{id}/exposure); the only write is persisting the ISIN when the
 // asset had none and it gets auto-resolved from the ticker.
-func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+// The raw JustETF payload is cached in the lookup cache under
+// "exposure:justetf:<ISIN>" with TTL exposureCacheTTL: a hit skips the
+// provider call entirely, while refresh=true bypasses the read and rewrites the
+// cache after a successful fetch. Empty results (no countries) are not cached.
+func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID, refresh bool) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -722,9 +727,18 @@ func (s *Service) FetchETFExposure(ctx context.Context, id uuid.UUID) (*model.As
 		s.bumpRev(ctx)
 	}
 
-	raw, err := s.etfFetcher.FetchExposure(ctx, asset.ISIN)
-	if err != nil {
-		return nil, err
+	var raw *model.AssetExposure
+	if !refresh {
+		raw, _ = s.getCachedExposure(ctx, "justetf", asset.ISIN)
+	}
+	if raw == nil {
+		raw, err = s.etfFetcher.FetchExposure(ctx, asset.ISIN)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw.Countries) > 0 {
+			s.setCachedExposure(ctx, "justetf", asset.ISIN, raw)
+		}
 	}
 
 	countries := normalizeCountries(raw.Countries)
@@ -922,7 +936,12 @@ func normalizeCountries(rows []model.ExposureRow) []model.ExposureRow {
 // Nothing from the provider is persisted (saving happens through
 // PUT /assets/{id}/exposure); the only write is persisting the ISIN when the
 // asset had none and it gets auto-resolved from the ticker.
-func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*model.AssetExposure, error) {
+// The raw Morningstar payload is cached in the lookup cache under
+// "exposure:morningstar:<ISIN>" with TTL exposureCacheTTL (a separate entry
+// from the JustETF one): a hit skips the provider call entirely, while
+// refresh=true bypasses the read and rewrites the cache after a successful
+// fetch. Empty results (no countries) are not cached.
+func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID, refresh bool) (*model.AssetExposure, error) {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -945,9 +964,18 @@ func (s *Service) FetchMorningstarExposure(ctx context.Context, id uuid.UUID) (*
 		s.bumpRev(ctx)
 	}
 
-	raw, err := s.etfFetcher.FetchMorningstarExposure(ctx, asset.ISIN)
-	if err != nil {
-		return nil, err
+	var raw *model.AssetExposure
+	if !refresh {
+		raw, _ = s.getCachedExposure(ctx, "morningstar", asset.ISIN)
+	}
+	if raw == nil {
+		raw, err = s.etfFetcher.FetchMorningstarExposure(ctx, asset.ISIN)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw.Countries) > 0 {
+			s.setCachedExposure(ctx, "morningstar", asset.ISIN, raw)
+		}
 	}
 
 	mapped := mapMorningstarExposure(raw)
@@ -1001,6 +1029,48 @@ func (s *Service) GetAssetMeta(ctx context.Context, ticker string) (*price.Asset
 	}
 
 	return meta, nil
+}
+
+// exposureCacheKey builds the lookup cache key of a raw provider exposure
+// payload: "exposure:<source>:<ISIN>" (source is "justetf" or "morningstar").
+func exposureCacheKey(source, isin string) string {
+	return "exposure:" + source + ":" + strings.ToUpper(strings.TrimSpace(isin))
+}
+
+// getCachedExposure reads a previously cached provider exposure. Any failure
+// (miss, cache error, malformed payload) degrades to a plain miss so a broken
+// cache never blocks a fetch.
+func (s *Service) getCachedExposure(ctx context.Context, source, isin string) (*model.AssetExposure, bool) {
+	if s.repos == nil || s.repos.Lookup == nil {
+		return nil, false
+	}
+	data, err := s.repos.Lookup.Get(ctx, exposureCacheKey(source, isin))
+	if err != nil {
+		return nil, false
+	}
+	var ex model.AssetExposure
+	if err := json.Unmarshal(data, &ex); err != nil {
+		return nil, false
+	}
+	return &ex, true
+}
+
+// setCachedExposure stores a raw provider exposure payload under
+// exposureCacheKey with the configured TTL (VAULT_EXPOSURE_CACHE_TTL). Failures
+// are logged as warnings and never fail the surrounding request.
+func (s *Service) setCachedExposure(ctx context.Context, source, isin string, ex *model.AssetExposure) {
+	if s.repos == nil || s.repos.Lookup == nil || ex == nil {
+		return
+	}
+	key := exposureCacheKey(source, isin)
+	data, err := json.Marshal(ex)
+	if err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("failed to encode exposure for cache")
+		return
+	}
+	if err := s.repos.Lookup.Set(ctx, key, data, s.exposureCacheTTL); err != nil {
+		log.Warn().Err(err).Str("key", key).Msg("failed to cache provider exposure")
+	}
 }
 
 func (s *Service) DeleteAsset(ctx context.Context, id uuid.UUID) error {

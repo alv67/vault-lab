@@ -592,6 +592,27 @@ edits "Other / Not Classified", so when the client sends regions summing below
 "regions sum to 100" that portfolio geography aggregation relies on. Sectors
 keep the exact 100 ± 0.5 rule.
 
+### Provider exposure cache (`exposure:<source>:<ISIN>`)
+
+The two prefill fetches that hit the python-service
+(`POST /assets/{id}/fetch-etf-exposure` and
+`POST /assets/{id}/fetch-morningstar-exposure`) cache the **raw provider
+payload** in the Redis lookup cache (`s.repos.Lookup`) under the key
+`exposure:<source>:<ISIN>` (source is `justetf` or `morningstar`, the ISIN
+is uppercased; the full Redis key is `vl:lookup:exposure:...`). The first
+request for an ISIN runs the heavy fetch (Morningstar needs a Chromium/SAL
+session) and stores the result; later requests are served from the cache and
+never call the provider. Each source keeps its own entry, so prefilling from
+JustETF does not warm Morningstar and vice versa. The TTL is
+`VAULT_EXPOSURE_CACHE_TTL` (default 7 days). Country-less results are never
+cached, so a transient empty fetch cannot stick for a week. The cache only
+speeds up the read: entries are provider payloads, never stored weights
+(saving still happens exclusively through `PUT /assets/{id}/exposure`).
+`?refresh=1` (also `refresh=true`) on either endpoint forces a fresh provider
+fetch that bypasses and rewrites the cache; it is a backend-only knob the UI
+can adopt later. Yahoo's `fetch-exposure` is deliberately left uncached (it
+is cheap and shares the Yahoo meta cache).
+
 ### Cache invalidation (`bumpRev`)
 
 Every cached read (`cached()`, chapter 7) is keyed by a global **revision**

@@ -79,6 +79,10 @@ Content-Type: application/json
 ### POST /assets/{id}/fetch-exposure (Yahoo sectors) and
 ### POST /assets/{id}/fetch-morningstar-exposure. Persist them with the "Save"
 ### buttons / PUT /assets/{id}/exposure.
+### NOTE: the raw provider payload is cached in Redis
+### (vl:lookup:exposure:justetf:<ISIN>, TTL VAULT_EXPOSURE_CACHE_TTL = 7d), so
+### reruns answer without calling the provider; append ?refresh=1 to force a
+### fresh fetch and rewrite the cache (see 11b3).
 # @name fetchEtfExposure
 POST {{baseUrl}}/assets/{{assetId}}/fetch-etf-exposure
 Authorization: Bearer {{token}}
@@ -142,9 +146,20 @@ Authorization: Bearer {{token}}
 ### ISIN; save the preview with PUT /assets/{id}/exposure. Uses the custom
 ### resolver (headless Chromium bootstrap) in the python-service; falls back to
 ### 502 if Morningstar is unreachable in the sandbox (Yahoo disabled, external
-### calls may be blocked).
+### calls may be blocked). The raw payload is cached per ISIN under
+### vl:lookup:exposure:morningstar:<ISIN> (its own entry, separate from the
+### JustETF one), so a rerun is served from Redis and never boots Chromium; use
+### 11b3 to force a refetch.
 # @name fetchMorningstarExposure
 POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure
+Authorization: Bearer {{token}}
+
+### 11b3. Force a provider refetch bypassing the exposure cache: ?refresh=1
+### (refresh=true also accepted) skips the Redis read and rewrites the cached
+### payload. Works on both prefill endpoints (also /fetch-etf-exposure). The
+### cache TTL is VAULT_EXPOSURE_CACHE_TTL (default 7 days).
+# @name fetchMorningstarRefresh
+POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure?refresh=1
 Authorization: Bearer {{token}}
 
 ### 11b2. NEW — derive regions from countries without persisting (tassonomia

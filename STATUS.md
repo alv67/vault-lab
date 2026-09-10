@@ -335,6 +335,13 @@ e Morningstar permette di cercare sul mercato esatto.
   al secondo crash risponde 502 con messaggio chiaro ("Chrome headless could not
   start in the sandbox; try again in a few seconds"). pytest aggiornato a 62
   test, tutti verdi.
+- **Cache esposizione provider (post-B.14)**: `FetchETFExposure` e
+  `FetchMorningstarExposure` cachano il payload grezzo del provider in Redis
+  (chiave `vl:lookup:exposure:<source>:<ISIN>`, TTL `VAULT_EXPOSURE_CACHE_TTL`
+  default 7 giorni): la prima richiesta su un ISIN esegue il fetch pesante, le
+  successive rispondono dalla cache; `?refresh=1` forza il refetch e riscrive
+  la cache (risultati senza paesi mai cachati; Yahoo `fetch-exposure`
+  invariato). 4 nuovi test service (`TestFetch*Cache*`/`EmptyResultNotCached`).
 
 ### Redesign modale distribuzione geografica (paesi-first)
 - **Frontend** (`ExposureGeoModal`, `ExposurePie`, `ProvenanceBadge`): la modale
