@@ -104,11 +104,36 @@ type ExposureRow struct {
 	Weight decimal.Decimal `json:"weight"`
 }
 
-// AssetExposure contiene la distribuzione geografica e settoriale di un asset.
+// Dimensioni di esposizione con provenienza persistita.
+const (
+	ExposureDimensionCountries = "countries"
+	ExposureDimensionRegions   = "regions"
+	ExposureDimensionSectors   = "sectors"
+)
+
+// ExposureProvenance è la sorgente e la data dell'ultimo aggiornamento di una
+// dimensione di esposizione (es. "morningstar", "manual", "justetf").
+type ExposureProvenance struct {
+	Source    string    `json:"source"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AssetExposure contiene la distribuzione per paese, macro-regione e settore di
+// un asset. I campi *_source sono input del PUT: la sorgente da associare a
+// ciascuna dimensione salvata (vuota ⇒ "manual"). Provenance è output: la
+// provenienza persistita per dimensione, presente solo per le dimensioni
+// salvate almeno una volta.
 type AssetExposure struct {
-	ISIN    string        `json:"isin,omitempty"`
-	Regions []ExposureRow `json:"regions"`
-	Sectors []ExposureRow `json:"sectors"`
+	ISIN      string        `json:"isin,omitempty"`
+	Countries []ExposureRow `json:"countries"`
+	Regions   []ExposureRow `json:"regions"`
+	Sectors   []ExposureRow `json:"sectors"`
+
+	CountriesSource string `json:"countries_source,omitempty"`
+	RegionsSource   string `json:"regions_source,omitempty"`
+	SectorsSource   string `json:"sectors_source,omitempty"`
+
+	Provenance map[string]ExposureProvenance `json:"provenance,omitempty"`
 }
 
 type Currency struct {

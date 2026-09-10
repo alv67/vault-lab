@@ -75,7 +75,7 @@ func main() {
 		price.WithRateBudget(budget),
 		price.WithHealthRecorder(healthSvc),
 	)
-	svc := service.New(repos, jwtAuth, fetcher, price.NewJustETFFetcher(cfg.PythonServiceURL), cfg.LookupCacheTTL, c, cfg.SeriesMaxPoints, cfg.StalePriceDays, healthSvc)
+	svc := service.New(repos, jwtAuth, fetcher, price.NewJustETFFetcher(cfg.PythonServiceURL), cfg.LookupCacheTTL, cfg.ExposureCacheTTL, c, cfg.SeriesMaxPoints, cfg.StalePriceDays, healthSvc)
 
 	h := handler.New(svc, jwtAuth)
 
@@ -173,8 +173,10 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Post("/assets/{id}/fetch-profile", h.FetchAssetProfile)
 			r.Get("/assets/{id}/exposure", h.GetAssetExposure)
 			r.Put("/assets/{id}/exposure", h.SaveAssetExposure)
+			r.Post("/assets/{id}/exposure/derive", h.DeriveAssetRegions)
 			r.Post("/assets/{id}/fetch-exposure", h.FetchAssetExposure)
 			r.Post("/assets/{id}/fetch-etf-exposure", h.FetchETFExposure)
+			r.Post("/assets/{id}/fetch-morningstar-exposure", h.FetchMorningstarExposure)
 			r.Post("/assets/{id}/backfill-history", h.BackfillAssetHistory)
 			r.Post("/assets", h.CreateAsset)
 			r.Post("/assets/sync", h.SyncAssets)

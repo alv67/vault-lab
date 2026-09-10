@@ -59,7 +59,7 @@ esterne sono le etichette che dicono "questa scatola appartiene a quest'altra".
 
 ## 2. Il quadro d'insieme
 
-Ci sono quattordici tabelle, raggruppabili per argomento:
+Ci sono sedici tabelle, raggruppabili per argomento:
 
 | Ambito | Tabelle | Cosa rappresentano |
 |---|---|---|
@@ -68,7 +68,7 @@ Ci sono quattordici tabelle, raggruppabili per argomento:
 | **Portafogli e operazioni** | `portfolios`, `transactions` | i portafogli e le operazioni comprate/vendute |
 | **Storia** | `portfolio_series`, `asset_series` | il valore e il costo giorno per giorno |
 | **Dati di mercato** | `prices`, `splits`, `fx_rates` | prezzi, split azionari e tassi di cambio |
-| **Esposizione** | `asset_region_weights`, `asset_sector_weights` | la distribuzione geografica e settoriale di un titolo |
+| **Esposizione** | `asset_country_weights`, `asset_region_weights`, `asset_sector_weights`, `asset_exposure_provenance` | la distribuzione per-paese, geografica e settoriale di un titolo e la provenienza di ciascuna dimensione |
 | **Configurazione e cache** | `supported_currencies`, `lookup_cache` | le valute consentite e la cache della ricerca |
 
 ---
@@ -101,8 +101,10 @@ erDiagram
 erDiagram
     assets ||--o{ prices : "prezzi (asset_id)"
     assets ||--o{ splits : "split (asset_id)"
+    assets ||--o{ asset_country_weights : "paesi (asset_id)"
     assets ||--o{ asset_region_weights : "geografia (asset_id)"
     assets ||--o{ asset_sector_weights : "settori (asset_id)"
+    assets ||--o{ asset_exposure_provenance : "provenienza (asset_id)"
 
     fx_rates {
         text base_currency PK
@@ -130,8 +132,10 @@ erDiagram
 | `portfolio_series` | `portfolio_id` | `portfolios` | 1 portafoglio → N giorni | CASCADE |
 | `asset_series` | `portfolio_id` | `portfolios` | 1 portafoglio → N righe | CASCADE |
 | `asset_series` | `asset_id` | `assets` | 1 titolo → N righe | CASCADE |
+| `asset_country_weights` | `asset_id` | `assets` | 1 titolo → N paesi | CASCADE |
 | `asset_region_weights` | `asset_id` | `assets` | 1 titolo → N regioni | CASCADE |
 | `asset_sector_weights` | `asset_id` | `assets` | 1 titolo → N settori | CASCADE |
+| `asset_exposure_provenance` | `asset_id` | `assets` | 1 titolo → fino a 3 provenienze | CASCADE |
 
 ---
 
@@ -263,6 +267,21 @@ può avere un solo split per giorno.
 | `source` | TEXT | origine del dato |
 | `created_at` | TIMESTAMPTZ | quando è stato salvato |
 
+### `asset_country_weights` — l'esposizione per-paese
+
+Per ogni titolo, quanto del suo valore è distribuito tra i **singoli paesi**
+(ISO-3166 alpha-2). Una riga per ogni `asset_id + country`; i pesi dello
+stesso titolo dovrebbero sommare a 100%. Questa tabella è stata aggiunta in
+B.13: prima i paesi raw venivano aggregati nelle macro-regioni e scartati. Ora
+l'esposizione JustETF (e da B.14 quella Morningstar) conserva i paesi raw e il
+backend ne deriva le regioni, così le due restano sempre coerenti.
+
+| Colonna | Tipo | Spiegazione |
+|---|---|---|
+| `asset_id` | UUID (FK, parte della PK) | il titolo (→ `assets.id`) |
+| `country` | TEXT (parte della PK) | il codice paese ISO-3166 alpha-2, es. `US` |
+| `weight` | NUMERIC(10, 4) | il peso percentuale (es. `0.6500`) |
+
 ### `asset_region_weights` — l'esposizione geografica
 
 Per ogni titolo, quanto del suo valore è distribuito tra le **macro-regioni**
@@ -290,6 +309,26 @@ sommare a 100%. Per una singola azione c'è una sola riga (il suo settore al
 | `asset_id` | UUID (FK, parte della PK) | il titolo (→ `assets.id`) |
 | `sector` | TEXT (parte della PK) | il settore GICS, es. `Technology` |
 | `weight` | NUMERIC(10, 4) | il peso percentuale (es. `0.2340`) |
+
+### `asset_exposure_provenance` — da dove arriva ogni dimensione di esposizione
+
+Per ogni titolo, la **sorgente** e la **data dell'ultimo aggiornamento** di
+ogni dimensione di esposizione (`countries`, `regions`, `sectors`). Una riga
+per dimensione salvata: `PUT /assets/{id}/exposure` la scrive ogni volta che
+una dimensione viene salvata, usando i campi opzionali `countries_source` /
+`regions_source` / `sectors_source` del body (es. `morningstar`, `justetf`,
+`yahoo`) oppure `manual` se la sorgente è assente. L'UI la rilegge dal campo
+`provenance` delle risposte `GET/PUT /assets/{id}/exposure` e mostra badge tipo
+"da Morningstar (2026-09-05)" che sopravvivono a un reload. Le anteprime dei
+fetch non scrivono questa tabella: la provenienza si registra solo al
+salvataggio esplicito.
+
+| Colonna | Tipo | Spiegazione |
+|---|---|---|
+| `asset_id` | UUID (FK, parte della PK) | il titolo (→ `assets.id`) |
+| `dimension` | TEXT (parte della PK) | `countries`, `regions` o `sectors` |
+| `source` | TEXT | da dove arrivano i dati (es. `manual`, `morningstar`, `justetf`) |
+| `updated_at` | TIMESTAMPTZ | quando la dimensione è stata salvata l'ultima volta |
 
 ### `fx_rates` — i tassi di cambio
 
@@ -392,6 +431,7 @@ qui per qualche giorno, così la stessa ricerca non rifà la chiamata a Yahoo.
 - su `transactions`: portafoglio, titolo e data
 - su `prices`: titolo e data
 - su `asset_series`: portafoglio + data
+- su `asset_country_weights`: il titolo
 - su `asset_region_weights`: il titolo
 - su `asset_sector_weights`: il titolo
 
@@ -426,12 +466,18 @@ In sintesi, chi scrive e chi legge:
   (capitolo 9 della guida).
 - **Le operazioni** le scrive l'utente dalla pagina (via API), dentro
   `transactions`.
-- **L'esposizione** (`asset_region_weights`, `asset_sector_weights`) la si
+- **L'esposizione** (`asset_country_weights`, `asset_region_weights`,
+  `asset_sector_weights`) la si
   modifica dalla pagina asset, oppure la si scarica da Yahoo per i pesi
   settoriali di un ETF quando l'utente clicca "Aggiorna da Yahoo". Da B.5
   l'esposizione **completa** paesi/regioni e settori di un ETF si scarica
   automaticamente da JustETF tramite il `python-service`
-  (`POST /assets/{id}/fetch-etf-exposure`).
+  (`POST /assets/{id}/fetch-etf-exposure`); da B.13 i paesi raw vengono
+  conservati in `asset_country_weights`. Da B.14 è disponibile una seconda
+  fonte via Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`). Ogni
+  salvataggio esplicito registra anche la provenienza di ciascuna dimensione
+  salvata in `asset_exposure_provenance` (sorgente + timestamp, default
+  `manual`), così i badge dell'UI sopravvivono a un reload.
 - **La whitelist delle valute** la gestisce l'amministratore via API in
   `supported_currencies` (capitolo 11 della guida).
 
@@ -449,13 +495,17 @@ In sintesi, chi scrive e chi legge:
   indipendente.
 - **`fx_rates` ha solo USD come base**: la conversione tra due valute
   qualsiasi passa sempre dal dollaro.
-- **Le tabelle di esposizione sono solo per-asset**: esistono i pesi per-asset
+- **Le tabelle di esposizione sono solo per-asset** (`asset_country_weights` da
+  B.13, più regioni e settori): esistono i pesi per-asset
   e l'allocazione pesata **per classi** a livello portafoglio
   (`GET /portfolios/{id}/allocation/class`); l'allocazione pesata geo/settore
   a livello portafoglio è implementata da EPIC B.6/B.7
   (`GET /portfolios/{id}/allocation/geography` e `/allocation/sector`,
-  8 macro-regioni / 11 settori GICS + `Other`, zero-filled).
+  10 macro-regioni (allineate a Morningstar da B.14) / 11 settori GICS + `Other`, zero-filled).
 - **`assets.isin`**: Yahoo non espone l'ISIN in nessun modulo, ma da B.5 per gli
   ETF il valore viene **risolto automaticamente dal ticker** tramite il servizio
   JustETF (`POST /assets/{id}/fetch-etf-exposure` / il suo endpoint di search) e
-  persistito sull'asset; resta comunque modificabile a mano come fallback.
+  persistito sull'asset; resta comunque modificabile a mano come fallback. Da
+  B.13 la risposta di esposizione include anche la dimensione **countries**
+  salvata in `asset_country_weights`, zero-filled sull'intera lista ISO
+  canonica.

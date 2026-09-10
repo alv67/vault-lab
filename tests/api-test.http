@@ -72,9 +72,17 @@ Content-Type: application/json
   "currency": "EUR"
 }
 
-### 5. NEW — fetch ETF exposure. The `.MI` suffix is stripped and the ISIN is
-### resolved from the ticker (expected IE00B4K48X80), then countries/regions and
-### GICS sectors are fetched from JustETF and persisted.
+### 5. NEW — fetch ETF exposure (READ-ONLY PREVIEW). The `.MI` suffix is
+### stripped and the ISIN is resolved from the ticker (expected IE00B4K48X80) —
+### the ISIN is the ONLY thing persisted. countries/regions and GICS sectors
+### from JustETF are returned as a preview and NOT stored: same for
+### POST /assets/{id}/fetch-exposure (Yahoo sectors) and
+### POST /assets/{id}/fetch-morningstar-exposure. Persist them with the "Save"
+### buttons / PUT /assets/{id}/exposure.
+### NOTE: the raw provider payload is cached in Redis
+### (vl:lookup:exposure:justetf:<ISIN>, TTL VAULT_EXPOSURE_CACHE_TTL = 7d), so
+### reruns answer without calling the provider; append ?refresh=1 to force a
+### fresh fetch and rewrite the cache (see 11b3).
 # @name fetchEtfExposure
 POST {{baseUrl}}/assets/{{assetId}}/fetch-etf-exposure
 Authorization: Bearer {{token}}
@@ -84,8 +92,9 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/assets/{{assetId}}
 Authorization: Bearer {{token}}
 
-### 7. Read the persisted exposure (regions: Europe Developed ~96.57 + Other 3.43;
-### sectors: Financials/Industrials/Health Care/...)
+### 7. Read the persisted exposure: the fetch above is a preview, so dimensions
+### only appear here after an explicit PUT (see 11d). The GET always answers
+### with the full canonical lists (zero-filled when nothing was saved).
 # @name getExposure
 GET {{baseUrl}}/assets/{{assetId}}/exposure
 Authorization: Bearer {{token}}
@@ -121,13 +130,90 @@ Content-Type: application/json
 }
 
 ### 10. NEW — fetch ETF exposure for the S&P 500 fund (ISIN IE00B5BMR087):
-### regions tilt to North America, sectors to Information Technology.
+### read-only PREVIEW (regions tilt to North America, sectors to Information
+### Technology). Nothing is persisted by the fetch — use PUT /assets/{id}/exposure.
 # @name fetchEtfExposure2
 POST {{baseUrl}}/assets/{{asset2Id}}/fetch-etf-exposure
 Authorization: Bearer {{token}}
 
-### 11. Read the persisted exposure for SXR8.DE
+### 11. Read the persisted exposure for SXR8.DE (unchanged by the preview fetch #10)
 # @name getExposure2
+GET {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+
+### 11b. NEW — fetch ETF exposure from Morningstar (countries + sectors + official
+### regions), also a read-only PREVIEW: nothing is persisted except the resolved
+### ISIN; save the preview with PUT /assets/{id}/exposure. Uses the custom
+### resolver (headless Chromium bootstrap) in the python-service; falls back to
+### 502 if Morningstar is unreachable in the sandbox (Yahoo disabled, external
+### calls may be blocked). The raw payload is cached per ISIN under
+### vl:lookup:exposure:morningstar:<ISIN> (its own entry, separate from the
+### JustETF one), so a rerun is served from Redis and never boots Chromium; use
+### 11b3 to force a refetch.
+# @name fetchMorningstarExposure
+POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure
+Authorization: Bearer {{token}}
+
+### 11b3. Force a provider refetch bypassing the exposure cache: ?refresh=1
+### (refresh=true also accepted) skips the Redis read and rewrites the cached
+### payload. Works on both prefill endpoints (also /fetch-etf-exposure). The
+### cache TTL is VAULT_EXPOSURE_CACHE_TTL (default 7 days).
+# @name fetchMorningstarRefresh
+POST {{baseUrl}}/assets/{{asset2Id}}/fetch-morningstar-exposure?refresh=1
+Authorization: Bearer {{token}}
+
+### 11b2. NEW — derive regions from countries without persisting (tassonomia
+### Morningstar: GB→United Kingdom, JP→Japan, TW/KR→Asia Developed, residuo→Other).
+# @name deriveRegions
+POST {{baseUrl}}/assets/{{asset2Id}}/exposure/derive
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "countries": [
+    { "name": "US", "weight": 40 },
+    { "name": "GB", "weight": 25 },
+    { "name": "JP", "weight": 12 },
+    { "name": "TW", "weight": 10 },
+    { "name": "KR", "weight": 5 }
+  ]
+}
+
+### 11c. Read the persisted exposure: fetches #10/#11b are previews and store
+### nothing, so this only reflects what a previous PUT saved (the GET is always
+### canonical: zero-filled `countries` across all ~89 canonical ISO codes when
+### nothing was stored). Use 11d to persist a preview's values.
+# @name getExposure3
+GET {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+
+### 11d. Manual edit of country weights: a small subset (must not exceed ~100; a
+### sum below 100 is valid). Saving countries does NOT touch the regions
+### dimension: stored regions come back unchanged (recompute them explicitly
+### with "Calcola da paesi" / POST /assets/{id}/exposure/derive).
+### countries_source records WHERE the saved dimension came from ("morningstar",
+### "justetf", "yahoo", ...); optional countries_source / regions_source /
+### sectors_source — absent or empty ⇒ "manual". The response (and the GET)
+### carries a `provenance` map with source + updated_at per saved dimension.
+# @name putCountries
+PUT {{baseUrl}}/assets/{{asset2Id}}/exposure
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "countries": [
+    { "name": "US", "weight": 70.0 },
+    { "name": "DE", "weight": 15.0 },
+    { "name": "FR", "weight": 15.0 }
+  ],
+  "countries_source": "morningstar"
+}
+
+### 11d2. Read back the persisted provenance: the GET now includes
+### "provenance": { "countries": { "source": "morningstar", "updated_at": ... } }
+### (only for dimensions saved at least once, omitted when empty; fetch previews
+### never write it).
+# @name getExposureWithProvenance
 GET {{baseUrl}}/assets/{{asset2Id}}/exposure
 Authorization: Bearer {{token}}
 
@@ -182,10 +268,10 @@ Content-Type: application/json
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/class
 Authorization: Bearer {{token}}
 
-### 16. NEW — Portfolio geographic allocation: 8 canonical regions zero-filled, in
+### 16. NEW — Portfolio geographic allocation: 10 canonical regions zero-filled, in
 ### canonical order; "Other" only when a value could not be assigned. Weights sum
 ### to ~100 (FX-ok holdings are the denominator, matching /allocation/class).
-### Without the price seed the weights are 0, but the 8-region structure is visible.
+### Without the price seed the weights are 0, but the 10-region structure is visible.
 # @name geographyAllocation
 GET {{baseUrl}}/portfolios/{{portfolioId}}/allocation/geography
 Authorization: Bearer {{token}}
