@@ -620,7 +620,12 @@ freschi.
   **solo nelle modali**; la pagina mantiene la presentazione. Le card renderizzano
   sempre l'**esposizione salvata** (`displayCountries` / `displayRegions` /
   `displaySectors`, derivati dallo stato `exposure` caricato/salvato via API) —
-  modifiche non salvate e anteprime di prefill non compaiono mai sulle card:
+  modifiche non salvate e anteprime di prefill non compaiono mai sulle card e non
+  sopravvivono nemmeno alla chiusura della modale: ogni pulsante **Modifica**
+  ripristina le liste di edit e i badge di provenienza della propria modale dai
+  dati salvati in `exposure` prima di aprirla (`openGeoModal` /
+  `openSectorModal`), quindi riaprendo si vedono sempre i dati persistiti e le
+  modifiche non salvate della sessione precedente vengono scartate:
   - La **card geografica** raggruppa due box affiancati: **Paesi** — una
     **lista a barre orizzontali dei primi 15 paesi** (peso > 0, ordinati desc,
     barra scalata sul peso maggiore, nomi amichevoli da `lib/countryNames.ts`)

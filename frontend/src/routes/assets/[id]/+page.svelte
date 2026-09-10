@@ -70,13 +70,18 @@
   // Working copy of the modals. Prefill handlers write provider data here as a
   // non-persisted preview: the page cards never read these lists, they render
   // the stored `exposure` (see the display* derivations below), so an unsaved
-  // preview only lives inside the modal until the user presses Save.
+  // preview only lives inside the modal until the user presses Save. The
+  // pending copy is scoped to a single modal session: `openGeoModal`/
+  // `openSectorModal` re-hydrate these lists (and their provenance state)
+  // from the saved `exposure` before every open, so edits left unsaved when
+  // the modal was last closed are discarded on reopen.
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
   let countriesEdit = $state<ExposureRow[]>([])
   // Data provenance for the geo/sector modal badges: which source currently
   // owns each dimension ('manual' once the user edits it) and when it was
-  // last persisted. Hydrated from `ex.provenance` on load, set by the
+  // last persisted. Hydrated from `ex.provenance` on load and re-hydrated on
+  // every modal reopen (see `openGeoModal`/`openSectorModal`), set by the
   // prefill/dirty handlers and confirmed by every save. A null source means
   // unknown (no badge); a null updatedAt means the shown source is not
   // persisted yet (unsaved preview or fresh manual edit), so the badge shows
@@ -272,9 +277,14 @@
   // Display vs edit split: the cards always render the STORED exposure (the
   // `GET /assets/{id}/exposure` response, refreshed by `load` and by every
   // successful save). The edit lists are the modals' working copy and may hold
-  // unsaved manual edits or provider prefill previews; they never leak into the
-  // cards. After a save the canonical response updates `exposure` and re-syncs
-  // the edit lists, so card and modal become consistent again.
+  // unsaved manual edits or provider prefill previews while the modal is open;
+  // they never leak into the cards. Each "Modifica" button first restores its
+  // lists from the saved exposure via `openGeoModal`/`openSectorModal` (the
+  // same hydration `load` does), so reopening a modal after closing without
+  // saving discards the pending changes and starts from persisted data. After
+  // a save the canonical response updates `exposure` and re-syncs the saved
+  // dimension's edit list, so card and modal become consistent again (and the
+  // next reopen restores from `exposure` anyway).
   // ---------------------------------------------------------------------------
   const displayCountries = $derived(
     (exposure?.countries ?? []).filter((c) => Number(c.weight) > 0),
@@ -732,6 +742,35 @@
     sectorsSource = 'manual'
     sectorsUpdatedAt = null
   }
+
+  // Open the geo modal after resetting its working copy from the SAVED
+  // exposure: the same hydration `load` performs (`withoutOther`/
+  // `positiveCountries` normalisation + persisted provenance with the `?? null`
+  // fallbacks). Any unsaved manual edits or prefill previews left over from
+  // the previous modal session — including a 'manual' provenance flip that was
+  // never persisted — are discarded here, so reopening always shows the
+  // stored data.
+  function openGeoModal(): void {
+    if (!exposure) return
+    regionsEdit = withoutOther(exposure.regions)
+    countriesEdit = positiveCountries(exposure.countries)
+    countriesSource = exposure.provenance?.countries?.source ?? null
+    countriesUpdatedAt = exposure.provenance?.countries?.updated_at ?? null
+    regionsSource = exposure.provenance?.regions?.source ?? null
+    regionsUpdatedAt = exposure.provenance?.regions?.updated_at ?? null
+    geoModalOpen = true
+  }
+
+  // Sector-modal counterpart of `openGeoModal`: restores `sectorsEdit` and the
+  // sectors provenance from the saved exposure before opening, so unsaved
+  // sector edits/previews never resurface on reopen.
+  function openSectorModal(): void {
+    if (!exposure) return
+    sectorsEdit = sectorsList(exposure.sectors)
+    sectorsSource = exposure.provenance?.sectors?.source ?? null
+    sectorsUpdatedAt = exposure.provenance?.sectors?.updated_at ?? null
+    sectorModalOpen = true
+  }
 </script>
 
 <div class="p-6">
@@ -947,7 +986,7 @@
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 class="font-semibold">Distribuzione geografica</h2>
           <button
-            onclick={() => (geoModalOpen = true)}
+            onclick={openGeoModal}
             aria-label="Modifica distribuzione geografica"
             class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
           >
@@ -1012,7 +1051,7 @@
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 class="font-semibold">Distribuzione settoriale</h2>
           <button
-            onclick={() => (sectorModalOpen = true)}
+            onclick={openSectorModal}
             aria-label="Modifica distribuzione settoriale"
             class="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
           >

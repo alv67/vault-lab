@@ -599,7 +599,11 @@ quote/prices.
   cards always render the **stored exposure** (`displayCountries` /
   `displayRegions` / `displaySectors`, derived from the `exposure` state
   loaded/saved via the API) — unsaved modal edits and prefill previews never
-  appear on the cards:
+  appear on the cards, and they do not survive a modal close either: each
+  **Modifica** button re-hydrates its modal's edit lists and provenance
+  badges from the saved `exposure` before opening (`openGeoModal` /
+  `openSectorModal`), so reopening always shows the persisted data and any
+  changes left unsaved on the previous session are discarded:
   - The **geographic card** groups two side-by-side boxes: **Paesi** — a
     horizontal **bar list of the top 15 countries** (weight > 0, sorted desc,
     bar width scaled against the largest weight, friendly names from
