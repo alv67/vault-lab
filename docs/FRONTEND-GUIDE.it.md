@@ -663,7 +663,17 @@ freschi.
       stato è session-scoped nella pagina (nulla è persistito), quindi il badge
       è nascosto al primo reload.
   - **`ExposureSectorModal`** ha la tabella dei settori, validata a 100 ± 0,5
-    (invariata — i settori richiedono ancora il totale esatto).
+    (invariata — i settori richiedono ancora il totale esatto). Nell'header
+    mostra la stessa pillola `ProvenanceBadge` dei box geografici, guidata dal
+    `sectorsSource` di pagina (`da JustETF`, `da Yahoo`, `da Morningstar`,
+    `manuale`): ogni prefill dei settori imposta il badge, la prima modifica
+    manuale dei pesi lo riporta a "manuale" (via `onSectorsDirty`), e al primo
+    reload resta nascosto — il salvataggio non cambia mai la provenienza. I
+    pesi di prefill/caricamento vengono arrotondati a 2 decimali e i totali
+    leggermente sopra 100 corretti all'import tramite `sectorsList` (che
+    avvolge `roundWeight` + `capAtHundred`, vedi la nota sulla normalizzazione
+    sotto), così il rumore di virgola dei provider (es. `21,26815…` di Yahoo)
+    non inonda né la tabella né i totali.
   - I pulsanti di **prefill vivono solo nelle modali**, accanto al titolo di
     ciascuna parte (icone-favicon boxate con tooltip), posizionati dove nascono
     i dati. Sono **anteprime non persistite**: ognuno scrive solo nelle liste di
@@ -680,8 +690,11 @@ freschi.
       (`fetchMorningstarExposure`, applica solo le **regioni ufficiali
       Morningstar** — non più derivate);
     - settori (`ExposureSectorModal`): **"Prefill JustETF"**
-      (`fetchETFExposure`, applica solo `sectors`) e **"Prefill Yahoo"**
-      (`fetchExposure`, i `topHoldings` Yahoo, applica solo `sectors`).
+      (`fetchETFExposure`, applica solo `sectors`), **"Prefill Yahoo"**
+      (`fetchExposure`, i `topHoldings` Yahoo, applica solo `sectors`) e
+      **"Prefill Morningstar"** (`fetchMorningstarExposure`, applica solo
+      `sectors`, solo ETF come JustETF; l'endpoint è cachato per ISIN, quindi
+      se paesi/regioni sono già stati letti la chiamata è immediata).
   La **palette dei colori è condivisa**
   (`$lib/chartPalette.ts`): i quadratini colorati prima di ogni nome usano
   `colorForRow`, che restituisce esattamente il colore della fetta nel chart,
@@ -738,9 +751,13 @@ freschi.
   100 (a pari merito vince la prima; i pesi restano stringhe a 2 decimali).
   Totali ≤ 100 sono un no-op (load/save/display invariati); totali > 100,5
   sono un'anomalia provider reale e restano invariati, così il guard continua
-  a segnalarli. **Le modifiche manuali che sforano 100 non passano da questi
-  helper e restano bloccate** dal guard. I settori non vengono mai
-  normalizzati (già accettano 100 ± 0,5).
+   a segnalarli. **Le modifiche manuali che sforano 100 non passano da questi
+   helper e restano bloccate** dal guard. Anche i settori ricevono la stessa
+   correzione all'import: ogni assegnazione di settori (caricamento pagina,
+   prefill del provider e reload canonico dopo il salvataggio) passa da
+   `sectorsList`, che prima arrotonda ogni peso a 2 decimali e poi applica
+   `capAtHundred`; le modifiche manuali sui settori bypassano l'helper e
+   restano governate dal guard settori (100 ± 0,5).
 
 ### `/settings` — Impostazioni (`routes/settings/+page.svelte`)
 

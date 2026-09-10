@@ -74,10 +74,12 @@
   let regionsEdit = $state<ExposureRow[]>([])
   let sectorsEdit = $state<ExposureRow[]>([])
   let countriesEdit = $state<ExposureRow[]>([])
-  // Data provenance for the geo modal badges: which source currently owns each
-  // dimension ('manual' once the user edits it). Null = unknown (no badge).
+  // Data provenance for the geo/sector modal badges: which source currently
+  // owns each dimension ('manual' once the user edits it). Null = unknown (no
+  // badge). Set by the prefill handlers, never by load or save.
   let countriesSource = $state<string | null>(null)
   let regionsSource = $state<string | null>(null)
+  let sectorsSource = $state<string | null>(null)
   let savingRegions = $state(false)
   let savingSectors = $state(false)
   let savingCountries = $state(false)
@@ -252,6 +254,13 @@
     )
   }
 
+  /** Copy provider/backend sector rows rounding weights to 2 decimals and
+   *  normalising slightly-over-100 totals via capAtHundred (import-time only;
+   *  manual edits bypass it and stay governed by the sector guard). */
+  function sectorsList(rows: ExposureRow[]): ExposureRow[] {
+    return capAtHundred(rows.map((r) => ({ ...r, weight: roundWeight(r.weight) })))
+  }
+
   // ---------------------------------------------------------------------------
   // Display vs edit split: the cards always render the STORED exposure (the
   // `GET /assets/{id}/exposure` response, refreshed by `load` and by every
@@ -329,7 +338,7 @@
       exposure = ex
       splits = sp
       regionsEdit = withoutOther(ex.regions)
-      sectorsEdit = ex.sectors.map((r) => ({ ...r }))
+      sectorsEdit = sectorsList(ex.sectors)
       countriesEdit = positiveCountries(ex.countries)
       fillForm(a)
     } catch (err: unknown) {
@@ -513,7 +522,8 @@
     fetchingETF = true
     try {
       const preview = await assetApi.fetchETFExposure(id)
-      sectorsEdit = preview.sectors.map((r) => ({ ...r }))
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'justetf'
       if (preview.isin) form.isin = preview.isin
       toast.success('Distribuzione settoriale precompilata da JustETF')
     } catch (err: unknown) {
@@ -533,7 +543,8 @@
     prefilling = true
     try {
       const preview = await assetApi.fetchExposure(id)
-      sectorsEdit = preview.sectors.map((r) => ({ ...r }))
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'yahoo'
       toast.success('Distribuzione settoriale precompilata da Yahoo')
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status
@@ -546,6 +557,28 @@
       toast.error(message)
     } finally {
       prefilling = false
+    }
+  }
+
+  // Prefill da Morningstar: popola SOLO la lista settori della modale. Anteprima
+  // NON persistita: la card settori resta ai dati salvati finché non si salva
+  // (stesso pattern dei prefill settori JustETF/Yahoo). L'endpoint è cachato per
+  // ISIN lato backend: se paesi/regioni sono già stati letti la chiamata è
+  // immediata.
+  async function prefillSectorsFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const preview = await assetApi.fetchMorningstarExposure(id)
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'morningstar'
+      if (preview.isin) form.isin = preview.isin
+      toast.success('Distribuzione settoriale precompilata da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
     }
   }
 
@@ -582,7 +615,7 @@
         sectors: sectorsEdit,
       })
       exposure = saved
-      sectorsEdit = saved.sectors.map((r) => ({ ...r }))
+      sectorsEdit = sectorsList(saved.sectors)
       toast.success('Distribuzione settoriale salvata')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Save failed'
@@ -602,7 +635,8 @@
       const preview = await assetApi.fetchMorningstarExposure(id)
       countriesEdit = positiveCountries(preview.countries)
       countriesSource = 'morningstar'
-      sectorsEdit = preview.sectors.map((r) => ({ ...r }))
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'morningstar'
       if (preview.isin) form.isin = preview.isin
       toast.success('Paesi e settori precompilati da Morningstar')
     } catch (err: unknown) {
@@ -638,13 +672,17 @@
   }
 
   // Provenance flips to 'manual' on the first user mutation of a dimension
-  // (invoked by the geo modal at every add/remove/weight-edit point).
+  // (invoked by the geo/sector modals at every add/remove/weight-edit point).
   function markCountriesManual(): void {
     countriesSource = 'manual'
   }
 
   function markRegionsManual(): void {
     regionsSource = 'manual'
+  }
+
+  function markSectorsManual(): void {
+    sectorsSource = 'manual'
   }
 </script>
 
@@ -987,8 +1025,12 @@
         {saveSectors}
         {prefilling}
         {fetchingETF}
+        {fetchingMorningstar}
         {prefillSectorsFromETF}
         {prefillSectorsFromYahoo}
+        {prefillSectorsFromMorningstar}
+        {sectorsSource}
+        onSectorsDirty={markSectorsManual}
         assetType={asset.type}
       />
     {:else if exposureApplicable === false && asset}

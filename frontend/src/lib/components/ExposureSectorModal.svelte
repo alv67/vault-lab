@@ -2,6 +2,7 @@
   import { Loader2, X } from 'lucide-svelte'
   import type { ExposureRow } from '$lib/services/api'
   import ExposurePie from './ExposurePie.svelte'
+  import ProvenanceBadge from './ProvenanceBadge.svelte'
   import { colorForRow } from '$lib/chartPalette'
 
   let {
@@ -14,8 +15,12 @@
     saveSectors,
     prefilling = false,
     fetchingETF = false,
+    fetchingMorningstar = false,
     prefillSectorsFromETF,
     prefillSectorsFromYahoo,
+    prefillSectorsFromMorningstar,
+    sectorsSource = null as string | null,
+    onSectorsDirty,
     assetType = 'stock',
   }: {
     open: boolean
@@ -27,8 +32,12 @@
     saveSectors: () => void
     prefilling: boolean
     fetchingETF: boolean
+    fetchingMorningstar: boolean
     prefillSectorsFromETF: () => void
     prefillSectorsFromYahoo: () => void
+    prefillSectorsFromMorningstar: () => void
+    sectorsSource: string | null
+    onSectorsDirty: () => void
     assetType: string
   } = $props()
 
@@ -74,7 +83,10 @@
       <!-- Sectors -->
       <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
         <div class="mb-3 flex items-center justify-between gap-2">
-          <h3 class="font-medium">Distribuzione settoriale</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="font-medium">Distribuzione settoriale</h3>
+            <ProvenanceBadge source={sectorsSource} />
+          </div>
           <div class="flex items-center gap-1.5">
             <button
               onclick={prefillSectorsFromETF}
@@ -110,6 +122,23 @@
                 />
               {/if}
             </button>
+            <button
+              onclick={prefillSectorsFromMorningstar}
+              disabled={fetchingMorningstar || assetType !== 'etf'}
+              title="Prefill da Morningstar"
+              aria-label="Prefill settori da Morningstar"
+              class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {#if fetchingMorningstar}
+                <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+              {:else}
+                <img
+                  class="h-5 w-5 rounded"
+                  src="https://www.google.com/s2/favicons?domain=www.morningstar.com&sz=32"
+                  alt="Morningstar"
+                />
+              {/if}
+            </button>
           </div>
         </div>
         <div class="flex flex-1 flex-col gap-4 md:flex-row">
@@ -140,7 +169,10 @@
                         max="100"
                         step="0.1"
                         value={s.weight}
-                        oninput={(e) => (s.weight = e.currentTarget.value)}
+                        oninput={(e) => {
+                          s.weight = e.currentTarget.value
+                          onSectorsDirty()
+                        }}
                         class="w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
                       />
                     </td>

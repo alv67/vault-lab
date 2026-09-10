@@ -645,7 +645,16 @@ quote/prices.
       state is session-scoped in the page (nothing is persisted), so the badge
       is hidden on a fresh reload.
   - **`ExposureSectorModal`** has the sector table, validated to 100 ± 0.5
-    (unchanged — sectors still require an exact total).
+    (unchanged — sectors still require an exact total). Its header shows the
+    same `ProvenanceBadge` pill as the geo boxes, driven by the page-owned
+    `sectorsSource` (`da JustETF`, `da Yahoo`, `da Morningstar`, `manuale`):
+    each sector prefill sets the badge, the first manual weight edit flips it
+    to "manuale" (via `onSectorsDirty`), and it stays hidden on a fresh reload
+    — saving never changes the provenance. Prefilled/loaded sector weights are
+    rounded to 2 decimals and slightly-over-100 totals are shaved at import
+    through `sectorsList` (which wraps `roundWeight` + `capAtHundred`, see the
+    import-normalisation note below), so provider float noise (e.g. Yahoo
+    `21.26815…`) never floods the table or the totals.
   - The **prefill buttons live only inside the modals**, next to each part's
     title (boxed favicon icons with tooltip), placed where the data comes from.
     They are **non-persisted previews**: each one writes only into the modal's
@@ -663,8 +672,11 @@ quote/prices.
       (`fetchMorningstarExposure`, applies the **official Morningstar regions**
       only — regions are no longer derived);
     - sectors (`ExposureSectorModal`): **"Prefill JustETF"**
-      (`fetchETFExposure`, applies `sectors` only) and **"Prefill Yahoo"**
-      (`fetchExposure`, Yahoo `topHoldings`, applies `sectors` only).
+      (`fetchETFExposure`, applies `sectors` only), **"Prefill Yahoo"**
+      (`fetchExposure`, Yahoo `topHoldings`, applies `sectors` only) and
+      **"Prefill Morningstar"** (`fetchMorningstarExposure`, applies `sectors`
+      only, ETF-only like JustETF; the endpoint is cached per ISIN, so when
+      countries/regions were already fetched the call is immediate).
   The **colour palette is shared** (`$lib/chartPalette.ts`): the coloured
   squares before each name use `colorForRow`, which returns exactly the slice
   colour in the chart, so square and chart always match. The charts inside the
@@ -719,8 +731,12 @@ quote/prices.
   weights stay 2-decimal strings). Totals ≤ 100 are a no-op (load/save/display
   unchanged); totals > 100.5 are treated as a genuine provider anomaly and
   left untouched so the guard keeps surfacing them. **Manual edits that
-  exceed 100 do NOT pass through these helpers and stay blocked** by the
-  guard. Sectors are never normalised (they already allow 100 ± 0.5).
+   exceed 100 do NOT pass through these helpers and stay blocked** by the
+   guard. Sectors get the same import-time fix: every sector assignment
+   (page load, provider prefill and the canonical reload after a save) runs
+   through `sectorsList`, which first rounds each weight to 2 decimals and
+   then applies `capAtHundred`; manual sector edits bypass it and stay
+   governed by the sector guard (100 ± 0.5).
 
 ### `/settings` — Settings (`routes/settings/+page.svelte`)
 

@@ -34,6 +34,11 @@
       dot: '#f59e0b',
       description: 'Regioni ufficiali importate da Morningstar, non modificate manualmente',
     },
+    yahoo: {
+      label: 'da Yahoo',
+      dot: '#720e9e',
+      description: 'Settori importati da Yahoo, non modificati manualmente',
+    },
     derived: {
       label: 'calcolato dai paesi',
       dot: '#8b5cf6',
