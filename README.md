@@ -63,4 +63,5 @@ Active development on the [`develop`](https://github.com/alv67/vault-lab/tree/de
 
 ## License
 
-MIT
+Released under the [MIT License](LICENSE). See [`licenses/`](licenses/) for the
+third-party components and their licenses.
