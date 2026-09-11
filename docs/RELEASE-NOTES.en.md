@@ -1,14 +1,5 @@
 # Release Notes
 
-This file collects, in order, the features and bug fixes shipped in every
-release. The lines are meant to be reused directly in the product release
-notes: **one line per feature/fix**, written from the end user's point of
-view (what they see and use in the app — no internal/backend details).
-
-> Convention: when you close a PR that changes the product, add the relevant
-> lines at the top (or under the current release section). When you publish,
-> create a new section with the version and date.
-
 ## v0.1.0 — 25 Aug 2026 (first official release)
 
 ### Features

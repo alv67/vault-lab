@@ -1,15 +1,5 @@
 # Release Notes
 
-Qui raccogliamo, in ordine, le feature e i bug fix che entrano in ogni release.
-Le righe sono pensate per essere riutilizzate direttamente nelle release note
-del prodotto: **una riga per feature/fix**, scritte dal punto di vista
-dell'utente finale (ciò che vede e usa nell'app — niente dettagli
-interni/backend).
-
-> Convenzione: quando chiudi una PR con modifiche di prodotto, aggiungi le
-> righe relative in cima (oppure sotto la sezione della release corrente).
-> Alla pubblicazione, crea una nuova sezione con versione e data.
-
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 
 ### Nuove funzionalità
