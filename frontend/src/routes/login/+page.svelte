@@ -28,10 +28,10 @@
   }
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-gray-50">
-  <div class="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg">
-    <h1 class="mb-6 text-2xl font-bold text-gray-900">VaultLab</h1>
-    <p class="mb-6 text-sm text-gray-500">
+<div class="flex min-h-screen items-center justify-center bg-background">
+  <div class="w-full max-w-sm rounded-card border-border bg-surface p-8 shadow-raised">
+    <h1 class="mb-6 text-2xl font-bold text-foreground">VaultLab</h1>
+    <p class="mb-6 text-sm text-muted-foreground">
       {isRegister ? 'Create an account' : 'Sign in to your account'}
     </p>
     <form onsubmit={handleSubmit} class="space-y-4">
@@ -40,7 +40,7 @@
           type="text"
           placeholder="Name"
           bind:value={name}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
           required
         />
       {/if}
@@ -48,27 +48,27 @@
         type="email"
         placeholder="Email"
         bind:value={email}
-        class="w-full rounded-lg border px-3 py-2 text-sm"
+        class="w-full rounded-control border border-input px-3 py-2 text-sm"
         required
       />
       <input
         type="password"
         placeholder="Password"
         bind:value={password}
-        class="w-full rounded-lg border px-3 py-2 text-sm"
+        class="w-full rounded-control border border-input px-3 py-2 text-sm"
         required
       />
       <button
         type="submit"
         disabled={submitting}
-        class="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        class="w-full rounded-control bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
       >
         {isRegister ? 'Register' : 'Sign in'}
       </button>
     </form>
     <button
       onclick={() => (isRegister = !isRegister)}
-      class="mt-4 text-sm text-blue-600 hover:underline"
+      class="mt-4 text-sm text-accent-text hover:underline"
     >
       {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
     </button>

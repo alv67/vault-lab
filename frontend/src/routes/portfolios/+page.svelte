@@ -11,6 +11,7 @@
     type PortfolioExportDocument,
   } from '$lib/services/api'
   import { Plus, ExternalLink, Upload, X } from 'lucide-svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
 
   let showCreate = $state(false)
   let name = $state('')
@@ -20,6 +21,11 @@
   let portfolios = $state<Portfolio[] | null>(null)
   let loading = $state(true)
   let creating = $state(false)
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let deleting = $state(false)
+  let portfolioToDelete = $state('')
 
   let fileInput = $state<HTMLInputElement | null>(null)
   let importDoc = $state<PortfolioExportDocument | null>(null)
@@ -63,15 +69,23 @@ onMount(async () => {
     }
   }
 
-  async function deletePortfolio(id: string): Promise<void> {
-    if (!confirm('Delete this portfolio?')) return
+  function requestDeletePortfolio(id: string): void {
+    portfolioToDelete = id
+    showDeleteDialog = true
+  }
+
+  async function deletePortfolio(): Promise<void> {
+    if (!portfolioToDelete) return
+    deleting = true
     try {
-      await portfolioApi.delete(id)
+      await portfolioApi.delete(portfolioToDelete)
       portfolios = await portfolioApi.list()
       toast.success('Portfolio deleted')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Delete failed'
       toast.error(message)
+    } finally {
+      deleting = false
     }
   }
 
@@ -148,14 +162,14 @@ onMount(async () => {
       />
       <button
         onclick={openFilePicker}
-        class="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+        class="flex items-center gap-2 rounded-control border border-border px-4 py-2 text-sm text-foreground hover:bg-muted"
       >
         <Upload class="h-4 w-4" />
         Import
       </button>
       <button
         onclick={() => (showCreate = !showCreate)}
-        class="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+        class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover"
       >
         <Plus class="h-4 w-4" />
         New Portfolio
@@ -164,18 +178,18 @@ onMount(async () => {
   </div>
 
   {#if importError}
-    <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+    <div class="mb-4 rounded-control border border-negative/20 bg-negative/10 px-4 py-2 text-sm text-negative">
       {importError}
     </div>
   {/if}
 
   {#if importDoc}
-    <div class="mb-6 rounded-xl border bg-white p-4">
+    <div class="mb-6 rounded-card border border-border bg-surface p-4">
       <div class="mb-3 flex items-center justify-between">
         <h2 class="font-semibold">Import portfolio</h2>
         <button
           onclick={() => (importDoc = null)}
-          class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Close import"
         >
           <X class="h-4 w-4" />
@@ -183,19 +197,19 @@ onMount(async () => {
       </div>
       <div class="mb-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
         <div>
-          <p class="text-xs text-gray-500">Name</p>
+          <p class="text-xs text-muted-foreground">Name</p>
           <p class="font-medium">{importDoc.portfolio.name}</p>
         </div>
         <div>
-          <p class="text-xs text-gray-500">Currency</p>
+          <p class="text-xs text-muted-foreground">Currency</p>
           <p class="font-medium">{importDoc.portfolio.currency || '—'}</p>
         </div>
         <div>
-          <p class="text-xs text-gray-500">Transactions</p>
+          <p class="text-xs text-muted-foreground">Transactions</p>
           <p class="font-medium">{importDoc.transactions?.length ?? 0}</p>
         </div>
         <div>
-          <p class="text-xs text-gray-500">Date range</p>
+          <p class="text-xs text-muted-foreground">Date range</p>
           <p class="font-medium">{importRange(importDoc)}</p>
         </div>
       </div>
@@ -209,7 +223,7 @@ onMount(async () => {
             type="text"
             placeholder="Portfolio name"
             bind:value={importName}
-            class="w-full rounded-lg border px-3 py-2 text-sm"
+            class="w-full rounded-control border border-input px-3 py-2 text-sm"
           />
         {/if}
         <label class="flex items-center gap-2 text-sm">
@@ -219,7 +233,7 @@ onMount(async () => {
         {#if importMode === 'overwrite'}
           <select
             bind:value={importTarget}
-            class="w-full rounded-lg border px-3 py-2 text-sm"
+            class="w-full rounded-control border border-input px-3 py-2 text-sm"
           >
             <option value="" disabled>Select portfolio to overwrite</option>
             {#each portfolios ?? [] as p (p.id)}
@@ -235,7 +249,7 @@ onMount(async () => {
           (importMode === 'new' && !importName.trim()) ||
           (importMode === 'overwrite' && !importTarget)
         }
-        class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
       >
         {importing ? 'Importing...' : 'Import'}
       </button>
@@ -243,23 +257,23 @@ onMount(async () => {
   {/if}
 
   {#if showCreate}
-    <div class="mb-6 rounded-xl border bg-white p-4">
+    <div class="mb-6 rounded-card border border-border bg-surface p-4">
       <h2 class="mb-4 font-semibold">Create Portfolio</h2>
       <div class="space-y-3">
         <input
           type="text"
           placeholder="Portfolio name"
           bind:value={name}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
         />
         <textarea
           placeholder="Description (optional)"
           bind:value={description}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
         ></textarea>
         <select
           bind:value={currency}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
         >
           {#each currencies as c (c.code)}
             <option value={c.code}>{c.code}</option>
@@ -268,7 +282,7 @@ onMount(async () => {
         <button
           onclick={createPortfolio}
           disabled={!name || creating}
-          class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
         >
           {creating ? 'Creating...' : 'Create'}
         </button>
@@ -277,36 +291,47 @@ onMount(async () => {
   {/if}
 
   {#if loading}
-    <p class="text-gray-500">Loading...</p>
+    <p class="text-muted-foreground">Loading...</p>
   {:else}
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each portfolios ?? [] as p (p.id)}
-        <div class="rounded-xl border bg-white p-4 shadow-sm">
+        <div class="rounded-card border border-border bg-surface p-4 shadow-card">
           <div class="mb-2 flex items-start justify-between">
             <div>
               <h3 class="font-semibold">{p.name}</h3>
-              <p class="text-xs text-gray-500">{p.currency}</p>
+              <p class="text-xs text-muted-foreground">{p.currency}</p>
             </div>
-            <a href={resolve(`/portfolios/${p.id}`)} class="text-blue-600 hover:text-blue-800">
+            <a href={resolve(`/portfolios/${p.id}`)} class="text-accent-text hover:underline">
               <ExternalLink class="h-4 w-4" />
             </a>
           </div>
           {#if p.description}
-            <p class="mb-3 text-sm text-gray-600">{p.description}</p>
+            <p class="mb-3 text-sm text-muted-foreground">{p.description}</p>
           {/if}
           <button
-            onclick={() => deletePortfolio(p.id)}
-            class="text-xs text-red-500 hover:underline"
+            onclick={() => requestDeletePortfolio(p.id)}
+            class="text-xs text-negative hover:underline"
           >
             Delete
           </button>
         </div>
       {/each}
       {#if (portfolios ?? []).length === 0}
-        <p class="col-span-full text-center text-gray-400">
+        <p class="col-span-full text-center text-muted-foreground">
           No portfolios yet. Create one!
         </p>
       {/if}
     </div>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete portfolio"
+  message="Delete this portfolio?"
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={deleting}
+  onconfirm={deletePortfolio}
+/>

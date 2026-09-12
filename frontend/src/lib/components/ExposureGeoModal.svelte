@@ -5,7 +5,9 @@
   import { CANONICAL_COUNTRIES, countryDisplayName } from '$lib/countryNames'
   import ExposurePie from './ExposurePie.svelte'
   import ProvenanceBadge from './ProvenanceBadge.svelte'
-  import { CHART_PALETTE, colorForRow } from '$lib/chartPalette'
+  import { colorForRow, resolvePalette } from '$lib/chartPalette'
+  import { resolved } from '$lib/stores/theme.svelte'
+  import { totalColorClass } from '$lib/ui-colors'
 
   let {
     open = $bindable(false),
@@ -127,12 +129,6 @@
   const countriesOver = $derived(sumCountries > 100 + 1e-9)
   const regionsOver = $derived(sumRegions > 100 + 1e-9)
 
-  function totalColorClass(sum: number, over: boolean): string {
-    if (over) return 'text-red-600'
-    if (sum >= 99.5) return 'text-green-600'
-    return 'text-gray-900'
-  }
-
   function removeCountry(code: string): void {
     countriesEdit = countriesEdit.filter((r) => r.name !== code)
     onCountriesDirty()
@@ -171,6 +167,10 @@
     }
   }
 
+  // Resolved chart palette: keeps the HTML bars/swatches in sync with the
+  // donut colors and re-evaluates on theme flips.
+  const palette = $derived(resolvePalette(resolved()))
+
   // Height of the regions middle area, measured from its NATURAL content via
   // bind:clientHeight (region table + side donut fully visible, no quota) and
   // mirrored onto the countries middle area so both boxes — and their identical
@@ -184,7 +184,7 @@
 
 {#if open}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay/50"
     onclick={handleBackdropClick}
     onkeydown={(e) => e.key === 'Escape' && onClose()}
     role="dialog"
@@ -196,13 +196,13 @@
          of width, so the regions table (~264px after the 224px donut) has room
          for long region names like "Africa / Middle East" on one line. -->
     <div
-      class="relative mx-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      class="relative mx-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-card border-border bg-surface p-6 shadow-raised"
     >
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-lg font-semibold">Modifica distribuzione geografica</h2>
         <button
           onclick={onClose}
-          class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Chiudi"
         >
           <X class="h-5 w-5" />
@@ -211,7 +211,7 @@
 
       <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <!-- Countries (regions update only manually, via "Calcola da paesi") -->
-        <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <div class="flex flex-col rounded-card border border-border bg-muted p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <h3 class="font-medium">Paesi</h3>
@@ -223,10 +223,10 @@
                 disabled={assetType !== 'etf' || fetchingETF || fetchingMorningstar}
                 title="Prefill da JustETF"
                 aria-label="Prefill paesi da JustETF"
-                class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingETF}
-                  <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                  <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
                 {:else}
                   <img
                     class="h-5 w-5 rounded"
@@ -240,10 +240,10 @@
                 disabled={assetType !== 'etf' || fetchingETF || fetchingMorningstar}
                 title="Prefill da Morningstar"
                 aria-label="Prefill paesi da Morningstar"
-                class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingMorningstar}
-                  <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                  <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
                 {:else}
                   <img
                     class="h-5 w-5 rounded"
@@ -269,7 +269,7 @@
           >
             <!-- Table-style header row, columns aligned with the rows below. -->
             <div
-              class="flex items-center gap-3 border-b border-gray-300 pb-2 pl-2 pr-3 text-sm text-gray-500"
+              class="flex items-center gap-3 border-b border-border pb-2 pl-2 pr-3 text-sm text-muted-foreground"
             >
               <span class="min-w-0 flex-1 truncate">Paese</span>
               <span class="w-20 shrink-0 text-right">Peso %</span>
@@ -279,15 +279,15 @@
 
             {#if visibleCountries.length === 0}
               <div class="flex min-h-0 flex-1 flex-col items-center justify-center py-10 text-center">
-                <Globe2 class="h-8 w-8 text-gray-300" />
-                <p class="text-sm text-gray-500">Nessun paese inserito</p>
-                <p class="text-xs text-gray-500">
+                <Globe2 class="h-8 w-8 text-input" />
+                <p class="text-sm text-muted-foreground">Nessun paese inserito</p>
+                <p class="text-xs text-muted-foreground">
                   Aggiungi un paese qui sotto, oppure usa un prefill JustETF / Morningstar
                 </p>
               </div>
             {:else}
               <ul
-                class="min-h-0 flex-1 divide-y divide-gray-200 overflow-y-auto py-1 pr-1"
+                class="min-h-0 flex-1 divide-y divide-border overflow-y-auto py-1 pr-1"
               >
                 {#each visibleCountries as row, i (row.name)}
                   {@const weight = Number(row.weight) || 0}
@@ -296,20 +296,20 @@
                     maxCountryWeight > 0 ? ((weight / maxCountryWeight) * 100).toFixed(1) : '0'}
                   <li
                     data-code={row.name}
-                    class="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-gray-100 motion-reduce:transition-none"
+                    class="group flex items-center gap-3 rounded-control px-2 py-2 transition-colors hover:bg-foreground/5 motion-reduce:transition-none"
                   >
-                    <span class="w-7 shrink-0 text-xs font-medium text-gray-500">{row.name}</span>
+                    <span class="w-7 shrink-0 text-xs font-medium text-muted-foreground">{row.name}</span>
                     <span
-                      class="w-32 shrink-0 truncate text-sm text-gray-700 sm:w-40"
+                      class="w-32 shrink-0 truncate text-sm text-foreground sm:w-40"
                       title="{row.name} — {displayName}"
                     >{displayName}</span>
                     <div
-                      class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-200"
+                      class="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-input"
                       aria-hidden="true"
                     >
                       <div
                         class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none"
-                        style="width: {barPct}%; background-color: {CHART_PALETTE[i % CHART_PALETTE.length]};"
+                        style="width: {barPct}%; background-color: {palette[i % palette.length]};"
                       ></div>
                     </div>
                     <input
@@ -325,11 +325,11 @@
                         onCountriesDirty()
                       }}
                       onchange={resort}
-                      class="no-spinner w-20 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      class="no-spinner focus-ring w-20 shrink-0 rounded-control border border-input bg-surface px-2.5 py-1.5 text-right text-sm tabular-nums"
                     />
                     <button
                       onclick={() => removeCountry(row.name)}
-                      class="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                      class="shrink-0 rounded p-1 text-muted-foreground hover:bg-negative/10 hover:text-negative"
                       title="Rimuovi {displayName}"
                       aria-label="Rimuovi {displayName}"
                     >
@@ -345,7 +345,7 @@
                 <select
                   bind:value={addCountryCode}
                   aria-label="Paese da aggiungere"
-                  class="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  class="focus-ring min-w-0 flex-1 rounded-control border border-input bg-surface px-3 py-1.5 text-sm"
                 >
                   {#each availableCodes as code (code)}
                     <option value={code}>{code} — {countryDisplayName(code)}</option>
@@ -354,7 +354,7 @@
                 <button
                   onclick={addCountry}
                   disabled={!addCountryCode}
-                  class="flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  class="flex shrink-0 items-center gap-1 rounded-control border border-input bg-surface px-3 py-1.5 text-sm font-medium text-foreground shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus class="h-4 w-4" />
                   Aggiungi
@@ -366,33 +366,33 @@
           <!-- Footer rows (identical in both boxes so they line up):
                separator, fixed-height total, reserved 3-line message area,
                fixed-height Save area. -->
-          <div class="mt-3 border-t border-gray-200" aria-hidden="true"></div>
+          <div class="mt-3 border-t border-border" aria-hidden="true"></div>
 
           <div class="mt-3 h-8">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-700">Totale</span>
+              <span class="text-sm font-medium text-foreground">Totale</span>
               <span
                 class="text-sm font-semibold tabular-nums {totalColorClass(sumCountries, countriesOver)}"
               >{sumCountries.toFixed(2)}%</span>
             </div>
-            <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+            <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-input" aria-hidden="true">
               <div
-                class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none"
-                style="width: {Math.min(sumCountries, 100).toFixed(2)}%; background-color: {countriesOver
-                  ? '#ef4444'
-                  : '#2563eb'};"
+                class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none {countriesOver
+                  ? 'bg-negative'
+                  : 'bg-accent'}"
+                style="width: {Math.min(sumCountries, 100).toFixed(2)}%;"
               ></div>
             </div>
           </div>
 
           <div class="h-[3.75rem] overflow-hidden pt-1 text-xs leading-5">
             {#if countriesOver}
-              <p role="alert" class="text-red-600">
+              <p role="alert" class="text-negative">
                 La somma supera il 100% — attuale {sumCountries.toFixed(2)}%.
                 Riduci i pesi per salvare.
               </p>
             {:else if sumCountries < 99.5}
-              <p class="text-gray-500">
+              <p class="text-muted-foreground">
                 Residuo non attribuito: {(100 - sumCountries).toFixed(2)}%.
               </p>
             {/if}
@@ -405,7 +405,7 @@
               title={countriesOver
                 ? 'La somma dei pesi supera il 100%: riduci i pesi per poter salvare'
                 : undefined}
-              class="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {#if savingCountries}
                 <Loader2 class="h-4 w-4 animate-spin" />
@@ -416,7 +416,7 @@
         </div>
 
         <!-- Regions -->
-        <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <div class="flex flex-col rounded-card border border-border bg-muted p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <h3 class="font-medium">Regioni</h3>
@@ -428,12 +428,12 @@
                 disabled={derivingRegions || fetchingMorningstar}
                 title="Calcola da paesi"
                 aria-label="Calcola regioni dai paesi"
-                class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if derivingRegions}
-                  <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                  <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
                 {:else}
-                  <Calculator class="h-5 w-5 text-gray-500" />
+                  <Calculator class="h-5 w-5 text-muted-foreground" />
                 {/if}
               </button>
               <button
@@ -441,10 +441,10 @@
                 disabled={assetType !== 'etf' || derivingRegions || fetchingMorningstar}
                 title="Prefill da Morningstar"
                 aria-label="Prefill regioni da Morningstar"
-                class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingMorningstar}
-                  <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                  <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
                 {:else}
                   <img
                     class="h-5 w-5 rounded"
@@ -465,14 +465,14 @@
             <div class="min-w-0 flex-1">
               <table class="w-full text-left text-sm">
                 <thead>
-                  <tr class="border-b text-gray-500">
+                  <tr class="border-b border-border text-muted-foreground">
                     <th class="pb-2">Area geografica</th>
                     <th class="pb-2 text-right">Peso %</th>
                   </tr>
                 </thead>
                 <tbody>
                   {#each regionsEdit as r (r.name)}
-                    <tr class="border-b last:border-0 hover:bg-gray-100/70">
+                    <tr class="border-b border-border last:border-0 hover:bg-foreground/5">
                       <td class="py-2">
                         <!-- nowrap only once the panel truly reaches max-w-6xl
                              (viewport ≥ 1184px = 1152 + 2×mx-4); below that the
@@ -481,7 +481,7 @@
                         <span class="flex items-center gap-2 min-[1184px]:whitespace-nowrap">
                           <span
                             class="inline-block h-3 w-3 shrink-0 rounded"
-                            style="background-color: {colorForRow(r, regionsEdit)};"
+                            style="background-color: {colorForRow(r, regionsEdit, palette)};"
                           ></span>
                           {r.name}
                         </span>
@@ -499,7 +499,7 @@
                             r.weight = e.currentTarget.value
                             onRegionsDirty()
                           }}
-                          class="no-spinner w-24 shrink-0 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-right text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          class="no-spinner focus-ring w-24 shrink-0 rounded-control border border-input bg-surface px-2.5 py-1.5 text-right text-sm tabular-nums"
                         />
                       </td>
                     </tr>
@@ -515,33 +515,33 @@
           <!-- Footer rows (identical in both boxes so they line up):
                separator, fixed-height total, reserved 3-line message area,
                fixed-height Save area. -->
-          <div class="mt-3 border-t border-gray-200" aria-hidden="true"></div>
+          <div class="mt-3 border-t border-border" aria-hidden="true"></div>
 
           <div class="mt-3 h-8">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-700">Totale</span>
+              <span class="text-sm font-medium text-foreground">Totale</span>
               <span
                 class="text-sm font-semibold tabular-nums {totalColorClass(sumRegions, regionsOver)}"
               >{sumRegions.toFixed(2)}%</span>
             </div>
-            <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+            <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-input" aria-hidden="true">
               <div
-                class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none"
-                style="width: {Math.min(sumRegions, 100).toFixed(2)}%; background-color: {regionsOver
-                  ? '#ef4444'
-                  : '#2563eb'};"
+                class="h-full rounded-full transition-[width] duration-200 motion-reduce:transition-none {regionsOver
+                  ? 'bg-negative'
+                  : 'bg-accent'}"
+                style="width: {Math.min(sumRegions, 100).toFixed(2)}%;"
               ></div>
             </div>
           </div>
 
           <div class="h-[3.75rem] overflow-hidden pt-1 text-xs leading-5">
             {#if regionsOver}
-              <p role="alert" class="text-red-600">
+              <p role="alert" class="text-negative">
                 La somma supera il 100% — attuale {sumRegions.toFixed(2)}%.
                 Riduci i pesi per salvare.
               </p>
             {:else if sumRegions < 99.5}
-              <p class="flex items-center gap-1.5 text-gray-500">
+              <p class="flex items-center gap-1.5 text-muted-foreground">
                 <Info class="h-3.5 w-3.5 shrink-0" />
                 Residuo non classificato: {(100 - sumRegions).toFixed(2)}% — escluso dal grafico.
               </p>
@@ -555,7 +555,7 @@
               title={regionsOver
                 ? 'La somma dei pesi supera il 100%: riduci i pesi per poter salvare'
                 : undefined}
-              class="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {#if savingRegions}
                 <Loader2 class="h-4 w-4 animate-spin" />

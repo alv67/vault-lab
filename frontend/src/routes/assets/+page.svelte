@@ -4,6 +4,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { assetApi, settingsApi, type Asset, type AssetLookupResult, type Currency } from '$lib/services/api'
   import { Plus, Loader2, Search, Trash2 } from 'lucide-svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
 
   const defaultForm = () => ({
     ticker: '',
@@ -23,6 +24,11 @@
   let loading = $state(true)
   let creating = $state(false)
   let currencies = $state<Currency[]>([])
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let deleting = $state(false)
+  let assetToDelete = $state<{ id: string; ticker: string } | null>(null)
 
   let lookupResults = $state<AssetLookupResult[] | null>(null)
   let lookupLoading = $state(false)
@@ -119,8 +125,15 @@
     }
   }
 
-  async function deleteAsset(id: string, ticker: string): Promise<void> {
-    if (!confirm(`Delete ${ticker}?`)) return
+  function requestDeleteAsset(id: string, ticker: string): void {
+    assetToDelete = { id, ticker }
+    showDeleteDialog = true
+  }
+
+  async function deleteAsset(): Promise<void> {
+    if (!assetToDelete) return
+    const { id } = assetToDelete
+    deleting = true
     try {
       await assetApi.remove(id)
       assets = await assetApi.list()
@@ -128,6 +141,8 @@
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Delete failed'
       toast.error(message)
+    } finally {
+      deleting = false
     }
   }
 
@@ -152,7 +167,7 @@
     <h1 class="text-2xl font-bold">Assets</h1>
     <button
       onclick={toggleCreate}
-      class="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+      class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover"
     >
       <Plus class="h-4 w-4" />
       Add Asset
@@ -160,7 +175,7 @@
   </div>
 
   {#if showCreate}
-    <div class="mb-6 rounded-xl border bg-white p-4">
+    <div class="mb-6 rounded-card border border-border bg-surface p-4">
       <h2 class="mb-3 font-semibold">New Asset</h2>
       <div class="grid grid-cols-2 gap-3">
         <div class="relative">
@@ -171,33 +186,33 @@
             oninput={(e) => handleTickerChange(e.currentTarget.value)}
             onfocus={() => form.ticker.length >= 2 && (showSuggestions = true)}
             onblur={() => setTimeout(() => (showSuggestions = false), 200)}
-            class="w-full rounded-lg border px-3 py-2 pr-8 text-sm"
+            class="w-full rounded-control border border-input px-3 py-2 pr-8 text-sm"
           />
           {#if lookupLoading}
-            <Loader2 class="absolute right-2 top-2.5 h-4 w-4 animate-spin text-gray-400" />
+            <Loader2 class="absolute right-2 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
           {:else if form.ticker && !selectedTicker}
-            <Search class="absolute right-2 top-2.5 h-4 w-4 text-gray-400" />
+            <Search class="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground" />
           {/if}
 
           {#if showSuggestions && lookupResults && lookupResults.length > 0 && !selectedTicker}
-            <div class="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-white shadow-lg">
+            <div class="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-card border border-border bg-surface shadow-raised">
               {#each lookupResults as r (r.ticker)}
                 <button
                   type="button"
                   onmousedown={() => selectSuggestion(r)}
-                  class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50"
+                  class="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted"
                 >
                   <span class="font-medium">{r.ticker}</span>
-                  <span class="flex-1 truncate text-gray-500">{r.name}</span>
-                  <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">{r.exchange}</span>
-                  <span class="text-xs text-gray-400">{r.type}</span>
+                  <span class="flex-1 truncate text-muted-foreground">{r.name}</span>
+                  <span class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{r.exchange}</span>
+                  <span class="text-xs text-muted-foreground">{r.type}</span>
                 </button>
               {/each}
             </div>
           {/if}
 
           {#if showSuggestions && lookupResults && lookupResults.length === 0 && !selectedTicker}
-            <div class="absolute z-10 mt-1 w-full rounded-lg border bg-white p-3 text-center text-sm text-gray-400 shadow-lg">
+            <div class="absolute z-10 mt-1 w-full rounded-card border border-border bg-surface p-3 text-center text-sm text-muted-foreground shadow-raised">
               No results found
             </div>
           {/if}
@@ -207,17 +222,17 @@
           type="text"
           placeholder="Name"
           bind:value={form.name}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         />
         <input
           type="text"
           placeholder="ISIN (optional)"
           bind:value={form.isin}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         />
         <select
           bind:value={form.type}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         >
           <option value="stock">Stock</option>
           <option value="etf">ETF</option>
@@ -228,7 +243,7 @@
         </select>
         <select
           bind:value={form.currency}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         >
           {#each currencies as c (c.code)}
             <option value={c.code}>{c.code}</option>
@@ -238,11 +253,11 @@
           type="text"
           placeholder="Exchange"
           bind:value={form.exchange}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         />
         <select
           bind:value={form.price_source}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         >
           <option value="yahoo">Yahoo Finance</option>
           <option value="manual">Prezzo manuale</option>
@@ -252,7 +267,7 @@
       <button
         onclick={createAsset}
         disabled={!form.ticker || !form.name || creating}
-        class="mt-3 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        class="mt-3 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
       >
         {creating ? 'Saving...' : 'Save'}
       </button>
@@ -260,11 +275,11 @@
   {/if}
 
   {#if loading}
-    <p class="text-gray-500">Loading...</p>
+    <p class="text-muted-foreground">Loading...</p>
   {:else}
     <table class="w-full text-left text-sm">
       <thead>
-        <tr class="border-b text-gray-500">
+        <tr class="border-b border-border text-muted-foreground">
           <th class="pb-2">Ticker</th>
           <th class="pb-2">Name</th>
           <th class="pb-2">Type</th>
@@ -275,13 +290,13 @@
       </thead>
       <tbody>
         {#each assets ?? [] as a (a.id)}
-          <tr class="border-b last:border-0">
+          <tr class="border-b border-border last:border-0">
             <td class="py-2 font-medium">
-              <a href={resolve(`/assets/${a.id}`)} class="text-blue-600 hover:underline">{a.ticker}</a>
+              <a href={resolve(`/assets/${a.id}`)} class="text-accent-text hover:underline">{a.ticker}</a>
             </td>
-            <td class="py-2 text-gray-600">{a.name}</td>
+            <td class="py-2 text-muted-foreground">{a.name}</td>
             <td class="py-2">
-              <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs">
+              <span class="rounded-full bg-muted px-2 py-0.5 text-xs">
                 {a.type}
               </span>
             </td>
@@ -289,8 +304,8 @@
             <td class="py-2">{a.country || '-'}</td>
             <td class="py-2 text-right">
               <button
-                onclick={() => deleteAsset(a.id, a.ticker)}
-                class="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                onclick={() => requestDeleteAsset(a.id, a.ticker)}
+                class="rounded-control p-1.5 text-muted-foreground hover:bg-negative/10 hover:text-negative"
                 title="Delete asset"
               >
                 <Trash2 class="h-4 w-4" />
@@ -302,3 +317,14 @@
     </table>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete asset"
+  message={`Delete ${assetToDelete?.ticker ?? ''}?`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={deleting}
+  onconfirm={deleteAsset}
+/>

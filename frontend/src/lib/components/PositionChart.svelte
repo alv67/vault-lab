@@ -13,6 +13,9 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency } from '$lib/format'
   import type { PositionPoint, SplitInfo } from '$lib/services/api'
+  import { chartSemanticColors } from '$lib/chartPalette'
+  import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   use([
     LineChart,
@@ -38,13 +41,18 @@
   } = $props()
 
   const LINES = [
-    { key: 'cost_basis', name: 'Cost basis', color: '#64748b', step: 'end' },
-    { key: 'market_value', name: 'Market value', color: '#16a34a', step: undefined },
-    { key: 'realized', name: 'Realized', color: '#f59e0b', step: 'end' },
+    { key: 'cost_basis', name: 'Cost basis', colorKey: 'costBasis', step: 'end' },
+    { key: 'market_value', name: 'Market value', colorKey: 'marketValue', step: undefined },
+    { key: 'realized', name: 'Realized', colorKey: 'realized', step: 'end' },
   ] as const
 
+  // Series/line colors come from the semantic chart tokens, re-evaluated on
+  // theme flips (the {#key} block below also re-inits the chart with the new
+  // ECharts theme).
+  const semantic = $derived(chartSemanticColors(resolved()))
+
   const options = $derived.by((): EChartsOption => ({
-    color: LINES.map((l) => l.color),
+    color: LINES.map((l) => semantic[l.colorKey]),
     tooltip: {
       trigger: 'axis',
       formatter: (params: unknown) => {
@@ -96,12 +104,12 @@
             markLine: {
               symbol: 'none',
               silent: true,
-              lineStyle: { type: 'dashed', color: '#7c3aed', width: 1 },
+              lineStyle: { type: 'dashed', color: semantic.splitMarkLine, width: 1 },
               label: {
                 show: true,
                 position: 'insideEndTop',
                 formatter: '{b}',
-                color: '#7c3aed',
+                color: semantic.splitMarkLine,
                 fontSize: 10,
               },
               data: splits.map((s) => ({
@@ -116,11 +124,13 @@
 </script>
 
 {#if series.length === 0}
-  <div class="flex h-[340px] w-full items-center justify-center text-sm text-gray-400">
+  <div class="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
     No data
   </div>
 {:else}
   <div class="h-[340px] w-full">
-    <Chart {init} {options} />
+    {#key resolved()}
+      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+    {/key}
   </div>
 {/if}

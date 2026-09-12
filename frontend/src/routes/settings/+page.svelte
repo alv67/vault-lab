@@ -6,6 +6,7 @@
   import { currencySymbol } from '$lib/format'
   import { Trash2, Activity } from 'lucide-svelte'
   import { resolve } from '$app/paths'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   
   let name = $state(auth.user?.name ?? '')
   let email = $state(auth.user?.email ?? '')
@@ -23,6 +24,10 @@
 
   let addingCurrency = $state(false)
   let removingCode = $state('')
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let currencyToDelete = $state('')
 
   onMount(async () => {
     try {
@@ -71,8 +76,14 @@
     }
   }
 
-  async function removeCurrency(code: string): Promise<void> {
-    if (!confirm(`Delete currency ${code}?`)) return
+  function requestDeleteCurrency(code: string): void {
+    currencyToDelete = code
+    showDeleteDialog = true
+  }
+
+  async function removeCurrency(): Promise<void> {
+    const code = currencyToDelete
+    if (!code) return
     removingCode = code
     try {
       await settingsApi.deleteCurrency(code)
@@ -130,86 +141,86 @@
 <div class="p-6">
   <h1 class="mb-6 text-2xl font-bold">Settings</h1>
 
-  <div class="mb-6 max-w-lg rounded-xl border bg-white p-6">
+  <div class="mb-6 max-w-lg rounded-card border border-border bg-surface p-6">
     <h2 class="mb-4 font-semibold">Profile</h2>
     <div class="space-y-4">
       <div>
-        <label for="profile-name" class="mb-1 block text-sm text-gray-600">Name</label>
+        <label for="profile-name" class="mb-1 block text-sm text-muted-foreground">Name</label>
         <input
           id="profile-name"
           type="text"
           bind:value={name}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
         />
       </div>
       <div>
-        <label for="profile-email" class="mb-1 block text-sm text-gray-600">Email</label>
+        <label for="profile-email" class="mb-1 block text-sm text-muted-foreground">Email</label>
         <input
           id="profile-email"
           type="email"
           bind:value={email}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
         />
       </div>
       <button
         onclick={saveProfile}
         disabled={savingProfile || !name || !email}
-        class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
       >
         {savingProfile ? 'Saving...' : 'Save'}
       </button>
     </div>
   </div>
 
-  <div class="max-w-lg rounded-xl border bg-white p-6">
+  <div class="max-w-lg rounded-card border border-border bg-surface p-6">
     <h2 class="mb-4 font-semibold">Change password</h2>
     <div class="space-y-4">
       <div>
-        <label for="current-password" class="mb-1 block text-sm text-gray-600">Current password</label>
+        <label for="current-password" class="mb-1 block text-sm text-muted-foreground">Current password</label>
         <input
           id="current-password"
           type="password"
           bind:value={currentPassword}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
           autocomplete="current-password"
         />
       </div>
       <div>
-        <label for="new-password" class="mb-1 block text-sm text-gray-600">New password</label>
+        <label for="new-password" class="mb-1 block text-sm text-muted-foreground">New password</label>
         <input
           id="new-password"
           type="password"
           bind:value={newPassword}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
           autocomplete="new-password"
         />
       </div>
       <div>
-        <label for="confirm-password" class="mb-1 block text-sm text-gray-600">Confirm new password</label>
+        <label for="confirm-password" class="mb-1 block text-sm text-muted-foreground">Confirm new password</label>
         <input
           id="confirm-password"
           type="password"
           bind:value={confirmPassword}
-          class="w-full rounded-lg border px-3 py-2 text-sm"
+          class="w-full rounded-control border border-input px-3 py-2 text-sm"
           autocomplete="new-password"
         />
       </div>
       <button
         onclick={savePassword}
         disabled={savingPassword || !currentPassword || !newPassword || !confirmPassword}
-        class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
       >
         {savingPassword ? 'Saving...' : 'Change password'}
       </button>
     </div>
   </div>
 
-  <div class="mt-6 max-w-lg rounded-xl border bg-white p-6">
+  <div class="mt-6 max-w-lg rounded-card border border-border bg-surface p-6">
     <div class="flex items-center justify-between mb-4">
       <h2 class="font-semibold">Infrastruttura</h2>
       <a
         href={resolve('/settings/health')}
-        class="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200"
+        class="flex items-center gap-1.5 rounded-control bg-muted px-3 py-1.5 text-sm font-medium text-foreground hover:bg-input"
       >
         <Activity class="h-4 w-4" />
         Health Dashboard
@@ -217,7 +228,7 @@
     </div>
   </div>
 
-  <div class="mt-6 max-w-lg rounded-xl border bg-white p-6">
+  <div class="mt-6 max-w-lg rounded-card border border-border bg-surface p-6">
     <h2 class="mb-4 font-semibold">Valute gestite</h2>
 
     <div class="mb-4 flex gap-3">
@@ -227,31 +238,31 @@
         bind:value={newCode}
         maxlength="3"
         oninput={(e) => { newCode = e.currentTarget.value.toUpperCase() }}
-        class="w-28 rounded-lg border px-3 py-2 text-sm uppercase"
+        class="w-28 rounded-control border border-input px-3 py-2 text-sm uppercase"
       />
       <input
         type="text"
         placeholder="Name (optional)"
         bind:value={newName}
-        class="flex-1 rounded-lg border px-3 py-2 text-sm"
+        class="flex-1 rounded-control border border-input px-3 py-2 text-sm"
       />
       <button
         onclick={addCurrency}
         disabled={addingCurrency}
-        class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+        class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
       >
         {addingCurrency ? 'Adding...' : 'Add'}
       </button>
     </div>
 
     {#if currenciesLoading}
-      <p class="text-gray-500">Loading...</p>
+      <p class="text-muted-foreground">Loading...</p>
     {:else if currencies.length === 0}
-      <p class="text-sm text-gray-400">No currencies found.</p>
+      <p class="text-sm text-muted-foreground">No currencies found.</p>
     {:else}
       <table class="w-full text-left text-sm">
         <thead>
-          <tr class="border-b text-gray-500">
+          <tr class="border-b border-border text-muted-foreground">
             <th class="pb-2 font-medium">Code</th>
             <th class="pb-2 font-medium">Name</th>
             <th class="pb-2 font-medium text-right">Actions</th>
@@ -259,14 +270,14 @@
         </thead>
         <tbody>
           {#each currencies as c (c.code)}
-            <tr class="border-b last:border-0">
+            <tr class="border-b border-border last:border-0">
               <td class="py-2 font-medium">{c.code}</td>
-              <td class="py-2 text-gray-600">{c.name || '—'} <span class="text-xs text-gray-400">{currencySymbol(c.code)}</span></td>
+              <td class="py-2 text-muted-foreground">{c.name || '—'} <span class="text-xs text-muted-foreground">{currencySymbol(c.code)}</span></td>
               <td class="py-2 text-right">
                 <button
-                  onclick={() => removeCurrency(c.code)}
+                  onclick={() => requestDeleteCurrency(c.code)}
                   disabled={removingCode === c.code}
-                  class="rounded-lg p-1.5 text-gray-400 hover:text-red-600 disabled:opacity-50"
+                  class="rounded-control p-1.5 text-muted-foreground hover:text-negative disabled:opacity-50"
                   title="Remove currency"
                 >
                   <Trash2 class="h-4 w-4" />
@@ -279,3 +290,14 @@
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete currency"
+  message={`Delete currency ${currencyToDelete}?`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={showDeleteDialog && removingCode === currencyToDelete}
+  onconfirm={removeCurrency}
+/>

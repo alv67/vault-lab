@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (11 Set 2026)
+# VaultLab — Stato Progetto (12 Set 2026)
 
 ## Infrastruttura
 
@@ -440,7 +440,16 @@ e Morningstar permette di cercare sul mercato esatto.
   come nel `PositionChart` del portafoglio.
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo
 - EPIC E (#38) — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
-- EPIC D (#37) — Design system & dark mode
+
+### EPIC D — Design system & dark mode (#37) — ✅ Completata
+Branch unico `feat/D-design-system`, 5 commit:
+- `feat(tokens)` — token semantici (CSS custom properties HSL in `app.css` mappate in `tailwind.config.js` con `<alpha-value>`), store tema a 3 modalità (light/dark/system, **default dark**), script anti-FOUC in `app.html`, `lib/chartTheme.ts` (temi ECharts `vaultlab-light`/`vaultlab-dark`) e `lib/chartPalette.ts` (palette risolta a runtime).
+- `feat(ui)` — sweep dei colori hardcoded (~333 classi palette + hex) verso i token su tutte le pagine/componenti; grafici dark-aware.
+- `feat(ui)` — primitive in `src/lib/components/ui/` (Button, Input, Field, Select, Card, Badge, Modal, ConfirmDialog, Spinner, Skeleton, EmptyState, Table, SegmentedControl, StatCard) + refactor Toaster/ProvenanceBadge; i 4 `confirm()` nativi sostituiti da `ConfirmDialog`.
+- `feat(shell)` — `AppShell` responsive: sidebar collassabile (stato persistito in localStorage), header sticky, UserMenu, ThemeToggle a 3 modalità, MobileDrawer accessibile; `Layout.svelte` rimosso.
+- `feat(theme)` — dark mode di default + rimozione della pagina dev `/settings/theme-tokens`.
+- Fix: label dei donut leggibili in dark (le label ECharts non ereditavano il `textStyle` del tema → fill scuro + bordo bianco).
+- Documentazione: `docs/FRONTEND-GUIDE.en/it.md` (styling/tema, chart, layout) e `docs/RELEASE-NOTES.en/it.md`.
 
 ## Fase 3 — Pianificata
 
