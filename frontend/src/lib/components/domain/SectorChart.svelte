@@ -41,6 +41,10 @@
   // ECharts theme.
   const palette = $derived(resolvePalette(resolved()))
   const otherColor = $derived(chartSemanticColors(resolved()).other)
+  // Pie labels do not inherit the ECharts theme textStyle: without an explicit
+  // color they keep the default dark fill + white text border, which is
+  // unreadable on a dark card ("outlined in white").
+  const labelColor = $derived(VAULTLAB_CHART_THEMES[resolved()].textStyle.color)
 
   const options = $derived.by((): EChartsOption => ({
     color: palette,
@@ -66,6 +70,9 @@
         label: {
           formatter: '{b}: {d}%',
           fontSize: 11,
+          color: labelColor,
+          textBorderColor: 'transparent',
+          textBorderWidth: 0,
         },
         labelLine: { length: 10, length2: 10 },
         data: rows.map((r) => ({

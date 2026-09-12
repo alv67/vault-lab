@@ -68,6 +68,10 @@
   // Series palette consumed by both the donut and the HTML legend below;
   // depends on resolved() so colors (and the {#key} re-init) follow the theme.
   const palette = $derived(resolvePalette(resolved()))
+  // Pie labels do not inherit the ECharts theme textStyle: without an explicit
+  // color they keep the default dark fill + white text border, which is
+  // unreadable on a dark card ("outlined in white").
+  const labelColor = $derived(VAULTLAB_CHART_THEMES[resolved()].textStyle.color)
 
   const options = $derived.by((): EChartsOption => ({
     color: palette,
@@ -88,7 +92,15 @@
         radius: ['45%', '70%'],
         center: ['50%', '50%'],
         avoidLabelOverlap: true,
-        label: mute ? { show: false } : { formatter: '{b}: {d}%', fontSize: 11 },
+        label: mute
+          ? { show: false }
+          : {
+              formatter: '{b}: {d}%',
+              fontSize: 11,
+              color: labelColor,
+              textBorderColor: 'transparent',
+              textBorderWidth: 0,
+            },
         labelLine: mute ? { show: false } : { length: 10, length2: 10 },
         data: pieData,
       },
