@@ -25,9 +25,9 @@
 </script>
 
 <div class="flex h-screen">
-  <aside class="flex w-64 flex-col border-r bg-white">
-    <div class="flex items-center gap-2 border-b px-6 py-4">
-      <Banknote class="h-6 w-6 text-blue-600" />
+  <aside class="flex w-64 flex-col border-r border-border bg-surface">
+    <div class="flex items-center gap-2 border-b border-border px-6 py-4">
+      <Banknote class="h-6 w-6 text-accent-text" />
       <span class="text-lg font-bold">VaultLab</span>
     </div>
     <nav class="flex-1 space-y-1 p-4">
@@ -35,14 +35,14 @@
         {@const Icon = item.icon}
         <a
           href={resolve(item.to)}
-          class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          class="flex items-center gap-3 rounded-control px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
         >
           <Icon class="h-5 w-5" />
           {item.label}
         </a>
       {/each}
     </nav>
-    <div class="relative border-t p-4">
+    <div class="relative border-t border-border p-4">
       {#if menuOpen}
         <button
           class="fixed inset-0 z-10 cursor-default"
@@ -50,23 +50,23 @@
           onclick={() => (menuOpen = false)}
         ></button>
         <div
-          class="absolute bottom-full left-4 z-20 mb-2 w-56 overflow-hidden rounded-lg border bg-white shadow-lg"
+          class="absolute bottom-full left-4 z-20 mb-2 w-56 overflow-hidden rounded-card border border-border bg-surface shadow-raised"
         >
-          <div class="border-b px-4 py-3">
-            <div class="text-sm font-medium text-gray-900">{auth.user?.name || 'User'}</div>
-            <div class="truncate text-xs text-gray-500">{auth.user?.email}</div>
+          <div class="border-b border-border px-4 py-3">
+            <div class="text-sm font-medium text-foreground">{auth.user?.name || 'User'}</div>
+            <div class="truncate text-xs text-muted-foreground">{auth.user?.email}</div>
           </div>
           <a
             href={resolve('/settings')}
             onclick={() => (menuOpen = false)}
-            class="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100"
+            class="flex items-center gap-2 px-4 py-2.5 text-sm text-foreground hover:bg-muted"
           >
             <Settings class="h-4 w-4" />
             Settings
           </a>
           <button
             onclick={logout}
-            class="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
+            class="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-negative hover:bg-negative/10"
           >
             <LogOut class="h-4 w-4" />
             Sign out
@@ -75,15 +75,15 @@
       {/if}
       <button
         onclick={() => (menuOpen = !menuOpen)}
-        class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+        class="flex w-full items-center gap-2 rounded-control px-3 py-2 text-sm text-foreground hover:bg-muted"
       >
         <span
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground"
         >
           {initials()}
         </span>
         <span class="flex-1 truncate text-left font-medium">{auth.user?.name || auth.user?.email || 'User'}</span>
-        <ChevronUp class="h-4 w-4 text-gray-400" />
+        <ChevronUp class="h-4 w-4 text-muted-foreground" />
       </button>
     </div>
   </aside>

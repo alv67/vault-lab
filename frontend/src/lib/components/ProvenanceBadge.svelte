@@ -15,6 +15,8 @@
 
   interface Provenance {
     label: string
+    /** Swatch background class: the chart tokens double as the provenance
+     *  identity colors so the dot keeps working in both themes. */
     dot: string
     /** Long explanation exposed via title/aria. */
     description: string
@@ -23,37 +25,37 @@
   const PROVENANCE: Record<string, Provenance> = {
     manual: {
       label: 'manuale',
-      dot: '#9ca3af',
+      dot: 'bg-chart-muted',
       description: 'Dati modificati manualmente',
     },
     justetf: {
       label: 'da JustETF',
-      dot: '#0ea5e9',
+      dot: 'bg-chart-11',
       description: 'Lista paesi importata da JustETF, non modificata manualmente',
     },
     morningstar: {
       label: 'da Morningstar',
-      dot: '#f59e0b',
+      dot: 'bg-chart-3',
       description: 'Dati importati da Morningstar, non modificati manualmente',
     },
     'morningstar-regions': {
       label: 'da Morningstar (regioni ufficiali)',
-      dot: '#f59e0b',
+      dot: 'bg-chart-3',
       description: 'Regioni ufficiali importate da Morningstar, non modificate manualmente',
     },
     yahoo: {
       label: 'da Yahoo',
-      dot: '#720e9e',
+      dot: 'bg-chart-12',
       description: 'Settori importati da Yahoo, non modificati manualmente',
     },
     derived: {
       label: 'calcolato dai paesi',
-      dot: '#8b5cf6',
+      dot: 'bg-chart-5',
       description: 'Regioni calcolate a partire dai pesi dei paesi',
     },
     'derived-etf': {
       label: 'da JustETF via paesi',
-      dot: '#8b5cf6',
+      dot: 'bg-chart-5',
       description: 'Regioni calcolate dai paesi importati da JustETF',
     },
   }
@@ -70,11 +72,11 @@
 
 {#if info}
   <span
-    class="inline-flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-600"
+    class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
     title={hint}
     aria-label={`${label}: ${hint}`}
   >
-    <span class="h-1.5 w-1.5 rounded-full" style={`background-color: ${info.dot}`}></span>
+    <span class="h-1.5 w-1.5 rounded-full {info.dot}"></span>
     {label}
   </span>
 {/if}

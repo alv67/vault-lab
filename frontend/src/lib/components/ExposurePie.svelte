@@ -7,7 +7,9 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatPercent } from '$lib/format'
   import type { ExposureRow } from '$lib/services/api'
-  import { CHART_PALETTE } from '$lib/chartPalette'
+  import { resolvePalette } from '$lib/chartPalette'
+  import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   use([PieChart, TooltipComponent, CanvasRenderer])
 
@@ -63,8 +65,12 @@
     return slices
   })
 
+  // Series palette consumed by both the donut and the HTML legend below;
+  // depends on resolved() so colors (and the {#key} re-init) follow the theme.
+  const palette = $derived(resolvePalette(resolved()))
+
   const options = $derived.by((): EChartsOption => ({
-    color: CHART_PALETTE,
+    color: palette,
     tooltip: {
       trigger: 'item',
       formatter: (params: unknown) => {
@@ -88,17 +94,17 @@
       },
     ],
   }))
-
-  const palette = CHART_PALETTE
 </script>
 
 {#if rows.length === 0}
-  <div class="flex h-[280px] w-full items-center justify-center text-sm text-gray-400">
+  <div class="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
     Nessuna distribuzione
   </div>
 {:else}
   <div class="h-[240px] w-full">
-    <Chart {init} {options} />
+    {#key resolved()}
+      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+    {/key}
   </div>
   {#if showLegend}
     <div class="mt-2 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
@@ -109,7 +115,7 @@
             style="background-color: {palette[i % palette.length]};"
           ></span>
           <span class="truncate">{r.name}</span>
-          <span class="ml-auto text-gray-500">{formatPercent(Number(r.weight))}</span>
+          <span class="ml-auto text-muted-foreground">{formatPercent(Number(r.weight))}</span>
         </div>
       {/each}
     </div>

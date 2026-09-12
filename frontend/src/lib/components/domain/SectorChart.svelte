@@ -7,6 +7,9 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency, formatPercent } from '$lib/format'
   import type { SectorAllocation } from '$lib/services/api'
+  import { chartSemanticColors, resolvePalette } from '$lib/chartPalette'
+  import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -33,12 +36,14 @@
     return tot > 0 ? (c / tot) * 100 : 100
   })
 
+  // Palette and "Other" grey come from the chart tokens and are re-evaluated
+  // on theme flips; the {#key} block also re-inits the chart with the new
+  // ECharts theme.
+  const palette = $derived(resolvePalette(resolved()))
+  const otherColor = $derived(chartSemanticColors(resolved()).other)
+
   const options = $derived.by((): EChartsOption => ({
-    color: [
-      '#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-      '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-      '#06b6d4', '#a855f7',
-    ],
+    color: palette,
     tooltip: {
       trigger: 'item',
       formatter: (params: unknown) => {
@@ -69,7 +74,7 @@
           // La fetta "Other" (settori fuori dagli 11 GICS canonici) è
           // evidenziata in grigio spento per distinguerla dagli altri.
           itemStyle: r.sector === 'Other' || r.sector === 'Other / Not Classified'
-            ? { color: '#9ca3af' }
+            ? { color: otherColor }
             : undefined,
         })),
       },
@@ -77,26 +82,28 @@
   }))
 </script>
 
-<div class="rounded-xl bg-white p-4 shadow">
+<div class="rounded-card border-border bg-surface p-4 shadow-card">
   <h2 class="mb-4 font-semibold">Allocazione settoriale</h2>
   {#if rows.length === 0}
-    <p class="text-sm text-gray-400">Nessuna allocazione per settore</p>
+    <p class="text-sm text-muted-foreground">Nessuna allocazione per settore</p>
   {:else}
     {#if covered !== undefined && excluded !== undefined && Number(excluded || 0) > 0}
-      <p class="mb-3 text-xs text-gray-500">
+      <p class="mb-3 text-xs text-muted-foreground">
         Copre il {coveragePct.toFixed(1)}% del portafoglio: il resto è in bond, crypto e strumenti non azionari, esclusi per natura.
       </p>
     {/if}
     <div class="flex flex-col gap-4 md:flex-row">
       <div class="w-full md:w-1/2 lg:w-1/3">
         <div class="h-[280px] w-full">
-          <Chart {init} {options} />
+          {#key resolved()}
+            <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+          {/key}
         </div>
       </div>
       <div class="flex-1 overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr class="border-b text-gray-500">
+            <tr class="border-b border-border text-muted-foreground">
               <th class="pb-2">Settore</th>
               <th class="pb-2 text-right">Valore</th>
               <th class="pb-2 text-right">Peso %</th>
@@ -104,7 +111,7 @@
           </thead>
           <tbody>
             {#each data as c (c.sector)}
-              <tr class="border-b last:border-0">
+              <tr class="border-b border-border last:border-0">
                 <td class="py-2 font-medium">{c.sector}</td>
                 <td class="py-2 text-right">{formatCurrency(c.value, currency)}</td>
                 <td class="py-2 text-right font-medium">{formatPercent(c.weight)}</td>

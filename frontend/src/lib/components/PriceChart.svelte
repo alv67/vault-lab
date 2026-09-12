@@ -12,6 +12,9 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency } from '$lib/format'
   import type { SplitInfo } from '$lib/services/api'
+  import { chartSemanticColors, resolvePalette } from '$lib/chartPalette'
+  import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
@@ -49,8 +52,14 @@
     return {}
   })
 
+  // Theme-aware colors: the single close line uses the `chart-1` series
+  // token and split marks the semantic split color, both re-evaluated on
+  // theme flips (the {#key} block below also re-inits the chart).
+  const lineColor = $derived(resolvePalette(resolved())[0])
+  const splitMarkLine = $derived(chartSemanticColors(resolved()).splitMarkLine)
+
   const options = $derived.by((): EChartsOption => ({
-    color: ['#2563eb'],
+    color: [lineColor],
     tooltip: {
       trigger: 'axis',
       formatter: (params: unknown) => {
@@ -106,12 +115,12 @@
               markLine: {
                 symbol: 'none',
                 silent: true,
-                lineStyle: { type: 'dashed', color: '#7c3aed', width: 1 },
+                lineStyle: { type: 'dashed', color: splitMarkLine, width: 1 },
                 label: {
                   show: true,
                   position: 'insideEndTop',
                   formatter: '{b}',
-                  color: '#7c3aed',
+                  color: splitMarkLine,
                   fontSize: 10,
                 },
                 data: splits.map((s) => ({
@@ -127,11 +136,13 @@
 </script>
 
 {#if series.length === 0}
-  <div class="flex h-[340px] w-full items-center justify-center text-sm text-gray-400">
+  <div class="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
     Nessun dato prezzi disponibile
   </div>
 {:else}
   <div class="h-[340px] w-full">
-    <Chart {init} {options} notMerge={false} ondatazoom={() => onDataZoom?.()} />
+    {#key resolved()}
+      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} notMerge={false} ondatazoom={() => onDataZoom?.()} />
+    {/key}
   </div>
 {/if}

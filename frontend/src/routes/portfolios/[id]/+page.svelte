@@ -19,6 +19,7 @@
     type Asset,
   } from '$lib/services/api'
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
+  import { pnlColorClass } from '$lib/ui-colors'
   import PositionChart from '$lib/components/PositionChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
@@ -80,16 +81,8 @@
       weight: c.weight,
     })),
   )
-  const gainLossClass = $derived(
-    summary && Number(summary.gain_loss) >= 0 ? 'text-green-600' : 'text-red-600',
-  )
-  const realizedClass = $derived(
-    summary && Number(summary.realized_gl) >= 0 ? 'text-green-600' : 'text-red-600',
-  )
-
-  function pnlClass(value?: string | number): string {
-    return Number(value ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
-  }
+  const gainLossClass = $derived(pnlColorClass(summary?.gain_loss))
+  const realizedClass = $derived(pnlColorClass(summary?.realized_gl))
 
   onMount(load)
 
@@ -271,38 +264,38 @@
 
 <div class="p-6">
   <h1 class="mb-2 text-2xl font-bold">{portfolio?.name ?? 'Portfolio'}</h1>
-  <p class="mb-6 text-sm text-gray-500">{portfolio?.description}</p>
+  <p class="mb-6 text-sm text-muted-foreground">{portfolio?.description}</p>
 
   <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-    <div class="rounded-xl bg-white p-4 shadow">
-      <p class="text-sm text-gray-500">Value</p>
-      <p class="text-xl font-bold">{formatCurrency(summary?.total_value || 0, currency)}</p>
+    <div class="rounded-card border-border bg-surface p-4 shadow-card">
+      <p class="text-sm text-muted-foreground">Value</p>
+      <p class="text-xl font-bold tabular-nums">{formatCurrency(summary?.total_value || 0, currency)}</p>
     </div>
-    <div class="rounded-xl bg-white p-4 shadow">
-      <p class="text-sm text-gray-500">Realized</p>
-      <p class="text-xl font-bold {realizedClass}">
+    <div class="rounded-card border-border bg-surface p-4 shadow-card">
+      <p class="text-sm text-muted-foreground">Realized</p>
+      <p class="text-xl font-bold tabular-nums {realizedClass}">
         {formatCurrency(summary?.realized_gl || 0, currency)}
       </p>
     </div>
-    <div class="rounded-xl bg-white p-4 shadow">
-      <p class="text-sm text-gray-500">Gain/Loss (open)</p>
-      <p class="text-xl font-bold {gainLossClass}">
+    <div class="rounded-card border-border bg-surface p-4 shadow-card">
+      <p class="text-sm text-muted-foreground">Gain/Loss (open)</p>
+      <p class="text-xl font-bold tabular-nums {gainLossClass}">
         {formatCurrency(summary?.gain_loss || 0, currency)} ({formatPercent(summary?.gain_loss_pct || 0)})
       </p>
     </div>
-    <div class="rounded-xl bg-white p-4 shadow">
-      <p class="text-sm text-gray-500">Assets</p>
-      <p class="text-xl font-bold">{summary?.asset_count || 0}</p>
+    <div class="rounded-card border-border bg-surface p-4 shadow-card">
+      <p class="text-sm text-muted-foreground">Assets</p>
+      <p class="text-xl font-bold tabular-nums">{summary?.asset_count || 0}</p>
     </div>
   </div>
 
   {#if summary?.holdings && summary.holdings.length > 0}
-    <div class="mb-6 rounded-xl bg-white p-4 shadow">
+    <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
       <h2 class="mb-4 font-semibold">Positions</h2>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr class="border-b text-gray-500">
+            <tr class="border-b border-border text-muted-foreground">
               <th class="pb-2">Ticker</th>
               <th class="pb-2 text-right">Qty</th>
               <th class="pb-2 text-right">Cost</th>
@@ -315,29 +308,29 @@
           </thead>
           <tbody>
             {#each summary.holdings as h (h.asset_id)}
-              <tr class="border-b last:border-0">
+              <tr class="border-b border-border last:border-0">
                 <td class="py-2">
-                  <a href={resolve(`/assets/${h.asset_id}`)} class="font-medium text-blue-600 hover:underline">
+                  <a href={resolve(`/assets/${h.asset_id}`)} class="font-medium text-accent-text hover:underline">
                     {h.ticker}
                   </a>
-                  <span class="block text-xs text-gray-500">{h.name}</span>
+                  <span class="block text-xs text-muted-foreground">{h.name}</span>
                 </td>
-                <td class="py-2 text-right">{h.closed ? '-' : h.qty}</td>
-                <td class="py-2 text-right">{h.closed ? '-' : formatCurrency(h.cost, currency)}</td>
-                <td class="py-2 text-right">{h.closed ? '-' : formatCurrency(h.value_pf, currency)}</td>
-                <td class="py-2 text-right font-medium {pnlClass(h.realized)}">
+                <td class="py-2 text-right tabular-nums">{h.closed ? '-' : h.qty}</td>
+                <td class="py-2 text-right tabular-nums">{h.closed ? '-' : formatCurrency(h.cost, currency)}</td>
+                <td class="py-2 text-right tabular-nums">{h.closed ? '-' : formatCurrency(h.value_pf, currency)}</td>
+                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(h.realized)}">
                   {formatCurrency(h.realized, currency)}
                 </td>
-                <td class="py-2 text-right font-medium {pnlClass(h.unrealized)}">
+                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(h.unrealized)}">
                   {h.closed ? '-' : formatCurrency(h.unrealized, currency)}
                 </td>
-                <td class="py-2 text-right font-medium {pnlClass(h.roi)}">
+                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(h.roi)}">
                   {h.closed ? '-' : formatPercent(h.roi)}
                 </td>
                 <td class="py-2">
                   {#if h.closed}
                     <span
-                      class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+                      class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
                     >
                       Closed
                     </span>
@@ -350,14 +343,14 @@
       </div>
     </div>
   {:else}
-    <p class="mb-6 text-sm text-gray-500">No positions</p>
+    <p class="mb-6 text-sm text-muted-foreground">No positions</p>
   {/if}
 
-  <div class="mb-6 rounded-xl bg-white p-4 shadow">
+  <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <h2 class="mb-4 font-semibold">Performance history</h2>
     {#if history && history.series.length > 0}
       <div class="mb-4">
-        <select bind:value={selectedAsset} class="rounded-lg border px-3 py-2 text-sm">
+        <select bind:value={selectedAsset} class="rounded-control border border-input px-3 py-2 text-sm">
           <option value="">Portfolio</option>
           {#each history.assets as a (a.asset_id)}
             <option value={a.asset_id}>{a.ticker} - {a.name}</option>
@@ -374,14 +367,14 @@
         {currency}
       />
     {:else}
-      <p class="text-sm text-gray-400">No data</p>
+      <p class="text-sm text-muted-foreground">No data</p>
     {/if}
   </div>
 
-  <div class="mb-6 rounded-xl bg-white p-4 shadow">
+  <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <h2 class="mb-4 font-semibold">Allocazione per classi</h2>
     {#if classAllocError}
-      <p class="text-sm text-gray-400">Allocazione per classi non disponibile</p>
+      <p class="text-sm text-muted-foreground">Allocazione per classi non disponibile</p>
     {:else if classAlloc && classAllocRows.length > 0}
       <div class="flex flex-col gap-4 md:flex-row">
         <div class="w-full md:w-1/2 lg:w-1/3">
@@ -390,7 +383,7 @@
         <div class="flex-1 overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead>
-              <tr class="border-b text-gray-500">
+              <tr class="border-b border-border text-muted-foreground">
                 <th class="pb-2">Classe</th>
                 <th class="pb-2 text-right">Valore</th>
                 <th class="pb-2 text-right">Peso %</th>
@@ -398,7 +391,7 @@
             </thead>
             <tbody>
               {#each classAlloc.classes as c (c.class)}
-                <tr class="border-b last:border-0">
+                <tr class="border-b border-border last:border-0">
                   <td class="py-2 font-medium">{ASSET_CLASS_LABELS[c.class] ?? c.class}</td>
                   <td class="py-2 text-right">
                     {formatCurrency(c.value, classAlloc.currency)}
@@ -413,16 +406,16 @@
         </div>
       </div>
     {:else}
-      <p class="text-sm text-gray-400">Nessuna allocazione per classi</p>
+      <p class="text-sm text-muted-foreground">Nessuna allocazione per classi</p>
     {/if}
   </div>
 
   <div class="mb-6 flex flex-col gap-4 md:flex-row">
     <div class="w-full md:w-1/2">
       {#if geoAllocError}
-        <div class="rounded-xl bg-white p-4 shadow">
+        <div class="rounded-card border-border bg-surface p-4 shadow-card">
           <h2 class="mb-4 font-semibold">Allocazione geografica</h2>
-          <p class="text-sm text-gray-400">Allocazione geografica non disponibile</p>
+          <p class="text-sm text-muted-foreground">Allocazione geografica non disponibile</p>
         </div>
       {:else}
         <GeographyChart data={geoAlloc?.regions ?? []} {currency} covered={geoAlloc?.covered_value} excluded={geoAlloc?.excluded_value} />
@@ -430,9 +423,9 @@
     </div>
     <div class="w-full md:w-1/2">
       {#if sectorAllocError}
-        <div class="rounded-xl bg-white p-4 shadow">
+        <div class="rounded-card border-border bg-surface p-4 shadow-card">
           <h2 class="mb-4 font-semibold">Allocazione settoriale</h2>
-          <p class="text-sm text-gray-400">Allocazione settoriale non disponibile</p>
+          <p class="text-sm text-muted-foreground">Allocazione settoriale non disponibile</p>
         </div>
       {:else}
         <SectorChart data={sectorAlloc?.sectors ?? []} {currency} covered={sectorAlloc?.covered_value} excluded={sectorAlloc?.excluded_value} />
@@ -443,14 +436,14 @@
   <div class="mb-4 flex items-center gap-2">
     <button
       onclick={() => (showTx ? closeTx() : openNewTx())}
-      class="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+      class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover"
     >
       <Plus class="h-4 w-4" />
       Add Transaction
     </button>
     <button
       onclick={exportPortfolio}
-      class="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+      class="flex items-center gap-2 rounded-control border border-border px-4 py-2 text-sm text-foreground hover:bg-muted"
     >
       <Download class="h-4 w-4" />
       Export
@@ -458,12 +451,12 @@
   </div>
 
   {#if showTx}
-    <div class="mb-6 rounded-xl border bg-white p-4">
+    <div class="mb-6 rounded-card border border-border bg-surface p-4">
       <h3 class="mb-3 font-semibold">{editingTx ? 'Edit Transaction' : 'New Transaction'}</h3>
       <div class="grid grid-cols-2 gap-3">
         <select
           bind:value={txForm.asset_id}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         >
           <option value="">Select asset</option>
           {#each assets ?? [] as a (a.id)}
@@ -472,7 +465,7 @@
         </select>
         <select
           bind:value={txForm.type}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         >
           <option value="buy">Buy</option>
           <option value="sell">Sell</option>
@@ -485,41 +478,41 @@
             min="0"
             placeholder="Amount"
             bind:value={txDividendAmount}
-            class="rounded-lg border px-3 py-2 text-sm"
+            class="rounded-control border border-input px-3 py-2 text-sm"
           />
         {:else}
           <input
             type="number"
             placeholder="Quantity"
             bind:value={txForm.quantity}
-            class="rounded-lg border px-3 py-2 text-sm"
+            class="rounded-control border border-input px-3 py-2 text-sm"
           />
           <input
             type="number"
             step="0.01"
             placeholder="Price"
             bind:value={txForm.price}
-            class="rounded-lg border px-3 py-2 text-sm"
+            class="rounded-control border border-input px-3 py-2 text-sm"
           />
         {/if}
         <input
           type="date"
           bind:value={txForm.date}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         />
         <input
           type="number"
           step="0.01"
           placeholder="Fees"
           bind:value={txForm.fees}
-          class="rounded-lg border px-3 py-2 text-sm"
+          class="rounded-control border border-input px-3 py-2 text-sm"
         />
       </div>
       <div class="mt-3 flex items-center gap-3">
         <button
           onclick={saveTransaction}
           disabled={!canSave() || txSaving}
-          class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+          class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
         >
           {txSaving ? 'Saving...' : editingTx ? 'Save Changes' : 'Save'}
         </button>
@@ -527,7 +520,7 @@
           <button
             onclick={handleDeleteEditing}
             disabled={deleting}
-            class="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+            class="flex items-center gap-1.5 rounded-control bg-negative px-4 py-2 text-sm text-accent-foreground hover:bg-negative/90 disabled:opacity-50"
           >
             <Trash2 class="h-4 w-4" />
             Delete
@@ -535,7 +528,7 @@
         {/if}
         <button
           onclick={closeTx}
-          class="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
+          class="rounded-control px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
         >
           Cancel
         </button>
@@ -543,48 +536,48 @@
     </div>
   {/if}
 
-  <div class="rounded-xl bg-white p-4 shadow">
+  <div class="rounded-card border-border bg-surface p-4 shadow-card">
     <h2 class="mb-4 font-semibold">Transactions</h2>
     <table class="w-full text-left text-sm">
       <thead>
-        <tr class="border-b text-gray-500">
+        <tr class="border-b border-border text-muted-foreground">
           <th class="pb-2">Date</th>
           <th class="pb-2">Asset</th>
           <th class="pb-2">Type</th>
-          <th class="pb-2">Quantity</th>
-          <th class="pb-2">Price</th>
-          <th class="pb-2">Total</th>
+          <th class="pb-2 text-right">Quantity</th>
+          <th class="pb-2 text-right">Price</th>
+          <th class="pb-2 text-right">Total</th>
           <th class="pb-2 text-right">Actions</th>
         </tr>
       </thead>
       <tbody>
         {#each transactions ?? [] as tx (tx.id)}
-          <tr class="border-b last:border-0">
+          <tr class="border-b border-border last:border-0">
             <td class="py-2">{new Date(tx.date).toLocaleDateString()}</td>
             <td class="py-2">
               <span class="font-medium">{tx.asset_ticker}</span>
-              <span class="ml-1 text-xs text-gray-500">{tx.asset_name}</span>
+              <span class="ml-1 text-xs text-muted-foreground">{tx.asset_name}</span>
             </td>
             <td class="py-2">
               <span
                 class="rounded-full px-2 py-0.5 text-xs font-medium {tx.type === 'buy'
-                  ? 'bg-green-100 text-green-700'
+                  ? 'bg-positive/10 text-positive'
                   : tx.type === 'sell'
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-blue-100 text-blue-700'}"
+                    ? 'bg-negative/10 text-negative'
+                    : 'bg-accent/10 text-accent-text'}"
               >
                 {tx.type}
               </span>
             </td>
-            <td class="py-2">{tx.quantity}</td>
-            <td class="py-2">{formatCurrency(tx.price, currency)}</td>
-            <td class="py-2">
+            <td class="py-2 text-right tabular-nums">{tx.quantity}</td>
+            <td class="py-2 text-right tabular-nums">{formatCurrency(tx.price, currency)}</td>
+            <td class="py-2 text-right tabular-nums">
               {formatCurrency(Number(tx.quantity) * Number(tx.price), currency)}
             </td>
             <td class="py-2 text-right">
               <button
                 onclick={() => startEdit(tx)}
-                class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                 title="Edit transaction"
               >
                 <Pencil class="h-4 w-4" />

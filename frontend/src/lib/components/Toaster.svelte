@@ -7,11 +7,11 @@
   <div class="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2">
     {#each toasts as t (t.id)}
       <div
-        class="pointer-events-auto flex w-72 items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg {t.type === 'success'
-          ? 'bg-green-600 text-white'
+        class="pointer-events-auto flex w-72 items-center gap-2 rounded-control px-4 py-3 text-sm font-medium shadow-raised {t.type === 'success'
+          ? 'bg-positive text-accent-foreground'
           : t.type === 'warning'
-            ? 'bg-amber-500 text-white'
-            : 'bg-red-600 text-white'}"
+            ? 'bg-warning text-accent-foreground'
+            : 'bg-negative text-accent-foreground'}"
       >
         {#if t.type === 'success'}
           <CheckCircle2 class="h-4 w-4 shrink-0" />

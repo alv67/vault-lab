@@ -36,6 +36,8 @@ export const CHART_MUTED: Record<ResolvedTheme, string> = {
 export interface ChartSemanticColors {
   /** Flat cost-basis reference line (PositionChart). */
   costBasis: string
+  /** Market-value line (PositionChart). */
+  marketValue: string
   /** Realized P/L step line (PositionChart). */
   realized: string
   /** Stock-split markLine (PriceChart / PositionChart). */
@@ -45,8 +47,20 @@ export interface ChartSemanticColors {
 }
 
 export const CHART_SEMANTIC_COLORS: Record<ResolvedTheme, ChartSemanticColors> = {
-  light: { costBasis: '#64748b', realized: '#f59e0b', splitMarkLine: '#7c3aed', other: CHART_MUTED.light },
-  dark: { costBasis: '#94a3b8', realized: '#fbbf24', splitMarkLine: '#a78bfa', other: CHART_MUTED.dark },
+  light: {
+    costBasis: '#64748b',
+    marketValue: '#16a34a',
+    realized: '#f59e0b',
+    splitMarkLine: '#7c3aed',
+    other: CHART_MUTED.light,
+  },
+  dark: {
+    costBasis: '#94a3b8',
+    marketValue: '#4ade80',
+    realized: '#fbbf24',
+    splitMarkLine: '#a78bfa',
+    other: CHART_MUTED.dark,
+  },
 }
 
 /** Read the 12 `--chart-N` tokens from the document root. Null when unavailable. */
@@ -106,14 +120,14 @@ export interface ChartRow {
 // Restituisce il colore che ECharts assegna a una riga in un pie chart:
 // i colori sono dati per indice sulle sole righe con weight > 0 (ordine della
 // palette), quindi il quadratino in tabella combacia sempre con la fetta.
-// `palette` defaulta alla light per non cambiare comportamento prima della
-// migrazione dei componenti (D.1b): i chiamanti theme-aware passeranno
-// resolvePalette().
-export function colorForRow(row: ChartRow, rows: ChartRow[], palette: string[] = CHART_PALETTE): string {
+// `palette` è il tema resolved corrente (resolvePalette() dei chiamanti
+// theme-aware, D.1b); le righe non visibili in grafico (peso 0) usano il
+// token muted del tema attualmente dipinto.
+export function colorForRow(row: ChartRow, rows: ChartRow[], palette: string[]): string {
   const visible = rows.filter((r) => Number(r.weight) > 0)
   const index = visible.findIndex((r) => r.name === row.name)
   if (index < 0) {
-    return CHART_MUTED.light
+    return CHART_MUTED[paintedTheme()]
   }
   return palette[index % palette.length]
 }

@@ -7,13 +7,11 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency } from '$lib/format'
   import type { DashboardHistory } from '$lib/services/api'
+  import { resolvePalette } from '$lib/chartPalette'
+  import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   use([LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
-
-  const DEFAULT_COLORS = [
-    '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
-    '#8b5cf6', '#ec4899', '#14b8a6', '#f97316',
-  ]
 
   interface ChartRow {
     date: string
@@ -31,15 +29,21 @@
   let {
     data = [] as ChartRow[],
     histories = [] as DashboardHistory[],
-    colors = DEFAULT_COLORS,
+    colors = null as string[] | null,
   } = $props()
 
   const currencyById = $derived(
     Object.fromEntries(histories.map((h) => [h.portfolio_id, h.currency])),
   )
 
+  // Theme-aware series palette: falls back to the resolved chart tokens unless
+  // the caller explicitly overrides the colors (mirrors `resolved()` so the
+  // options re-evaluate — and the {#key} below re-inits the chart — on theme
+  // flips).
+  const seriesColors = $derived(colors ?? resolvePalette(resolved()))
+
   const options = $derived.by((): EChartsOption => ({
-    color: colors,
+    color: seriesColors,
     tooltip: {
       trigger: 'axis',
       formatter: (params: unknown) => {
@@ -87,5 +91,10 @@
 </script>
 
 <div class="h-[320px] w-full">
-  <Chart {init} {options} />
+  <!-- {#key} re-inits the chart when the theme flips so the ECharts theme
+       object passed below is picked up (svelte-echarts only reads `theme`
+       at init time). -->
+  {#key resolved()}
+    <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+  {/key}
 </div>
