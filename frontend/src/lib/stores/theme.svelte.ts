@@ -8,12 +8,12 @@ export const THEME_STORAGE_KEY = 'vaultlab-theme'
 /**
  * Theme used when nothing valid is persisted in localStorage.
  *
- * Kept on `'light'` in D.1a so the token layer can ship without touching any
- * page colours. ⚠ Flip to `'dark'` in the final EPIC D commit (and in the
- * pre-paint bootstrap script in `src/app.html`) — only once every page and
- * component has migrated to the semantic tokens.
+ * Dark is the product default since D.4: every surface now reads the semantic
+ * tokens, so the staging note on shipping the token layer is gone. The
+ * pre-paint bootstrap script in `src/app.html` mirrors this fallback — keep
+ * the two in sync.
  */
-export const DEFAULT_MODE: ThemeMode = 'light'
+export const DEFAULT_MODE: ThemeMode = 'dark'
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'dark' || value === 'system'

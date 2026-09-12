@@ -11,8 +11,8 @@
    *
    * The active entry is the item whose path is the *longest* prefix of the
    * current URL (with `/` matching exactly): only one link ever gets
-   * `aria-current="page"`, so `/settings/health` highlights Health alone,
-   * while the dev-only `/settings/theme-tokens` highlights Settings.
+   * `aria-current="page"`, so `/settings/health` highlights Health alone
+   * and `/settings` alone highlights Settings.
    */
   type IconType = typeof LayoutDashboard
 
