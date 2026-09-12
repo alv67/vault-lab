@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { Activity, ChevronDown, LogOut, Settings } from 'lucide-svelte'
+  import { ChevronDown, LogOut } from 'lucide-svelte'
   import { afterNavigate } from '$app/navigation'
-  import { resolve } from '$app/paths'
   import { auth, logout } from '$lib/stores/auth.svelte'
   import Button from '../ui/Button.svelte'
   import { cx } from '../ui/utils'
 
   /**
-   * Account menu (EPIC D.3): initials avatar + popup with Settings, Health
-   * and Sign out. Rendered twice by the shell — bottom of the desktop
+   * Account menu (EPIC D.3): initials avatar + minimal popup with the user
+   * identity (name/email) and Sign out. Settings/Health navigation lives in
+   * the sidebar (`SidebarNav`), not here, to avoid duplicate entry points.
+   * Rendered twice by the shell — bottom of the desktop
    * sidebar (`direction="up"`, optional `compact` for the icon rail) and in
    * the header on mobile (`direction="down"`, `align="end"`, `compact`) —
    * hence the placement props instead of a hardcoded position.
@@ -119,24 +120,6 @@
         <div class="truncate text-xs text-muted-foreground">{auth.user?.email}</div>
       </div>
       <div class="flex flex-col p-1">
-        <Button href={resolve('/settings')} variant="ghost" class="w-full" onclick={() => (open = false)}>
-          <span class="flex w-full items-center gap-2">
-            <Settings class="h-4 w-4 shrink-0" />
-            Settings
-          </span>
-        </Button>
-        <Button
-          href={resolve('/settings/health')}
-          variant="ghost"
-          class="w-full"
-          onclick={() => (open = false)}
-        >
-          <span class="flex w-full items-center gap-2">
-            <Activity class="h-4 w-4 shrink-0" />
-            Health
-          </span>
-        </Button>
-        <div class="mx-2 my-1 h-px bg-border" role="separator"></div>
         <Button variant="ghost" class="w-full" onclick={logout}>
           <span class="flex w-full items-center gap-2 text-negative">
             <LogOut class="h-4 w-4 shrink-0" />
