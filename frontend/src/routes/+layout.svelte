@@ -5,6 +5,7 @@
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { auth, initAuth } from '$lib/stores/auth.svelte'
+  import '$lib/stores/theme.svelte' // side effect: theme listeners + <html class="dark"> sync
   import { assetApi } from '$lib/services/api'
   import Layout from '$lib/components/Layout.svelte'
   import Toaster from '$lib/components/Toaster.svelte'
