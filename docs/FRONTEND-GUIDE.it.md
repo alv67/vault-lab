@@ -170,17 +170,19 @@ frontend/
 ├── nginx.conf              # file statici + proxy /api/ verso backend:8080
 ├── static/vault.svg        # favicon
 └── src/
-    ├── app.html            # HTML radice (classi body, favicon, titolo)
-    ├── app.css             # @tailwind base/components/utilities
+    ├── app.html            # HTML radice (bootstrap tema, meta theme-color, favicon, titolo)
+    ├── app.css             # @tailwind + token semantici (:root / .dark) + base layer
     ├── app.d.ts            # namespace App di SvelteKit (segnaposto)
     ├── lib/                # codice condiviso (la "parte interessante")
-    │   ├── components/     # Layout, Toaster + i 4 wrapper ECharts
+    │   ├── components/     # primitive ui/, layout/ (AppShell), Toaster + wrapper ECharts
     │   ├── services/api.ts # l'unico client API (capitolo 5)
-    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts (rune Svelte 5)
+    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts, theme.svelte.ts (rune Svelte 5)
+    │   ├── chartPalette.ts # palette serie + risoluzione token a runtime (dark-aware)
+    │   ├── chartTheme.ts   # temi ECharts registrati per light/dark
     │   └── format.ts       # formattatori + etichette classi (capitolo 6)
     └── routes/             # le pagine
         ├── +layout.ts      # ssr=false, prerender=false
-        ├── +layout.svelte  # guardia auth, guscio app, Toaster
+        ├── +layout.svelte  # guardia auth, AppShell, Toaster
         ├── +page.svelte    # Dashboard (/)
         ├── login/          # login + registrazione (una pagina, un toggle)
         ├── assets/         # elenco titoli + creazione (autocomplete)
@@ -361,7 +363,9 @@ Ogni componente grafico segue lo stesso schema:
 </script>
 
 <div class="h-[340px] w-full">
-  <Chart {init} {options} />
+  {#key resolved()}
+    <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+  {/key}
 </div>
 ```
 
@@ -370,6 +374,28 @@ La chiamata `use(...)` registra solo i moduli di cui il grafico ha bisogno
 `<Chart>`, che inizializza l'istanza al mount. Le opzioni sono dichiarate come
 `EChartsOption` e ricalcolate con `$derived.by`, così il grafico reagisce ai
 cambiamenti di `$props`.
+
+### Grafici dark-aware
+
+Anche i grafici seguono il tema (capitolo 8). L'helper `resolved()` dello store
+del tema dice se l'app sta disegnando in chiaro o scuro; il blocco
+`{#key resolved()}` forza il wrapper a **reinizializzare** il grafico quando il
+tema cambia, perché `svelte-echarts` legge la prop `theme` solo una volta al
+mount. Due helper lo rendono possibile:
+
+- `lib/chartTheme.ts` registra due temi ECharts (`vaultlab-light`,
+  `vaultlab-dark`) costruiti dagli stessi token del CSS (colori di assi,
+  legenda, tooltip) e li espone come `VAULTLAB_CHART_THEMES`;
+- `lib/chartPalette.ts` espone `resolvePalette()` (i colori serie
+  `--chart-1..12`, letti dal DOM e messi in cache per tema) e
+  `chartSemanticColors()` per le linee speciali (cost basis, realizzato,
+  marcatori split, fetta "Other").
+
+Le label delle torte richiedono un colore esplicito: a differenza di assi e
+legenda, le label delle pie ECharts **non** ereditano il `textStyle` del tema,
+quindi ogni donut imposta `label.color` dal foreground del tema e disattiva il
+bordo bianco di default (altrimenti, in scuro, le label apparirebbero come testo
+scuro contornato di bianco).
 
 ### I wrapper dei grafici
 
@@ -410,35 +436,85 @@ date con `new Date(...).toLocaleDateString()`.
 
 ---
 
-## 8. Stile e UX
+## 8. Stile, design system e dark mode
 
-- **Tailwind CSS 3.4**: configurato in `tailwind.config.js` (contenuto = tutti
-  i `.svelte`/`.ts` sotto `src`, nessun tema custom), caricato tramite
-  `app.css` (le tre direttive `@tailwind`) e PostCSS (`postcss.config.js`:
-  `tailwindcss` + `autoprefixer`).
-- **Classi utility, nessuna libreria di componenti**: le card sono il pattern
-  ricorrente `rounded-xl bg-white p-4 shadow`; il colore principale è il
-  blue-600 (`bg-blue-600`, `text-blue-600`); guadagni/verdi con green-600,
-  perdite con red-600, avvisi con amber-500.
+La UI si basa su un piccolo design system interno introdotto nell'**EPIC D**.
+
+### Token semantici
+
+I colori non sono più scritti direttamente nelle pagine. `tailwind.config.js`
+definisce un insieme di token di colore **semantici** — `background`,
+`foreground`, `surface`, `surface-raised`, `muted`, `muted-foreground`,
+`border`, `input`, `ring`, `accent` (+ `accent-hover`/`accent-foreground`/
+`accent-text`), `positive`, `negative`, `warning`, `overlay`, `chart-1..12`,
+`chart-muted` — mappati su custom property CSS definite in `app.css` (`:root` e
+`.dark`). Poiché i valori sono terne HSL composte con
+`hsl(var(--token) / <alpha-value>)`, i modificatori di opacità funzionano
+(`bg-accent/10`).
+
+- Raggi: `rounded-card` / `rounded-control`; elevazione: `shadow-card` /
+  `shadow-raised`; focus coerente: la classe `.focus-ring`.
+- Tailwind è caricato tramite `app.css` (le tre direttive `@tailwind`) e
+  PostCSS (`postcss.config.js`: `tailwindcss` + `autoprefixer`).
+- `lib/ui-colors.ts` centralizza i colori testo di P&L (`pnlColorClass`,
+  `totalColorClass`), prima duplicati in quattro pagine.
+
+### Dark mode
+
+- **Lo scuro è il default**; l'utente può scegliere **Chiaro**, **Scuro** o
+  **Sistema** (segue l'OS) dal selettore del tema nell'header.
+- La scelta è salvata in `localStorage` (`vaultlab-theme`) ed è gestita da
+  `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`); è
+  sincronizzata tra le schede e segue i cambi dell'OS in modalità `system`.
+- Uno script inline in `app.html` imposta la classe `.dark` **prima del primo
+  paint**, così un reload in scuro non mostra mai un lampo bianco (niente FOUC).
+  `darkMode: 'class'` nella config di Tailwind fa sì che una sola classe cambi
+  tutti i token.
+
+### Primitive UI
+
+I componenti riusabili vivono in `src/lib/components/ui/`: `Button` (varianti
+primary/secondary/outline/ghost/danger/link, dimensioni, loading), `Input`,
+`Textarea`, `Select`, `Field`, `Card` (+ `CardHeader`/`CardContent`), `Badge`,
+`Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, le primitive
+`Table` (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` e
+`StatCard`. Le pagine e la shell le riusano invece di duplicare markup. Le
+azioni distruttive usano `ConfirmDialog` al posto del `confirm()` nativo del
+browser.
+
+### La shell dell'app
+
+`src/lib/components/layout/` contiene la shell responsive: `AppShell` (la
+radice, `h-dvh` + skip-link), `Sidebar` (collassabile a rail di sole icone; lo
+stato è persistito in `localStorage['vaultlab-sidebar']`), `SidebarNav` (voce
+attiva derivata dall'URL), `AppHeader` (sticky, con selettore tema e menu
+utente), `UserMenu`, `ThemeToggle` e `MobileDrawer` (sotto `lg`: off-canvas con
+overlay, focus trap e ripristino). Ha sostituito il vecchio `Layout.svelte`
+fisso.
+
+### Icone, toast e lingua
+
 - **Icone**: `lucide-svelte`. Esempi: `LayoutDashboard`, `Briefcase`,
-  `Banknote`, `Settings`, `LogOut`, `ChevronUp` (shell app); `Plus`, `Trash2`,
+  `Banknote`, `Settings`, `LogOut`, `PanelLeft` (shell app); `Plus`, `Trash2`,
   `Pencil`, `Download`, `Upload`, `Search`, `Loader2`, `EllipsisVertical`,
   `X`, `ExternalLink`, `Activity` (pagine); `CheckCircle2`, `XCircle`,
   `AlertTriangle` (toast).
-- **Toast** (sostituiscono `react-hot-toast` della vecchia app): un piccolo
-  store a rune in `lib/stores/toast.svelte.ts` (`toast.success/error/warning`)
-  aggiunge elementi che si chiudono da soli dopo 3,5 s (4,5 s per i warning);
-  `lib/components/Toaster.svelte` mostra la pila fissa in alto a destra con
-  card colorate (verde/ambra/rossa) e icone. `<Toaster />` è montato una volta
-  in `routes/+layout.svelte`, quindi ogni pagina può fare toast.
+- **Toast**: un piccolo store a rune in `lib/stores/toast.svelte.ts`
+  (`toast.success/error/warning`, più `toast.dismiss`) aggiunge elementi che si
+  chiudono da soli dopo 3,5 s (4,5 s per i warning); `lib/components/Toaster.svelte`
+  mostra la pila fissa in alto a destra con card **theme-aware**
+  (`surface-raised`), icone semantiche, pulsante di chiusura e `aria-live`
+  (`role="alert"` per gli errori). `<Toaster />` è montato una volta in
+  `routes/+layout.svelte`, quindi ogni pagina può fare toast.
 - **Responsive / mobile-first**: flex e grid si adattano per breakpoint
   (`flex flex-col gap-4 md:flex-row`, `grid grid-cols-2 md:grid-cols-4`,
   `sm:grid-cols-2 lg:grid-cols-3`, `md:grid-cols-3 lg:grid-cols-6`), le tabelle
-  lunghe sono avvolte in `overflow-x-auto`, e la shell
-  (`lib/components/Layout.svelte`) è una sidebar fissa (`w-64`) + area
-  principale scrollabile, usabile anche su schermi stretti.
-- **App-wide**: `app.html` imposta il body a `bg-gray-50 text-gray-900
-  antialiased`, la lingua `en` e la favicon `/vault.svg`.
+  lunghe sono avvolte in `overflow-x-auto`, e sotto `lg` la shell diventa un
+  drawer mobile.
+- **App-wide**: `app.html` mantiene `lang="en"` e la favicon `/vault.svg`,
+  imposta i meta `theme-color` chiaro/scuro ed esegue il bootstrap del tema
+  pre-paint; background/foreground del body ora arrivano dai token via
+  `app.css`.
 - **Nota sulla lingua**: la UI è volutamente mista inglese/italiano — la
   maggior parte dei titoli è in inglese, mentre diverse etichette, stati vuoti
   e messaggi di toast sono in italiano ("cambio mancante", "Nessuna allocazione
@@ -473,8 +549,9 @@ Uno store a rune che contiene `auth.user` e `auth.isLoading`:
 - quando lo stato è pronto: gli utenti non autenticati su qualsiasi pagina
   tranne `/login` vengono reindirizzati con `goto('/login', { replaceState:
   true })`; gli utenti autenticati su `/login` vengono mandati a `/`;
-- per gli utenti autenticati disegna la shell (`Layout.svelte`) attorno al
-  contenuto della pagina;
+- per gli utenti autenticati disegna la shell responsive
+  (`lib/components/layout/AppShell.svelte`, capitolo 8) attorno al contenuto
+  della pagina;
 - monta `<Toaster />`;
 - una volta per caricamento di pagina (flag `synced`) chiama
   `assetApi.sync()` (`POST /assets/sync`) — la task in background del backend

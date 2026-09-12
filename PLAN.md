@@ -58,6 +58,7 @@
 - [x] Per-country exposure: tabella `asset_country_weights` + 3 dimensioni (countries/regions/sectors) — **EPIC B.13 (#58)**
 - [x] Morningstar exposure source: resolver custom (bootstrap Chromium headless per WAF+JWT, poi SAL service via requests), rotta backend `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend — **EPIC B.14 (#59)**
 - [x] Follow-up B.13/B.14: fetch provider come anteprima non persistente, cache Redis (TTL + `?refresh=1`), provenienza persistita (sorgente + data), prefill settori da Morningstar, redesign modali geo/settore (paesi-first, badge sorgente) — **PR #67**
+- [x] Design system & dark mode: token semantici + tema a 3 modalità (default dark), sweep colori, primitive `ui/`, AppShell responsive con sidebar collassabile e ThemeToggle — **EPIC D (#37)**
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -188,6 +189,7 @@ il **per-country exposure storage** (B.13, #58: tabella `asset_country_weights`,
 countries/regions/sectors) e **Morningstar come fonte esposizione** (B.14, #59: resolver custom con
 bootstrap Chromium headless per WAF+JWT, rotta backend
 `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend).
-Poi EPIC C (metric di rischio), EPIC D/E (design system e pagine dominio), e i rimanenti item
-di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
+Poi EPIC D (design system e dark mode, completata: token, tema a 3 modalità con default dark,
+primitive `ui/` e nuovo AppShell responsive), EPIC C (metric di rischio) ed EPIC E (pagine dominio),
+e i rimanenti item di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
 

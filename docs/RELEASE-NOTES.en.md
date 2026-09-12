@@ -1,5 +1,14 @@
 # Release Notes
 
+## Unreleased
+
+### Features
+- New dark theme, enabled by default, with Light / Dark / System options
+- Redesigned navigation: collapsible sidebar, top header with the theme selector and the user menu, and a slide-in drawer on mobile
+- Consistent theme-aware colors across every page and chart, so the app is readable in both light and dark mode
+- Destructive actions now use an in-app confirmation dialog instead of the browser's native prompt
+- Notifications (toasts) restyled to match the theme and made accessible to screen readers
+
 ## v0.1.0 — 25 Aug 2026 (first official release)
 
 ### Features

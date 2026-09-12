@@ -1,5 +1,14 @@
 # Release Notes
 
+## Unreleased
+
+### Nuove funzionalità
+- Nuovo tema scuro, attivo di default, con le opzioni Chiaro / Scuro / Sistema
+- Navigazione ridisegnata: sidebar collassabile, header in alto con selettore del tema e menu utente, e drawer a scomparsa su mobile
+- Colori coerenti con il tema su tutte le pagine e i grafici, così l'interfaccia è leggibile sia in chiaro sia in scuro
+- Le azioni distruttive ora usano una finestra di conferma dell'app invece del prompt nativo del browser
+- Le notifiche (toast) sono state ridisegnate in linea col tema e rese accessibili agli screen reader
+
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 
 ### Nuove funzionalità
