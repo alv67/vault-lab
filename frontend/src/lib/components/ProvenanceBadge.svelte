@@ -7,7 +7,13 @@
    * A null/empty `updatedAt` means the shown source is not persisted yet
    * (unsaved prefill or fresh manual edit): the badge shows the label only,
    * and the date appears after the next successful save.
+   *
+   * Built on the design-system `Badge` (EPIC D.2): the outline variant gives
+   * the pill border, while `bg-surface` + a muted text tone keep the original
+   * subtle look; the provenance identity dots stay on the chart tokens.
    */
+  import Badge from '$lib/components/ui/Badge.svelte'
+
   let {
     source = null as string | null,
     updatedAt = null as string | null,
@@ -71,12 +77,13 @@
 </script>
 
 {#if info}
-  <span
-    class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+  <Badge
+    variant="outline"
+    class="bg-surface px-2 text-muted-foreground"
     title={hint}
     aria-label={`${label}: ${hint}`}
   >
-    <span class="h-1.5 w-1.5 rounded-full {info.dot}"></span>
+    <span class="h-1.5 w-1.5 shrink-0 rounded-full {info.dot}"></span>
     {label}
-  </span>
+  </Badge>
 {/if}

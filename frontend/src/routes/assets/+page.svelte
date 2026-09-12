@@ -4,6 +4,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { assetApi, settingsApi, type Asset, type AssetLookupResult, type Currency } from '$lib/services/api'
   import { Plus, Loader2, Search, Trash2 } from 'lucide-svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
 
   const defaultForm = () => ({
     ticker: '',
@@ -23,6 +24,11 @@
   let loading = $state(true)
   let creating = $state(false)
   let currencies = $state<Currency[]>([])
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let deleting = $state(false)
+  let assetToDelete = $state<{ id: string; ticker: string } | null>(null)
 
   let lookupResults = $state<AssetLookupResult[] | null>(null)
   let lookupLoading = $state(false)
@@ -119,8 +125,15 @@
     }
   }
 
-  async function deleteAsset(id: string, ticker: string): Promise<void> {
-    if (!confirm(`Delete ${ticker}?`)) return
+  function requestDeleteAsset(id: string, ticker: string): void {
+    assetToDelete = { id, ticker }
+    showDeleteDialog = true
+  }
+
+  async function deleteAsset(): Promise<void> {
+    if (!assetToDelete) return
+    const { id } = assetToDelete
+    deleting = true
     try {
       await assetApi.remove(id)
       assets = await assetApi.list()
@@ -128,6 +141,8 @@
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Delete failed'
       toast.error(message)
+    } finally {
+      deleting = false
     }
   }
 
@@ -289,7 +304,7 @@
             <td class="py-2">{a.country || '-'}</td>
             <td class="py-2 text-right">
               <button
-                onclick={() => deleteAsset(a.id, a.ticker)}
+                onclick={() => requestDeleteAsset(a.id, a.ticker)}
                 class="rounded-control p-1.5 text-muted-foreground hover:bg-negative/10 hover:text-negative"
                 title="Delete asset"
               >
@@ -302,3 +317,14 @@
     </table>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete asset"
+  message={`Delete ${assetToDelete?.ticker ?? ''}?`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={deleting}
+  onconfirm={deleteAsset}
+/>

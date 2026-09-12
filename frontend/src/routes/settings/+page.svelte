@@ -6,6 +6,7 @@
   import { currencySymbol } from '$lib/format'
   import { Trash2, Activity } from 'lucide-svelte'
   import { resolve } from '$app/paths'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   
   let name = $state(auth.user?.name ?? '')
   let email = $state(auth.user?.email ?? '')
@@ -23,6 +24,10 @@
 
   let addingCurrency = $state(false)
   let removingCode = $state('')
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let currencyToDelete = $state('')
 
   onMount(async () => {
     try {
@@ -71,8 +76,14 @@
     }
   }
 
-  async function removeCurrency(code: string): Promise<void> {
-    if (!confirm(`Delete currency ${code}?`)) return
+  function requestDeleteCurrency(code: string): void {
+    currencyToDelete = code
+    showDeleteDialog = true
+  }
+
+  async function removeCurrency(): Promise<void> {
+    const code = currencyToDelete
+    if (!code) return
     removingCode = code
     try {
       await settingsApi.deleteCurrency(code)
@@ -264,7 +275,7 @@
               <td class="py-2 text-muted-foreground">{c.name || '—'} <span class="text-xs text-muted-foreground">{currencySymbol(c.code)}</span></td>
               <td class="py-2 text-right">
                 <button
-                  onclick={() => removeCurrency(c.code)}
+                  onclick={() => requestDeleteCurrency(c.code)}
                   disabled={removingCode === c.code}
                   class="rounded-control p-1.5 text-muted-foreground hover:text-negative disabled:opacity-50"
                   title="Remove currency"
@@ -279,3 +290,14 @@
     {/if}
   </div>
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete currency"
+  message={`Delete currency ${currencyToDelete}?`}
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={showDeleteDialog && removingCode === currencyToDelete}
+  onconfirm={removeCurrency}
+/>

@@ -1,27 +1,46 @@
 <script lang="ts">
-  import { toasts } from '$lib/stores/toast.svelte'
-  import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-svelte'
+  import { toast, toasts } from '$lib/stores/toast.svelte'
+  import { CheckCircle2, XCircle, AlertTriangle, X } from 'lucide-svelte'
+
+  /**
+   * Toast viewport (EPIC D.2): surface-raised cards with a semantic icon
+   * color instead of saturated fills. The wrapper is always mounted with
+   * `aria-live="polite"` (live regions must exist before content arrives);
+   * error toasts additionally carry `role="alert"` so they interrupt.
+   *
+   * Z-index: toasts sit at the top of the scale in $lib/components/ui/utils.ts
+   * (dropdown 20 / drawer 30 / modal 40 / toast 50).
+   */
+  const iconFor = {
+    success: CheckCircle2,
+    warning: AlertTriangle,
+    error: XCircle,
+  } as const
+
+  const iconColor = {
+    success: 'text-positive',
+    warning: 'text-warning',
+    error: 'text-negative',
+  } as const
 </script>
 
-{#if toasts.length > 0}
-  <div class="pointer-events-none fixed right-4 top-4 z-50 flex flex-col gap-2">
-    {#each toasts as t (t.id)}
-      <div
-        class="pointer-events-auto flex w-72 items-center gap-2 rounded-control px-4 py-3 text-sm font-medium shadow-raised {t.type === 'success'
-          ? 'bg-positive text-accent-foreground'
-          : t.type === 'warning'
-            ? 'bg-warning text-accent-foreground'
-            : 'bg-negative text-accent-foreground'}"
+<div class="pointer-events-none fixed right-4 top-4 z-50 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
+  {#each toasts as t (t.id)}
+    {@const Icon = iconFor[t.type]}
+    <div
+      class="pointer-events-auto flex items-start gap-2 rounded-control border border-border bg-surface-raised px-4 py-3 text-sm font-medium text-foreground shadow-raised"
+      role={t.type === 'error' ? 'alert' : undefined}
+    >
+      <Icon class="mt-0.5 h-4 w-4 shrink-0 {iconColor[t.type]}" />
+      <span class="min-w-0 flex-1">{t.message}</span>
+      <button
+        type="button"
+        onclick={() => toast.dismiss(t.id)}
+        aria-label="Dismiss notification"
+        class="focus-ring -mr-1 shrink-0 rounded-control p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
       >
-        {#if t.type === 'success'}
-          <CheckCircle2 class="h-4 w-4 shrink-0" />
-        {:else if t.type === 'warning'}
-          <AlertTriangle class="h-4 w-4 shrink-0" />
-        {:else}
-          <XCircle class="h-4 w-4 shrink-0" />
-        {/if}
-        {t.message}
-      </div>
-    {/each}
-  </div>
-{/if}
+        <X class="h-3.5 w-3.5" />
+      </button>
+    </div>
+  {/each}
+</div>

@@ -11,6 +11,7 @@
     type PortfolioExportDocument,
   } from '$lib/services/api'
   import { Plus, ExternalLink, Upload, X } from 'lucide-svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
 
   let showCreate = $state(false)
   let name = $state('')
@@ -20,6 +21,11 @@
   let portfolios = $state<Portfolio[] | null>(null)
   let loading = $state(true)
   let creating = $state(false)
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let deleting = $state(false)
+  let portfolioToDelete = $state('')
 
   let fileInput = $state<HTMLInputElement | null>(null)
   let importDoc = $state<PortfolioExportDocument | null>(null)
@@ -63,15 +69,23 @@ onMount(async () => {
     }
   }
 
-  async function deletePortfolio(id: string): Promise<void> {
-    if (!confirm('Delete this portfolio?')) return
+  function requestDeletePortfolio(id: string): void {
+    portfolioToDelete = id
+    showDeleteDialog = true
+  }
+
+  async function deletePortfolio(): Promise<void> {
+    if (!portfolioToDelete) return
+    deleting = true
     try {
-      await portfolioApi.delete(id)
+      await portfolioApi.delete(portfolioToDelete)
       portfolios = await portfolioApi.list()
       toast.success('Portfolio deleted')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Delete failed'
       toast.error(message)
+    } finally {
+      deleting = false
     }
   }
 
@@ -295,7 +309,7 @@ onMount(async () => {
             <p class="mb-3 text-sm text-muted-foreground">{p.description}</p>
           {/if}
           <button
-            onclick={() => deletePortfolio(p.id)}
+            onclick={() => requestDeletePortfolio(p.id)}
             class="text-xs text-negative hover:underline"
           >
             Delete
@@ -310,3 +324,14 @@ onMount(async () => {
     </div>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete portfolio"
+  message="Delete this portfolio?"
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={deleting}
+  onconfirm={deletePortfolio}
+/>

@@ -31,6 +31,7 @@
     type PortfolioSectorAllocation,
   } from '$lib/services/api'
   import { Plus, Pencil, Trash2, Download } from 'lucide-svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -73,6 +74,10 @@
   let txDividendAmount = $state('')
   let txSaving = $state(false)
   let deleting = $state(false)
+
+  // Delete-confirmation dialog (D.2): replaces the native confirm().
+  let showDeleteDialog = $state(false)
+  let txToDelete = $state('')
 
   const currency = $derived(portfolio?.currency || 'USD')
   const classAllocRows = $derived<ExposureRow[]>(
@@ -232,9 +237,14 @@
 
   function handleDeleteEditing(): void {
     if (!editingTx) return
-    if (confirm('Delete this transaction?')) {
-      deleteTransaction(editingTx.id)
-    }
+    txToDelete = editingTx.id
+    showDeleteDialog = true
+  }
+
+  function confirmDeleteTransaction(): Promise<void> {
+    // deleteTransaction catches its own errors (toast + dialog closes once
+    // the run finishes); it only rejects if the id vanished.
+    return txToDelete ? deleteTransaction(txToDelete) : Promise.resolve()
   }
 
   function canSave(): boolean {
@@ -589,3 +599,14 @@
     </table>
   </div>
 </div>
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title="Delete transaction"
+  message="Delete this transaction?"
+  confirmLabel="Delete"
+  cancelLabel="Cancel"
+  loading={deleting}
+  onconfirm={confirmDeleteTransaction}
+/>
