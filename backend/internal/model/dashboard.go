@@ -126,6 +126,7 @@ type AssetHolding struct {
 	Name        string          `json:"name"`
 	Currency    string          `json:"currency"`
 	Qty         decimal.Decimal `json:"qty"`
+	LastClose   decimal.Decimal `json:"last_close"` // latest close in asset currency
 	Cost        decimal.Decimal `json:"cost"`
 	CostCCY     decimal.Decimal `json:"cost_ccy"`
 	Value       decimal.Decimal `json:"value"`

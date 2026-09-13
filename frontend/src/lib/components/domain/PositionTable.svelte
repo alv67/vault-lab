@@ -24,6 +24,9 @@
     unrealized?: number
     roi?: number
     closed?: boolean
+    /** Latest closing price, expressed in `priceCurrency` (the asset's ccy). */
+    price?: number
+    priceCurrency?: string
   }
 
   let {
@@ -33,6 +36,7 @@
     showCost = false,
     showRealized = false,
     showUnrealized = false,
+    showPrice = false,
   }: {
     rows?: PositionRow[]
     currency?: string
@@ -40,6 +44,7 @@
     showCost?: boolean
     showRealized?: boolean
     showUnrealized?: boolean
+    showPrice?: boolean
   } = $props()
 
   // Closed positions dashes out every cell except realized P/L, which stays
@@ -48,6 +53,13 @@
     if (closed || value === undefined) return '-'
     return formatCurrency(value, currency)
   }
+
+  // Last price is a per-asset metadata figure (asset currency), so — unlike
+  // the portfolio-ccy columns — it also shows for closed positions.
+  function price(value: number | undefined, rowCurrency?: string): string {
+    if (value === undefined || value === 0) return '-'
+    return formatCurrency(value, rowCurrency ?? currency)
+  }
 </script>
 
 <div class="overflow-x-auto">
@@ -55,6 +67,9 @@
     <THead>
       <Tr>
         <Th>Ticker</Th>
+        {#if showPrice}
+          <Th align="right">Price</Th>
+        {/if}
         <Th align="right">Qty</Th>
         <Th align="right">Value</Th>
         {#if showCost}
@@ -88,6 +103,9 @@
               <span class="block text-xs text-muted-foreground">{row.name}</span>
             {/if}
           </Td>
+          {#if showPrice}
+            <Td align="right">{price(row.price, row.priceCurrency)}</Td>
+          {/if}
           <Td align="right">{row.closed || row.qty === undefined ? '-' : row.qty}</Td>
           <Td align="right">{money(row.value, row.closed)}</Td>
           {#if showCost}

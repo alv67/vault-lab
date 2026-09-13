@@ -182,6 +182,8 @@ export interface AssetHolding {
   cost_ccy: string
   value: string
   value_pf: string
+  /** Latest closing price in the asset's own currency (decimal string). */
+  last_close: string
   realized: string
   realized_ccy: string
   unrealized: string

@@ -1476,6 +1476,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				Name:        h.Name,
 				Currency:    h.Currency,
 				Qty:         h.Qty,
+				LastClose:   h.LastClose,
 				Cost:        h.Cost,
 				CostCCY:     h.CostCCY,
 				Realized:    h.Realized,

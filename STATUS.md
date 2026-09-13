@@ -464,6 +464,7 @@ Branch unico `feat/D-design-system`, 5 commit:
 - E.8 (#54) — Chart storico portafogli in dashboard: asse `time` con i punti di ogni portafoglio (niente più unione di date con `null` che spezzava le linee), `connectNulls` + `sampling: lttb`, `dataZoom` inside/slider come `PositionChart`. `PortfolioLineChart` non prende più la prop `data` (usato solo dalla dashboard).
 - E.3 (#20) — Componenti di dominio riusabili: `AssetSearchAutocomplete`, `CurrencySelect`, `CreateAssetModal`, `CreatePortfolioModal`, `ImportPortfolioModal`. Pagine assets/portfolios ripulite dai form inline (Badge per il tipo, `ui/Button`/`ui/Card`/`ui/EmptyState`), login ridisegnato (logo, `SegmentedControl` Sign in/Register, `Field`/`Input`, validazione inline, conferma password in registrazione).
 - E.1 (#18) — Dashboard ridisegnata: KPI `ui/StatCard` per valuta, `AllocationDonut` per portafoglio, portafogli come card cliccabili, `PositionTable` condiviso nell'accordion, `EmptyState`/`Spinner`. Backend: `finished_at` in `RefreshReport`, mostrato nell'header come "Prices updated".
+- E.2 (#19) — Dettaglio portafoglio: `AssetCombobox`, `TransactionTable`, `AddTransactionModal` (form + validazione inline + totale live + delete con ConfirmDialog). KPI con `StatCard`, posizioni con `PositionTable` condiviso, azioni in header sticky; refetch post-mutation (E.9) preservato.
 
 ## Fase 3 — Pianificata
 

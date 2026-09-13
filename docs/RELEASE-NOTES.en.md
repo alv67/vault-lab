@@ -16,6 +16,8 @@
 - Redesigned sign-in / registration screen with the VaultLab logo, a Sign in / Register switch, inline field validation and a password confirmation on registration
 - Dashboard rebuilt: KPI cards per currency, an allocation donut and clickable portfolio cards
 - The dashboard header shows when prices were last updated
+- Portfolio detail: adding/editing a transaction now happens in a modal with inline validation and a live total, and deletion is confirmed in-app
+- Portfolio positions and transactions use the shared design-system tables (positions now also show the latest price), and the page actions sit in a sticky header
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
 
