@@ -556,6 +556,9 @@ drives toast warnings:
 - otherwise `issues.length > 0` → "N aggiornamenti prezzi non riusciti
   (Yahoo)".
 
+The dashboard additionally keeps `finished_at` from the report to show the
+"Prices updated: …" line in its header.
+
 This keeps the UI working when it is opened as a deep link without passing
 through the dashboard.
 
