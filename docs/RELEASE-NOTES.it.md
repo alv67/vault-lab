@@ -17,7 +17,7 @@
 - Dashboard ridisegnata: card KPI per valuta, donut dell'allocazione e card dei portafogli cliccabili
 - L'header della dashboard mostra quando i prezzi sono stati aggiornati l'ultima volta
 - Dettaglio portafoglio: aggiungere/modificare una transazione ora avviene in una finestra con validazione inline e totale live, e l'eliminazione è confermata nell'app
-- Le posizioni e le transazioni del portafoglio usano le tabelle condivise del design system, e le azioni della pagina stanno in un header sticky
+- Le posizioni e le transazioni del portafoglio usano le tabelle condivise del design system (le posizioni ora mostrano anche l'ultimo prezzo), e le azioni della pagina stanno in un header sticky
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 

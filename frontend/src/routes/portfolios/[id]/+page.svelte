@@ -72,6 +72,8 @@
       unrealized: Number(h.unrealized),
       roi: Number(h.roi),
       closed: h.closed,
+      price: Number(h.last_close) > 0 ? Number(h.last_close) : undefined,
+      priceCurrency: h.currency,
     })),
   )
 
@@ -241,6 +243,7 @@
         showCost
         showRealized
         showUnrealized
+        showPrice
       />
     </div>
   {:else}
