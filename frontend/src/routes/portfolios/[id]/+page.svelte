@@ -5,7 +5,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { page } from '$app/state'
-  import { resolve } from '$app/paths'
   import { toast } from '$lib/stores/toast.svelte'
   import {
     portfolioApi,
@@ -24,37 +23,20 @@
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
   import SectorChart from '$lib/components/domain/SectorChart.svelte'
+  import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
+  import TransactionTable from '$lib/components/domain/TransactionTable.svelte'
+  import AddTransactionModal from '$lib/components/domain/AddTransactionModal.svelte'
   import {
     type ExposureRow,
     type PortfolioClassAllocation,
     type PortfolioGeographyAllocation,
     type PortfolioSectorAllocation,
   } from '$lib/services/api'
-  import { Plus, Pencil, Trash2, Download } from 'lucide-svelte'
-  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import { Plus, Download } from 'lucide-svelte'
+  import Button from '$lib/components/ui/Button.svelte'
+  import StatCard from '$lib/components/ui/StatCard.svelte'
 
   const id = $derived(page.params.id as string | undefined)
-
-  type TxType = Transaction['type']
-  interface TxForm {
-    asset_id: string
-    type: TxType
-    quantity: string
-    price: string
-    date: string
-    fees: string
-    notes: string
-  }
-
-  const defaultForm = (): TxForm => ({
-    asset_id: '',
-    type: 'buy',
-    quantity: '',
-    price: '',
-    date: new Date().toISOString().split('T')[0],
-    fees: '0',
-    notes: '',
-  })
 
   let portfolio = $state<Portfolio | null>(null)
   let summary = $state<PortfolioSummary | null>(null)
@@ -70,14 +52,6 @@
   let selectedAsset = $state('')
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
-  let txForm = $state<TxForm>(defaultForm())
-  let txDividendAmount = $state('')
-  let txSaving = $state(false)
-  let deleting = $state(false)
-
-  // Delete-confirmation dialog (D.2): replaces the native confirm().
-  let showDeleteDialog = $state(false)
-  let txToDelete = $state('')
 
   const currency = $derived(portfolio?.currency || 'USD')
   const classAllocRows = $derived<ExposureRow[]>(
@@ -86,8 +60,24 @@
       weight: c.weight,
     })),
   )
-  const gainLossClass = $derived(pnlColorClass(summary?.gain_loss))
-  const realizedClass = $derived(pnlColorClass(summary?.realized_gl))
+  const positionRows = $derived<PositionRow[]>(
+    (summary?.holdings ?? []).map((h) => ({
+      assetId: h.asset_id,
+      ticker: h.ticker,
+      name: h.name,
+      qty: Number(h.qty),
+      cost: Number(h.cost),
+      value: Number(h.value_pf),
+      realized: Number(h.realized),
+      unrealized: Number(h.unrealized),
+      roi: Number(h.roi),
+      closed: h.closed,
+    })),
+  )
+
+  $effect(() => {
+    if (!showTx) editingTx = null
+  })
 
   onMount(load)
 
@@ -163,106 +153,22 @@
     }
   }
 
-  function closeTx(): void {
-    showTx = false
-    editingTx = null
-    txForm = defaultForm()
-    txDividendAmount = ''
-  }
-
-  function openNewTx(): void {
-    editingTx = null
-    txForm = defaultForm()
-    txDividendAmount = ''
-    showTx = true
-  }
-
-  function startEdit(tx: Transaction): void {
-    editingTx = tx
-    txForm = {
-      asset_id: tx.asset_id,
-      type: tx.type,
-      quantity: tx.quantity,
-      price: tx.price,
-      date: new Date(tx.date).toISOString().split('T')[0],
-      fees: tx.fees || '0',
-      notes: tx.notes || '',
-    }
-    txDividendAmount =
-      tx.type === 'dividend' ? String(Number(tx.price) * Number(tx.quantity)) : ''
-    showTx = true
-  }
-
-  async function saveTransaction(): Promise<void> {
+  async function reloadAfterMutation(): Promise<void> {
     if (!id) return
-    txSaving = true
-    const payload = {
-      asset_id: txForm.asset_id,
-      type: txForm.type,
-      quantity: txForm.type === 'dividend' ? '1' : txForm.quantity,
-      price: txForm.type === 'dividend' ? txDividendAmount : txForm.price,
-      date: new Date(txForm.date).toISOString(),
-      fees: txForm.fees,
-      notes: txForm.notes,
-    }
     try {
-      if (editingTx) {
-        await transactionApi.update(editingTx.id, {
-          ...payload,
-        })
-      } else {
-        await transactionApi.create(id, payload)
-      }
-      transactions = await transactionApi.list(id)
-      summary = await portfolioApi.summary(id)
-      history = await portfolioApi.history(id)
-      await loadAllocations()
-      closeTx()
-      toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
+      const [t, s, h] = await Promise.all([
+        transactionApi.list(id),
+        portfolioApi.summary(id),
+        portfolioApi.history(id),
+      ])
+      transactions = t
+      summary = s
+      history = h
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed'
+      const message = err instanceof Error ? err.message : 'Failed to refresh portfolio'
       toast.error(message)
-    } finally {
-      txSaving = false
     }
-  }
-
-  async function deleteTransaction(txId: string): Promise<void> {
-    if (!id) return
-    deleting = true
-    try {
-      await transactionApi.remove(txId)
-      transactions = await transactionApi.list(id)
-      summary = await portfolioApi.summary(id)
-      history = await portfolioApi.history(id)
-      await loadAllocations()
-      closeTx()
-      toast.success('Transaction deleted')
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
-      toast.error(message)
-    } finally {
-      deleting = false
-    }
-  }
-
-  function handleDeleteEditing(): void {
-    if (!editingTx) return
-    txToDelete = editingTx.id
-    showDeleteDialog = true
-  }
-
-  function confirmDeleteTransaction(): Promise<void> {
-    // deleteTransaction catches its own errors (toast + dialog closes once
-    // the run finishes); it only rejects if the id vanished.
-    return txToDelete ? deleteTransaction(txToDelete) : Promise.resolve()
-  }
-
-  function canSave(): boolean {
-    if (txForm.type === 'dividend') {
-      return Boolean(txForm.asset_id && txDividendAmount && Number(txDividendAmount) > 0)
-    }
-    return Boolean(txForm.asset_id && txForm.quantity && txForm.price)
+    await loadAllocations()
   }
 
   async function exportPortfolio(): Promise<void> {
@@ -284,84 +190,58 @@
 </script>
 
 <div class="p-6">
-  <h1 class="mb-2 text-2xl font-bold">{portfolio?.name ?? 'Portfolio'}</h1>
-  <p class="mb-6 text-sm text-muted-foreground">{portfolio?.description}</p>
+  <header class="sticky top-14 z-10 -mx-6 -mt-6 mb-6 flex flex-col gap-3 bg-background px-6 pb-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-bold">{portfolio?.name ?? 'Portfolio'}</h1>
+      {#if portfolio?.description}
+        <p class="text-sm text-muted-foreground">{portfolio.description}</p>
+      {/if}
+    </div>
+    <div class="flex shrink-0 items-center gap-2">
+      <Button
+        onclick={() => {
+          editingTx = null
+          showTx = true
+        }}
+      >
+        <Plus class="h-4 w-4" />
+        Add Transaction
+      </Button>
+      <Button variant="outline" onclick={exportPortfolio}>
+        <Download class="h-4 w-4" />
+        Export
+      </Button>
+    </div>
+  </header>
 
   <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-    <div class="rounded-card border-border bg-surface p-4 shadow-card">
-      <p class="text-sm text-muted-foreground">Value</p>
-      <p class="text-xl font-bold tabular-nums">{formatCurrency(summary?.total_value || 0, currency)}</p>
-    </div>
-    <div class="rounded-card border-border bg-surface p-4 shadow-card">
-      <p class="text-sm text-muted-foreground">Realized</p>
-      <p class="text-xl font-bold tabular-nums {realizedClass}">
-        {formatCurrency(summary?.realized_gl || 0, currency)}
-      </p>
-    </div>
-    <div class="rounded-card border-border bg-surface p-4 shadow-card">
-      <p class="text-sm text-muted-foreground">Gain/Loss (open)</p>
-      <p class="text-xl font-bold tabular-nums {gainLossClass}">
-        {formatCurrency(summary?.gain_loss || 0, currency)} ({formatPercent(summary?.gain_loss_pct || 0)})
-      </p>
-    </div>
-    <div class="rounded-card border-border bg-surface p-4 shadow-card">
-      <p class="text-sm text-muted-foreground">Assets</p>
-      <p class="text-xl font-bold tabular-nums">{summary?.asset_count || 0}</p>
-    </div>
+    <StatCard label="Value" value={formatCurrency(summary?.total_value ?? 0, currency)} />
+    <StatCard
+      label="Realized"
+      value={formatCurrency(summary?.realized_gl ?? 0, currency)}
+      valueClass={pnlColorClass(summary?.realized_gl)}
+    />
+    <StatCard
+      label="Open G/L"
+      value={formatCurrency(summary?.gain_loss ?? 0, currency)}
+      delta={formatPercent(summary?.gain_loss_pct ?? 0)}
+      deltaValue={Number(summary?.gain_loss_pct ?? 0)}
+      valueClass={pnlColorClass(summary?.gain_loss)}
+    />
+    <StatCard label="Assets" value={String(summary?.asset_count ?? 0)} />
   </div>
 
-  {#if summary?.holdings && summary.holdings.length > 0}
+  {#if positionRows.length > 0}
     <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
       <h2 class="mb-4 font-semibold">Positions</h2>
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm">
-          <thead>
-            <tr class="border-b border-border text-muted-foreground">
-              <th class="pb-2">Ticker</th>
-              <th class="pb-2 text-right">Qty</th>
-              <th class="pb-2 text-right">Cost</th>
-              <th class="pb-2 text-right">Value</th>
-              <th class="pb-2 text-right">Realized</th>
-              <th class="pb-2 text-right">Unrealized</th>
-              <th class="pb-2 text-right">ROI</th>
-              <th class="pb-2">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each summary.holdings as h (h.asset_id)}
-              <tr class="border-b border-border last:border-0">
-                <td class="py-2">
-                  <a href={resolve(`/assets/${h.asset_id}`)} class="font-medium text-accent-text hover:underline">
-                    {h.ticker}
-                  </a>
-                  <span class="block text-xs text-muted-foreground">{h.name}</span>
-                </td>
-                <td class="py-2 text-right tabular-nums">{h.closed ? '-' : h.qty}</td>
-                <td class="py-2 text-right tabular-nums">{h.closed ? '-' : formatCurrency(h.cost, currency)}</td>
-                <td class="py-2 text-right tabular-nums">{h.closed ? '-' : formatCurrency(h.value_pf, currency)}</td>
-                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(h.realized)}">
-                  {formatCurrency(h.realized, currency)}
-                </td>
-                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(h.unrealized)}">
-                  {h.closed ? '-' : formatCurrency(h.unrealized, currency)}
-                </td>
-                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(h.roi)}">
-                  {h.closed ? '-' : formatPercent(h.roi)}
-                </td>
-                <td class="py-2">
-                  {#if h.closed}
-                    <span
-                      class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
-                    >
-                      Closed
-                    </span>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <PositionTable
+        rows={positionRows}
+        {currency}
+        linkAssets
+        showCost
+        showRealized
+        showUnrealized
+      />
     </div>
   {:else}
     <p class="mb-6 text-sm text-muted-foreground">No positions</p>
@@ -454,170 +334,24 @@
     </div>
   </div>
 
-  <div class="mb-4 flex items-center gap-2">
-    <button
-      onclick={() => (showTx ? closeTx() : openNewTx())}
-      class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover"
-    >
-      <Plus class="h-4 w-4" />
-      Add Transaction
-    </button>
-    <button
-      onclick={exportPortfolio}
-      class="flex items-center gap-2 rounded-control border border-border px-4 py-2 text-sm text-foreground hover:bg-muted"
-    >
-      <Download class="h-4 w-4" />
-      Export
-    </button>
-  </div>
-
-  {#if showTx}
-    <div class="mb-6 rounded-card border border-border bg-surface p-4">
-      <h3 class="mb-3 font-semibold">{editingTx ? 'Edit Transaction' : 'New Transaction'}</h3>
-      <div class="grid grid-cols-2 gap-3">
-        <select
-          bind:value={txForm.asset_id}
-          class="rounded-control border border-input px-3 py-2 text-sm"
-        >
-          <option value="">Select asset</option>
-          {#each assets ?? [] as a (a.id)}
-            <option value={a.id}>{a.ticker} - {a.name}</option>
-          {/each}
-        </select>
-        <select
-          bind:value={txForm.type}
-          class="rounded-control border border-input px-3 py-2 text-sm"
-        >
-          <option value="buy">Buy</option>
-          <option value="sell">Sell</option>
-          <option value="dividend">Dividend</option>
-        </select>
-        {#if txForm.type === 'dividend'}
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="Amount"
-            bind:value={txDividendAmount}
-            class="rounded-control border border-input px-3 py-2 text-sm"
-          />
-        {:else}
-          <input
-            type="number"
-            placeholder="Quantity"
-            bind:value={txForm.quantity}
-            class="rounded-control border border-input px-3 py-2 text-sm"
-          />
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Price"
-            bind:value={txForm.price}
-            class="rounded-control border border-input px-3 py-2 text-sm"
-          />
-        {/if}
-        <input
-          type="date"
-          bind:value={txForm.date}
-          class="rounded-control border border-input px-3 py-2 text-sm"
-        />
-        <input
-          type="number"
-          step="0.01"
-          placeholder="Fees"
-          bind:value={txForm.fees}
-          class="rounded-control border border-input px-3 py-2 text-sm"
-        />
-      </div>
-      <div class="mt-3 flex items-center gap-3">
-        <button
-          onclick={saveTransaction}
-          disabled={!canSave() || txSaving}
-          class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
-        >
-          {txSaving ? 'Saving...' : editingTx ? 'Save Changes' : 'Save'}
-        </button>
-        {#if editingTx}
-          <button
-            onclick={handleDeleteEditing}
-            disabled={deleting}
-            class="flex items-center gap-1.5 rounded-control bg-negative px-4 py-2 text-sm text-accent-foreground hover:bg-negative/90 disabled:opacity-50"
-          >
-            <Trash2 class="h-4 w-4" />
-            Delete
-          </button>
-        {/if}
-        <button
-          onclick={closeTx}
-          class="rounded-control px-4 py-2 text-sm text-muted-foreground hover:bg-muted"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  {/if}
-
   <div class="rounded-card border-border bg-surface p-4 shadow-card">
     <h2 class="mb-4 font-semibold">Transactions</h2>
-    <table class="w-full text-left text-sm">
-      <thead>
-        <tr class="border-b border-border text-muted-foreground">
-          <th class="pb-2">Date</th>
-          <th class="pb-2">Asset</th>
-          <th class="pb-2">Type</th>
-          <th class="pb-2 text-right">Quantity</th>
-          <th class="pb-2 text-right">Price</th>
-          <th class="pb-2 text-right">Total</th>
-          <th class="pb-2 text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each transactions ?? [] as tx (tx.id)}
-          <tr class="border-b border-border last:border-0">
-            <td class="py-2">{new Date(tx.date).toLocaleDateString()}</td>
-            <td class="py-2">
-              <span class="font-medium">{tx.asset_ticker}</span>
-              <span class="ml-1 text-xs text-muted-foreground">{tx.asset_name}</span>
-            </td>
-            <td class="py-2">
-              <span
-                class="rounded-full px-2 py-0.5 text-xs font-medium {tx.type === 'buy'
-                  ? 'bg-positive/10 text-positive'
-                  : tx.type === 'sell'
-                    ? 'bg-negative/10 text-negative'
-                    : 'bg-accent/10 text-accent-text'}"
-              >
-                {tx.type}
-              </span>
-            </td>
-            <td class="py-2 text-right tabular-nums">{tx.quantity}</td>
-            <td class="py-2 text-right tabular-nums">{formatCurrency(tx.price, currency)}</td>
-            <td class="py-2 text-right tabular-nums">
-              {formatCurrency(Number(tx.quantity) * Number(tx.price), currency)}
-            </td>
-            <td class="py-2 text-right">
-              <button
-                onclick={() => startEdit(tx)}
-                class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                title="Edit transaction"
-              >
-                <Pencil class="h-4 w-4" />
-              </button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+    <TransactionTable
+      transactions={transactions ?? []}
+      {currency}
+      onedit={(tx) => {
+        editingTx = tx
+        showTx = true
+      }}
+    />
   </div>
 </div>
 
-<ConfirmDialog
-  bind:open={showDeleteDialog}
-  variant="danger"
-  title="Delete transaction"
-  message="Delete this transaction?"
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
-  loading={deleting}
-  onconfirm={confirmDeleteTransaction}
+<AddTransactionModal
+  bind:open={showTx}
+  portfolioId={id ?? ''}
+  assets={assets ?? []}
+  {currency}
+  editing={editingTx}
+  onsuccess={reloadAfterMutation}
 />
