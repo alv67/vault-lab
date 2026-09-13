@@ -21,6 +21,7 @@
 - Settings reorganized into tabs: Profile, Password, Currencies and Health
 - Managed currencies are now picked from a list, with the name filled in automatically
 - Changing your password now validates inline and highlights the field at fault (e.g. wrong current password)
+- Assets not priced by Yahoo (manual / none) no longer generate sync errors in the price-sync health dashboard
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
 

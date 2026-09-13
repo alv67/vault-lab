@@ -458,8 +458,9 @@ Branch unico `feat/D-design-system`, 5 commit:
 - H.5 (#47) — Logging API: `FetchIssue` con `request_type` (`chart`/`spark`/`search`/`fx`) e `asset_id`; `HealthEvent.AssetID` popolato sugli eventi per-asset; messaggi di successo con l'elenco dei ticker; registrazione degli eventi `search` (lookup) prima assenti.
 - E.9 (#71) — Le allocazioni del portafoglio (classi, geo, settori) vengono rifetchate dopo create/update/delete di una transazione, senza reload.
 - H.2 (#33, parziale) — Nuovi unit test per le allocazioni backend: `GetPortfolioAllocation` (multi-valuta, FX mancante, skip qty/prezzo) e `GetPortfolioClassAllocation` (raggruppamento/ordinamento, skip FX), più allocazione settoriale ETF (`backend/internal/service/allocation_test.go`).
+- H.9 (#90) — Asset non-Yahoo (`manual`/`none`) non più interrogati per history/split: filtro `price_source` in `GetPortfolioHistory`, `SyncAssetData`/`syncAssets` e `BackfillAssetHistory` (no-op). Niente più eventi health `history_fetch`/`split_fetch` per questi asset.
 
-### Ondata 1 — EPIC E (in corso)
+### Ondata 1 — EPIC E ✅ completata
 
 - E.8 (#54) — Chart storico portafogli in dashboard: asse `time` con i punti di ogni portafoglio (niente più unione di date con `null` che spezzava le linee), `connectNulls` + `sampling: lttb`, `dataZoom` inside/slider come `PositionChart`. `PortfolioLineChart` non prende più la prop `data` (usato solo dalla dashboard).
 - E.3 (#20) — Componenti di dominio riusabili: `AssetSearchAutocomplete`, `CurrencySelect`, `CreateAssetModal`, `CreatePortfolioModal`, `ImportPortfolioModal`. Pagine assets/portfolios ripulite dai form inline (Badge per il tipo, `ui/Button`/`ui/Card`/`ui/EmptyState`), login ridisegnato (logo, `SegmentedControl` Sign in/Register, `Field`/`Input`, validazione inline, conferma password in registrazione).

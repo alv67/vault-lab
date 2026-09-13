@@ -21,6 +21,7 @@
 - Impostazioni riorganizzate in tab: Profile, Password, Currencies e Health
 - Le valute gestite ora si scelgono da una lista, con il nome compilato automaticamente
 - Il cambio password ora valida inline ed evidenzia il campo in errore (es. password corrente sbagliata)
+- Gli asset non gestiti da Yahoo (manual / none) non generano più errori di sincronizzazione nella dashboard di health
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 
