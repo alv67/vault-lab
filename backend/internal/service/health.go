@@ -55,6 +55,7 @@ func (s *HealthService) GetPriceHealth(ctx context.Context) (*model.HealthSummar
 	summary.RateLimited = int(rateLimited)
 	
 	total := summary.Successes + summary.Failures
+	summary.HasData = total > 0
 	if total > 0 {
 		summary.SuccessRate = float64(summary.Successes) / float64(total)
 	}
