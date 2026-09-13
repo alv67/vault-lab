@@ -3,6 +3,7 @@ package price
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -21,6 +22,7 @@ type RefreshReport struct {
 	Refreshed   []string     `json:"refreshed"`
 	Issues      []FetchIssue `json:"issues"`
 	RateLimited bool         `json:"rate_limited"`
+	FinishedAt  time.Time    `json:"finished_at"`
 }
 
 // issueCode maps an error to a stable machine-readable code: rate limiting for
