@@ -396,6 +396,7 @@ export interface RefreshReport {
   refreshed: string[]
   issues: FetchIssue[]
   rate_limited: boolean
+  finished_at: string
 }
 
 export interface AuthResponse {

@@ -6,11 +6,24 @@
   import { onMount } from 'svelte'
   import { SvelteSet } from 'svelte/reactivity'
   import { resolve } from '$app/paths'
-  import { portfolioApi, pricesApi, type Dashboard, type DashboardAllocation } from '$lib/services/api'
+  import {
+    portfolioApi,
+    pricesApi,
+    type Dashboard,
+    type DashboardAllocation,
+    type PortfolioAssets,
+  } from '$lib/services/api'
   import { toast } from '$lib/stores/toast.svelte'
   import PortfolioLineChart from '$lib/components/PortfolioLineChart.svelte'
+  import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
+  import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
   import SectorChart from '$lib/components/domain/SectorChart.svelte'
+  import Card from '$lib/components/ui/Card.svelte'
+  import Button from '$lib/components/ui/Button.svelte'
+  import StatCard from '$lib/components/ui/StatCard.svelte'
+  import EmptyState from '$lib/components/ui/EmptyState.svelte'
+  import Spinner from '$lib/components/ui/Spinner.svelte'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
   import { ChevronDown, ChevronRight } from 'lucide-svelte'
@@ -18,6 +31,7 @@
   let dash = $state<Dashboard | null>(null)
   let alloc = $state<DashboardAllocation | null>(null)
   let loading = $state(true)
+  let lastUpdate = $state('')
   let expanded = new SvelteSet<string>()
   let initialized = false
 
@@ -42,6 +56,7 @@
       sessionRefreshed = true
       pricesApi.refresh()
         .then((report) => {
+          lastUpdate = report.finished_at
           if (report.rate_limited) {
             toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
           } else if (report.issues.length > 0) {
@@ -50,7 +65,7 @@
           return portfolioApi.dashboard()
         })
         .then((fresh) => { dash = fresh })
-        .catch(() => { /* keep current data */ })
+        .catch(() => { /* keep current data, omit the "Prices updated" line */ })
     }
 
     const firstPortfolioId = dash?.assets?.[0]?.portfolio_id
@@ -69,32 +84,125 @@
   }
 
   const hasMultipleCurrencies = $derived((dash?.by_currency?.length ?? 0) > 1)
+  const pricesUpdatedLabel = $derived(lastUpdate ? new Date(lastUpdate).toLocaleString() : '')
+  const portfolioSlices = $derived(
+    (dash?.portfolios ?? []).map((p) => ({ name: p.portfolio_name, value: Number(p.value) })),
+  )
+
+  // value/realized come from the *_pf fields, consolidated in the portfolio
+  // currency, so the table stays currency-consistent across FX assets.
+  function positionRows(pa: PortfolioAssets): PositionRow[] {
+    return pa.assets.map((a) => ({
+      assetId: a.asset_id,
+      ticker: a.ticker,
+      name: a.name,
+      qty: Number(a.qty),
+      value: Number(a.value_pf),
+      realized: Number(a.realized_pf ?? a.realized),
+      roi: Number(a.roi),
+    }))
+  }
 </script>
 
 <div class="p-6">
-  <h1 class="mb-6 text-2xl font-bold">Dashboard</h1>
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold">Dashboard</h1>
+    {#if pricesUpdatedLabel}
+      <p class="mt-1 text-sm text-muted-foreground">Prices updated: {pricesUpdatedLabel}</p>
+    {/if}
+  </div>
 
   {#if loading}
-    <p class="text-muted-foreground">Loading...</p>
-  {:else if !dash?.portfolios?.length}
-    <div class="rounded-card border-2 border-dashed border-border p-12 text-center">
-      <p class="mb-4 text-muted-foreground">No portfolios yet</p>
-      <a
-        href={resolve('/portfolios')}
-        class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground"
-      >
-        Create your first portfolio
-      </a>
+    <div class="flex justify-center py-24 text-muted-foreground">
+      <Spinner size="lg" />
     </div>
+  {:else if !dash?.portfolios?.length}
+    <EmptyState
+      dashed
+      title="No portfolios yet"
+      description="Create a portfolio to start tracking your investments."
+    >
+      {#snippet action()}
+        <Button href={resolve('/portfolios')}>Create your first portfolio</Button>
+      {/snippet}
+    </EmptyState>
   {:else}
     <div class="space-y-6">
-      <div class="rounded-card border-border bg-surface p-4 shadow-card">
-        <h2 class="mb-4 font-semibold">Portfolio History</h2>
-        {#if dash.history?.some((h) => h.series?.length)}
-          <PortfolioLineChart histories={dash.history} />
-        {:else}
-          <p class="text-sm text-muted-foreground">No price history yet</p>
-        {/if}
+      <div class="space-y-4">
+        {#each dash.by_currency as c (c.currency)}
+          <div class="space-y-2">
+            {#if hasMultipleCurrencies}
+              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.currency}</p>
+            {/if}
+            <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <StatCard label="Invested" value={formatCurrency(c.invested, c.currency)} />
+              <StatCard
+                label="Current Value"
+                value={formatCurrency(c.value, c.currency)}
+                valueClass="text-2xl sm:text-3xl"
+              />
+              <StatCard
+                label="Gain/Loss"
+                value={formatCurrency(c.gain_loss, c.currency)}
+                delta={formatPercent(c.gain_loss_pct)}
+                deltaValue={Number(c.gain_loss_pct)}
+              />
+              <StatCard label="ROI" value={formatPercent(c.gain_loss_pct)} />
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <Card class="p-4">
+          <h2 class="mb-4 font-semibold">Portfolio History</h2>
+          {#if dash.history?.some((h) => h.series?.length)}
+            <PortfolioLineChart histories={dash.history} />
+          {:else}
+            <p class="text-sm text-muted-foreground">No price history yet</p>
+          {/if}
+        </Card>
+
+        <Card class="p-4">
+          <h2 class="mb-4 font-semibold">Allocation by portfolio</h2>
+          <AllocationDonut
+            data={portfolioSlices}
+            title="Allocation by portfolio"
+            currency={dash.by_currency[0]?.currency ?? 'USD'}
+            showValue={!hasMultipleCurrencies}
+          />
+          {#if hasMultipleCurrencies}
+            <p class="mt-2 text-xs text-muted-foreground">
+              Portfolios use different currencies: values are not comparable, shares are indicative.
+            </p>
+          {/if}
+        </Card>
+      </div>
+
+      <div>
+        <h2 class="mb-4 font-semibold">Portfolios</h2>
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {#each dash.portfolios as p (p.portfolio_id)}
+            <Card class="transition-colors hover:border-accent">
+              <a href={resolve(`/portfolios/${p.portfolio_id}`)} class="block p-4">
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="truncate font-semibold">{p.portfolio_name}</span>
+                  <span class="shrink-0 text-xs text-muted-foreground">{p.currency}</span>
+                </div>
+                <p class="mt-2 text-lg font-bold tabular-nums">{formatCurrency(p.value, p.currency)}</p>
+                <div class="mt-1 flex items-center justify-between text-sm">
+                  <span class="font-medium tabular-nums {pnlColorClass(p.gain_loss)}">
+                    {formatCurrency(p.gain_loss, p.currency)}
+                  </span>
+                  <span class="font-medium tabular-nums {pnlColorClass(p.gain_loss_pct)}">
+                    {formatPercent(p.gain_loss_pct)}
+                  </span>
+                </div>
+                <p class="mt-2 text-xs text-muted-foreground">{p.asset_count} assets</p>
+              </a>
+            </Card>
+          {/each}
+        </div>
       </div>
 
       <div class="rounded-card border-border bg-surface p-4 shadow-card">
@@ -107,76 +215,6 @@
             <SectorChart data={alloc.sectors} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
           </div>
         {/if}
-      </div>
-
-      {#if hasMultipleCurrencies}
-        <div class="rounded-card border-border bg-surface p-4 shadow-card">
-          <h2 class="mb-4 font-semibold">Performance by Currency</h2>
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="border-b border-border text-muted-foreground">
-                <th class="pb-2">Currency</th>
-                <th class="pb-2 text-right">Invested</th>
-                <th class="pb-2 text-right">Value</th>
-                <th class="pb-2 text-right">Gain/Loss</th>
-                <th class="pb-2 text-right">Return</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each dash.by_currency as c (c.currency)}
-                <tr class="border-b border-border last:border-0">
-                  <td class="py-2 font-medium">{c.currency}</td>
-                  <td class="py-2 text-right tabular-nums">{formatCurrency(c.invested, c.currency)}</td>
-                  <td class="py-2 text-right tabular-nums">{formatCurrency(c.value, c.currency)}</td>
-                  <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(c.gain_loss)}">
-                    {formatCurrency(c.gain_loss, c.currency)}
-                  </td>
-                  <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(c.gain_loss_pct)}">
-                    {formatPercent(c.gain_loss_pct)}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-
-      <div class="rounded-card border-border bg-surface p-4 shadow-card">
-        <h2 class="mb-4 font-semibold">Portfolios</h2>
-        <table class="w-full text-left text-sm">
-          <thead>
-            <tr class="border-b border-border text-muted-foreground">
-              <th class="pb-2">Portfolio</th>
-              <th class="pb-2">Currency</th>
-              <th class="pb-2 text-right">Assets</th>
-              <th class="pb-2 text-right">Invested</th>
-              <th class="pb-2 text-right">Value</th>
-              <th class="pb-2 text-right">Realized</th>
-              <th class="pb-2 text-right">Gain/Loss</th>
-              <th class="pb-2 text-right">Return</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each dash.portfolios as p (p.portfolio_id)}
-              <tr class="border-b border-border last:border-0">
-                <td class="py-2 font-medium">{p.portfolio_name}</td>
-                <td class="py-2">{p.currency}</td>
-                <td class="py-2 text-right tabular-nums">{p.asset_count}</td>
-                <td class="py-2 text-right tabular-nums">{formatCurrency(p.invested, p.currency)}</td>
-                <td class="py-2 text-right tabular-nums">{formatCurrency(p.value, p.currency)}</td>
-                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(p.realized_gl)}">
-                  {formatCurrency(p.realized_gl, p.currency)}
-                </td>
-                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(p.gain_loss)}">
-                  {formatCurrency(p.gain_loss, p.currency)}
-                </td>
-                <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(p.gain_loss_pct)}">
-                  {formatPercent(p.gain_loss_pct)}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
       </div>
 
       {#each dash.assets as pa (pa.portfolio_id)}
@@ -198,60 +236,11 @@
           </button>
 
           {#if expanded.has(pa.portfolio_id)}
-            <div class="mt-3 overflow-x-auto">
+            <div class="mt-3">
               {#if pa.assets.length === 0}
                 <p class="text-sm text-muted-foreground">No assets in this portfolio.</p>
               {:else}
-                <table class="w-full text-left text-sm">
-                  <thead>
-                    <tr class="border-b border-border text-muted-foreground">
-                      <th class="pb-2">Ticker</th>
-                      <th class="pb-2">Name</th>
-                      <th class="pb-2">Currency</th>
-                      <th class="pb-2 text-right">Qty</th>
-                      <th class="pb-2 text-right">Invested</th>
-                      <th class="pb-2 text-right">Value</th>
-                      <th class="pb-2 text-right">Gain/Loss</th>
-                      <th class="pb-2 text-right">Realized</th>
-                      <th class="pb-2 text-right">ROI</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each pa.assets as a (a.asset_id)}
-                      <tr class="border-b border-border last:border-0">
-                        <td class="py-2 font-medium">
-                          <a href={resolve(`/assets/${a.asset_id}`)} class="text-accent-text hover:underline">
-                            {a.ticker}
-                          </a>
-                        </td>
-                        <td class="py-2 text-muted-foreground">{a.name}</td>
-                        <td class="py-2">
-                          {a.currency}
-                          {#if a.fx_missing}
-                            <span
-                              class="ml-2 rounded bg-warning/10 px-1.5 py-0.5 text-xs text-warning"
-                              title="Exchange rate not available: excluded from portfolio total"
-                            >
-                              cambio mancante
-                            </span>
-                          {/if}
-                        </td>
-                        <td class="py-2 text-right tabular-nums">{a.qty}</td>
-                        <td class="py-2 text-right tabular-nums">{formatCurrency(a.invested, a.currency)}</td>
-                        <td class="py-2 text-right tabular-nums">{formatCurrency(a.value, a.currency)}</td>
-                        <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(a.gain_loss)}">
-                          {formatCurrency(a.gain_loss, a.currency)}
-                        </td>
-                        <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(a.realized_pf ?? a.realized)}">
-                          {formatCurrency(a.realized_pf ?? a.realized, pa.currency)}
-                        </td>
-                        <td class="py-2 text-right font-medium tabular-nums {pnlColorClass(a.roi)}">
-                          {formatPercent(a.roi)}
-                        </td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
+                <PositionTable rows={positionRows(pa)} currency={pa.currency} linkAssets showRealized />
               {/if}
             </div>
           {/if}

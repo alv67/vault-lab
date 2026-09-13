@@ -18,6 +18,7 @@
     delta = undefined,
     deltaValue = undefined,
     invertColor = false,
+    valueClass = '',
     class: className = '',
     ...rest
   }: {
@@ -29,6 +30,8 @@
     /** Raw signed number driving the delta color. */
     deltaValue?: number
     invertColor?: boolean
+    /** Extra classes for the value line (e.g. a larger hero font step). */
+    valueClass?: string
   } & HTMLAttributes<HTMLDivElement> = $props()
 
   const deltaClass = $derived.by(() => {
@@ -41,7 +44,7 @@
 
 <div class={cx('rounded-card border border-border bg-surface p-4 shadow-card', className)} {...rest}>
   <p class="text-sm text-muted-foreground">{label}</p>
-  <p class="text-xl font-bold tabular-nums text-foreground">{value}</p>
+  <p class={cx('text-xl font-bold tabular-nums text-foreground', valueClass)}>{value}</p>
   {#if delta !== undefined}
     <p class="mt-0.5 text-xs font-medium tabular-nums {deltaClass}">{delta}</p>
   {/if}
