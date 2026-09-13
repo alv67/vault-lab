@@ -16,11 +16,13 @@
   let mode = $state('signin')
   let email = $state('')
   let password = $state('')
+  let confirmPassword = $state('')
   let name = $state('')
   let submitting = $state(false)
 
   let emailError = $state<string | undefined>(undefined)
   let passwordError = $state<string | undefined>(undefined)
+  let confirmError = $state<string | undefined>(undefined)
   let nameError = $state<string | undefined>(undefined)
 
   const isRegister = $derived(mode === 'register')
@@ -31,6 +33,7 @@
     if (mode) {
       emailError = undefined
       passwordError = undefined
+      confirmError = undefined
       nameError = undefined
     }
   })
@@ -50,6 +53,10 @@
       valid = false
     } else if (isRegister && password.length < 8) {
       passwordError = 'Password must be at least 8 characters'
+      valid = false
+    }
+    if (isRegister && (!confirmPassword || confirmPassword !== password)) {
+      confirmError = 'Passwords do not match'
       valid = false
     }
     if (isRegister && !name.trim()) {
@@ -124,6 +131,18 @@
           oninput={() => (passwordError = undefined)}
         />
       </Field>
+      {#if isRegister}
+        <Field label="Confirm password" error={confirmError}>
+          <Input
+            bind:value={confirmPassword}
+            type="password"
+            autocomplete="new-password"
+            required
+            error={confirmError}
+            oninput={() => (confirmError = undefined)}
+          />
+        </Field>
+      {/if}
       <Button type="submit" class="w-full" loading={submitting}>
         {isRegister ? 'Register' : 'Sign in'}
       </Button>

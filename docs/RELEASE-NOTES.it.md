@@ -13,7 +13,7 @@
 - Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
 - Il grafico storico dei portafogli in dashboard ora disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
 - La creazione di asset/portafogli e l'import di un portafoglio ora avvengono in finestre modali coerenti con il design dell'app
-- Ridisegnata la schermata di accesso/registrazione con il logo VaultLab, lo switch Sign in / Register e la validazione inline dei campi
+- Ridisegnata la schermata di accesso/registrazione con il logo VaultLab, lo switch Sign in / Register, la validazione inline dei campi e la conferma password in registrazione
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 
