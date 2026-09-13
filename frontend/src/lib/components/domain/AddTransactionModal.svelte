@@ -34,6 +34,13 @@
 
   const uid = $props.id()
 
+  /**
+   * `ui/Input type="number"` coerces the bound value to `number` (or
+   * `null`/`undefined` when empty) even though `TxForm` fields are typed
+   * `string`. Normalize through this helper before any string operation.
+   */
+  const toStr = (v: unknown): string => (v === null || v === undefined ? '' : String(v))
+
   interface TxForm {
     asset_id: string
     /** Kept as `string` for the `ui/Select` binding; cast back on submit. */
@@ -84,8 +91,8 @@
   )
   const totalEntered = $derived(
     isDividend
-      ? dividendAmount.trim() !== '' && Number.isFinite(total)
-      : form.quantity.trim() !== '' && form.price.trim() !== '' && Number.isFinite(total),
+      ? toStr(dividendAmount) !== '' && Number.isFinite(total)
+      : toStr(form.quantity) !== '' && toStr(form.price) !== '' && Number.isFinite(total),
   )
   const totalText = $derived(totalEntered ? formatCurrency(total, currency) : '—')
 
@@ -123,7 +130,7 @@
       if (!(Number(dividendAmount) > 0)) next.amount = 'Amount must be greater than 0'
     } else {
       if (!(Number(form.quantity) > 0)) next.quantity = 'Quantity must be greater than 0'
-      if (form.price.trim() === '' || !(Number(form.price) >= 0)) {
+      if (toStr(form.price) === '' || !(Number(form.price) >= 0)) {
         next.price = 'Price must be 0 or greater'
       }
     }
@@ -137,10 +144,10 @@
     const payload: Partial<Transaction> = {
       asset_id: form.asset_id,
       type: form.type as Transaction['type'],
-      quantity: isDividend ? '1' : form.quantity,
-      price: isDividend ? dividendAmount : form.price,
+      quantity: isDividend ? '1' : toStr(form.quantity),
+      price: isDividend ? toStr(dividendAmount) : toStr(form.price),
       date: new Date(form.date).toISOString(),
-      fees: form.fees,
+      fees: toStr(form.fees) || '0',
       notes: form.notes,
     }
     try {
