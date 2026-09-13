@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (12 Set 2026)
+# VaultLab — Stato Progetto (13 Set 2026)
 
 ## Infrastruttura
 
@@ -450,6 +450,14 @@ Branch unico `feat/D-design-system`, 5 commit:
 - `feat(theme)` — dark mode di default + rimozione della pagina dev `/settings/theme-tokens`.
 - Fix: label dei donut leggibili in dark (le label ECharts non ereditavano il `textStyle` del tema → fill scuro + bordo bianco).
 - Documentazione: `docs/FRONTEND-GUIDE.en/it.md` (styling/tema, chart, layout) e `docs/RELEASE-NOTES.en/it.md`.
+
+### Ondata 0 — Fix & infrastruttura (13 Set 2026)
+
+- H.1 (#32) — GitHub Actions: `.github/workflows/ci.yml` con due job (backend: `go build` + `go vet` + `go test`; frontend: `npm ci` + `npm run check` + `npm run lint`) su push e pull request verso `develop`/`main`. Fase 0 completa.
+- H.4 (#46) — Price sync health: campo `has_data` nel summary; la card Success Rate mostra **N/A** (niente più `NaN%`) quando non ci sono eventi nel periodo; `formatRate` robusto a null/undefined/NaN.
+- H.5 (#47) — Logging API: `FetchIssue` con `request_type` (`chart`/`spark`/`search`/`fx`) e `asset_id`; `HealthEvent.AssetID` popolato sugli eventi per-asset; messaggi di successo con l'elenco dei ticker; registrazione degli eventi `search` (lookup) prima assenti.
+- E.9 (#71) — Le allocazioni del portafoglio (classi, geo, settori) vengono rifetchate dopo create/update/delete di una transazione, senza reload.
+- H.2 (#33, parziale) — Nuovi unit test per le allocazioni backend: `GetPortfolioAllocation` (multi-valuta, FX mancante, skip qty/prezzo) e `GetPortfolioClassAllocation` (raggruppamento/ordinamento, skip FX), più allocazione settoriale ETF (`backend/internal/service/allocation_test.go`).
 
 ## Fase 3 — Pianificata
 

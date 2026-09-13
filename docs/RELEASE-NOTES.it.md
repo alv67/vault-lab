@@ -8,6 +8,9 @@
 - Colori coerenti con il tema su tutte le pagine e i grafici, così l'interfaccia è leggibile sia in chiaro sia in scuro
 - Le azioni distruttive ora usano una finestra di conferma dell'app invece del prompt nativo del browser
 - Le notifiche (toast) sono state ridisegnate in linea col tema e rese accessibili agli screen reader
+- Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
+- Health della sincronizzazione prezzi: la card Success Rate mostra `N/A` invece di `NaN%` quando non ci sono dati nel periodo
+- Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 

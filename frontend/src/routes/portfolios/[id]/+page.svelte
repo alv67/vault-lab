@@ -109,27 +109,7 @@
       toast.error(message)
     }
 
-    // L'allocazione per classi è isolata: se il backend non la espone ancora
-    // (es. asset_class non popolati) non blocca il resto della pagina.
-    try {
-      classAlloc = await portfolioApi.classAllocation(id)
-    } catch {
-      classAllocError = true
-    }
-
-    // Anche geografia e settore sono isolati: un errore qui (endpoint non
-    // disponibile o dati mancanti) non deve bloccare il resto della pagina.
-    try {
-      geoAlloc = await portfolioApi.geographyAllocation(id)
-    } catch {
-      geoAllocError = true
-    }
-
-    try {
-      sectorAlloc = await portfolioApi.sectorAllocation(id)
-    } catch {
-      sectorAllocError = true
-    }
+    await loadAllocations()
 
     try {
       history = await portfolioApi.history(id)
@@ -151,6 +131,35 @@
         })
         .then((fresh) => { summary = fresh })
         .catch(() => { /* keep current data */ })
+    }
+  }
+
+  async function loadAllocations(): Promise<void> {
+    if (!id) return
+    classAllocError = false
+    geoAllocError = false
+    sectorAllocError = false
+
+    // L'allocazione per classi è isolata: se il backend non la espone ancora
+    // (es. asset_class non popolati) non blocca il resto della pagina.
+    try {
+      classAlloc = await portfolioApi.classAllocation(id)
+    } catch {
+      classAllocError = true
+    }
+
+    // Anche geografia e settore sono isolati: un errore qui (endpoint non
+    // disponibile o dati mancanti) non deve bloccare il resto della pagina.
+    try {
+      geoAlloc = await portfolioApi.geographyAllocation(id)
+    } catch {
+      geoAllocError = true
+    }
+
+    try {
+      sectorAlloc = await portfolioApi.sectorAllocation(id)
+    } catch {
+      sectorAllocError = true
     }
   }
 
@@ -207,6 +216,7 @@
       transactions = await transactionApi.list(id)
       summary = await portfolioApi.summary(id)
       history = await portfolioApi.history(id)
+      await loadAllocations()
       closeTx()
       toast.success(editingTx ? 'Transaction updated' : 'Transaction added')
     } catch (err: unknown) {
@@ -225,6 +235,7 @@
       transactions = await transactionApi.list(id)
       summary = await portfolioApi.summary(id)
       history = await portfolioApi.history(id)
+      await loadAllocations()
       closeTx()
       toast.success('Transaction deleted')
     } catch (err: unknown) {

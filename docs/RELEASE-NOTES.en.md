@@ -8,6 +8,9 @@
 - Consistent theme-aware colors across every page and chart, so the app is readable in both light and dark mode
 - Destructive actions now use an in-app confirmation dialog instead of the browser's native prompt
 - Notifications (toasts) restyled to match the theme and made accessible to screen readers
+- Portfolio allocations update immediately after adding, editing or deleting a transaction, with no page reload
+- Price-sync health: the Success Rate card shows `N/A` instead of `NaN%` when there is no data for the period
+- Price-sync health: failed sync messages now state the request type (chart / spark / search / fx) and the related ticker or currency
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
 

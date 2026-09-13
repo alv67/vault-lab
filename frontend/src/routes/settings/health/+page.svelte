@@ -8,6 +8,7 @@
       failures: number;
       successRate: number;
       rateLimited: number;
+      has_data: boolean;
   }
 
   interface HealthEvent {
@@ -46,7 +47,8 @@
       fetchHealth();
   });
 
-  function formatRate(val: number) {
+  function formatRate(val: number | null | undefined) {
+      if (val === null || val === undefined || Number.isNaN(val)) return 'N/A';
       return (val * 100).toFixed(1) + '%';
   }
 
@@ -84,9 +86,13 @@
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
             <div class="p-4 bg-surface border border-border rounded-card shadow-card">
                 <div class="text-sm text-muted-foreground mb-1">Success Rate</div>
-                <div class="text-2xl font-bold tabular-nums {summary.successRate > 0.9 ? 'text-positive' : 'text-warning'}">
-                    {formatRate(summary.successRate)}
-                </div>
+                {#if !summary.has_data}
+                    <div class="text-2xl font-bold tabular-nums text-muted-foreground">N/A</div>
+                {:else}
+                    <div class="text-2xl font-bold tabular-nums {summary.successRate > 0.9 ? 'text-positive' : 'text-warning'}">
+                        {formatRate(summary.successRate)}
+                    </div>
+                {/if}
             </div>
             <div class="p-4 bg-surface border border-border rounded-card shadow-card">
                 <div class="text-sm text-muted-foreground mb-1">Total Successes</div>

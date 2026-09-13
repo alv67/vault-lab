@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1139,8 +1140,12 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 
 	results, err := price.LookupAsset(ctx, query)
 	if err != nil {
+		// price.LookupAsset never surfaces HTTP statuses as typed errors, so
+		// remote search failures are always recorded with code "error".
+		s.recordSearchHealth(ctx, "search "+query+": "+err.Error(), "failure", "error")
 		return nil, err
 	}
+	s.recordSearchHealth(ctx, "search "+query+": "+strconv.Itoa(len(results))+" results", "success", "")
 
 	if data, err := json.Marshal(results); err == nil {
 		if err := s.repos.Lookup.Set(ctx, key, data, s.lookupCacheTTL); err != nil {
@@ -1149,6 +1154,24 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 	}
 
 	return results, nil
+}
+
+// recordSearchHealth logs a lookup health event. Health tracking is optional
+// (nil in tests) and must never fail the surrounding lookup.
+func (s *Service) recordSearchHealth(ctx context.Context, message, status, code string) {
+	if s.Health == nil {
+		return
+	}
+	if err := s.Health.RecordEvent(ctx, &model.HealthEvent{
+		ID:        uuid.New(),
+		EventType: "search",
+		Status:    status,
+		Code:      code,
+		Message:   message,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		log.Warn().Err(err).Msg("failed to record search health event")
+	}
 }
 
 // RefreshPrices refreshes stale stored closes for the given portfolio (or all

@@ -29,7 +29,7 @@
 ### FASE 0 — Setup progetto
 - [x] Struttura repository (monorepo con backend Go + frontend SvelteKit)
 - [ ] Docker + docker-compose con Postgres + Redis
-- [ ] CI/CD base (GitHub Actions per build e test)
+- [x] CI/CD base (GitHub Actions: build + vet + test Go, check + lint frontend) — **EPIC H.1 (#32)**
 - [ ] Task runner / Makefile per comandi comuni
 
 ### FASE 1 — Core: Auth & Gestione Investimenti

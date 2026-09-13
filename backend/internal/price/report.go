@@ -3,13 +3,17 @@ package price
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
 )
 
 // FetchIssue describes a symbol (or currency) that could not be refreshed.
 type FetchIssue struct {
-	Symbol  string `json:"symbol"`
-	Code    string `json:"code"` // "rate_limited" | "http_<status>" | "error"
-	Message string `json:"message"`
+	Symbol      string     `json:"symbol"`
+	RequestType string     `json:"request_type"` // "chart" | "spark" | "search" | "fx"
+	AssetID     *uuid.UUID `json:"asset_id,omitempty"`
+	Code        string     `json:"code"` // "rate_limited" | "http_<status>" | "error"
+	Message     string     `json:"message"`
 }
 
 // RefreshReport is the outcome of a price refresh run.
