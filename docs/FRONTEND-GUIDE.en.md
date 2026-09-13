@@ -857,8 +857,9 @@ The only page that uses the **generic client**: `api.get('/health/prices?period=
 Last 100) scopes the summary, which the backend computes from the
 `health_events` table over the selected window (it no longer resets on
 restart). It shows 4 summary cards (Success Rate, Total Successes, Total
-Failures, Rate Limited) and a table of the recent events (timestamp, type,
-status badge, code, message, duration), with a "Refresh Now" button.
+Failures, Rate Limited) and a paginated table of the recent events (timestamp,
+type, status badge, code, message, duration; page size 50 with Previous/Next
+and a range label), with a "Refresh Now" button.
 
 ---
 

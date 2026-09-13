@@ -886,8 +886,9 @@ L'unica pagina che usa il **client generico**: `api.get('/health/prices?period=t
 24h / Last 100) limita il riepilogo, che il backend calcola dalla tabella
 `health_events` sulla finestra scelta (non si azzera più al riavvio). Mostra 4
 card di riepilogo (Success Rate, Total Successes, Total Failures, Rate Limited)
-e una tabella degli eventi recenti (timestamp, tipo, badge dello stato, codice,
-messaggio, durata), con un pulsante "Refresh Now".
+e una tabella paginata degli eventi recenti (timestamp, tipo, badge dello stato,
+codice, messaggio, durata; 50 per pagina con Previous/Next e indicazione
+dell'intervallo), con un pulsante "Refresh Now".
 
 ---
 

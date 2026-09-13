@@ -460,6 +460,7 @@ Branch unico `feat/D-design-system`, 5 commit:
 - H.2 (#33, parziale) — Nuovi unit test per le allocazioni backend: `GetPortfolioAllocation` (multi-valuta, FX mancante, skip qty/prezzo) e `GetPortfolioClassAllocation` (raggruppamento/ordinamento, skip FX), più allocazione settoriale ETF (`backend/internal/service/allocation_test.go`).
 - H.9 (#90) — Asset non-Yahoo (`manual`/`none`) non più interrogati per history/split: filtro `price_source` in `GetPortfolioHistory`, `SyncAssetData`/`syncAssets` e `BackfillAssetHistory` (no-op). Niente più eventi health `history_fetch`/`split_fetch` per questi asset.
 - H.11 (#93) — Health summary calcolato dal DB (`health_events`) su finestra selezionabile **Today / Last 24h / Last 100 events** (rimossi i contatori Redis orari); `period` e `has_data` nella risposta, selettore nella pagina Health.
+- H.10 (#91, parziale) — Paginazione della lista eventi Health (`limit`/`offset`, `events_total`; UI 50/pagina con Previous/Next). Restano: copertura di tutte le chiamate esterne (meta/profilo, JustETF/Morningstar, successi) e retention di `health_events`.
 
 ### Ondata 1 — EPIC E ✅ completata
 

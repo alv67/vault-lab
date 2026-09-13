@@ -17,6 +17,7 @@
 - Impostazioni riorganizzate in tab: Profile, Password, Currencies e Health
 - Le valute gestite ora si scelgono da una lista, con il nome compilato automaticamente
 - Il cambio password ora valida inline ed evidenzia il campo in errore (es. password corrente sbagliata)
+- La lista degli eventi di health della sincronizzazione prezzi ora è paginata, così si può consultare tutto lo storico
 
 ### Correzioni
 - Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
