@@ -6,12 +6,15 @@ export interface CurrencyOption {
 /**
  * Curated ISO-4217 codes offered by the currency settings picker (EPIC E.4).
  * The array is sorted by code and defines the dropdown order.
+ *
+ * Only currencies with an available Yahoo `USD{code}=X` conversion are listed
+ * (the backend refuses to manage a currency without one); BGN was verified as
+ * unavailable and is intentionally omitted.
  */
 export const CURRENCIES: CurrencyOption[] = [
   { code: 'AED', name: 'UAE Dirham' },
   { code: 'ARS', name: 'Argentine Peso' },
   { code: 'AUD', name: 'Australian Dollar' },
-  { code: 'BGN', name: 'Bulgarian Lev' },
   { code: 'BRL', name: 'Brazilian Real' },
   { code: 'CAD', name: 'Canadian Dollar' },
   { code: 'CHF', name: 'Swiss Franc' },
