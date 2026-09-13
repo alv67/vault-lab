@@ -1,7 +1,5 @@
 # Release Notes
 
-## Unreleased
-
 ## v0.4.0 — 13 Sep 2026
 
 ### Features
