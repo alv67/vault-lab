@@ -11,6 +11,7 @@
 - Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
 - Health della sincronizzazione prezzi: la card Success Rate mostra `N/A` invece di `NaN%` quando non ci sono dati nel periodo
 - Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
+- Il grafico storico dei portafogli in dashboard ora disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 

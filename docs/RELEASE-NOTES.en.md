@@ -11,6 +11,7 @@
 - Portfolio allocations update immediately after adding, editing or deleting a transaction, with no page reload
 - Price-sync health: the Success Rate card shows `N/A` instead of `NaN%` when there is no data for the period
 - Price-sync health: failed sync messages now state the request type (chart / spark / search / fx) and the related ticker or currency
+- Dashboard portfolio history chart now draws every portfolio as a continuous line over a real timeline, and can be zoomed and panned like the portfolio charts
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
 
