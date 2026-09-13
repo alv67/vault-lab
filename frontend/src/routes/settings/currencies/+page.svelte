@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { toast } from '$lib/stores/toast.svelte'
   import { settingsApi, type Currency } from '$lib/services/api'
+  import { CURRENCIES } from '$lib/currencies'
   import { currencySymbol } from '$lib/format'
   import { Trash2 } from 'lucide-svelte'
   import SettingsTabs from '$lib/components/domain/SettingsTabs.svelte'
@@ -10,6 +11,7 @@
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import Field from '$lib/components/ui/Field.svelte'
   import Input from '$lib/components/ui/Input.svelte'
+  import Select from '$lib/components/ui/Select.svelte'
   import Table from '$lib/components/ui/Table.svelte'
   import THead from '$lib/components/ui/THead.svelte'
   import TBody from '$lib/components/ui/TBody.svelte'
@@ -21,6 +23,8 @@
   let currenciesLoading = $state(true)
   let newCode = $state('')
   let newName = $state('')
+
+  let availableCurrencies = $derived(CURRENCIES.filter((c) => !currencies.some((m) => m.code === c.code)))
 
   let addingCurrency = $state(false)
   let removingCode = $state('')
@@ -48,12 +52,15 @@
     return err instanceof Error && 'status' in err ? (err as Error & { status: number }).status : undefined
   }
 
+  function selectCurrency(code: string): void {
+    newCode = code
+    const match = CURRENCIES.find((c) => c.code === code)
+    if (match) newName = match.name
+  }
+
   async function addCurrency(): Promise<void> {
-    const code = newCode.trim().toUpperCase()
-    if (!/^[A-Z]{3}$/.test(code)) {
-      toast.error('Code must be 3 uppercase letters (e.g. GBP)')
-      return
-    }
+    const code = newCode
+    if (!code) return
     addingCurrency = true
     try {
       await settingsApi.addCurrency(code, newName.trim() || undefined)
@@ -109,23 +116,26 @@
   <Card class="max-w-2xl p-6">
     <h2 class="mb-4 font-semibold">Valute gestite</h2>
 
-    <div class="mb-4 flex items-end gap-3">
-      <Field label="Code" class="w-28">
-        <Input
-          placeholder="GBP"
-          maxlength={3}
-          bind:value={newCode}
-          class="uppercase"
-          oninput={(e) => { newCode = e.currentTarget.value.toUpperCase() }}
-        />
-      </Field>
-      <Field label="Name" class="flex-1">
-        <Input placeholder="Optional" bind:value={newName} />
-      </Field>
-      <Button onclick={addCurrency} disabled={addingCurrency}>
-        {addingCurrency ? 'Adding...' : 'Add'}
-      </Button>
-    </div>
+    {#if availableCurrencies.length > 0}
+      <div class="mb-4 flex items-end gap-3">
+        <Field label="Code" class="w-64 shrink-0">
+          <Select value={newCode} onchange={(e) => selectCurrency(e.currentTarget.value)}>
+            <option value="" disabled>Select a currency</option>
+            {#each availableCurrencies as c (c.code)}
+              <option value={c.code}>{c.code} — {c.name}</option>
+            {/each}
+          </Select>
+        </Field>
+        <Field label="Name" class="flex-1">
+          <Input placeholder="Optional" bind:value={newName} />
+        </Field>
+        <Button onclick={addCurrency} disabled={!newCode || addingCurrency}>
+          {addingCurrency ? 'Adding...' : 'Add'}
+        </Button>
+      </div>
+    {:else}
+      <p class="mb-4 text-sm text-muted-foreground">All listed currencies are already managed.</p>
+    {/if}
 
     {#if currenciesLoading}
       <p class="text-muted-foreground">Loading...</p>

@@ -19,6 +19,7 @@
 - Portfolio detail: adding/editing a transaction now happens in a modal with inline validation and a live total, and deletion is confirmed in-app
 - Portfolio positions and transactions use the shared design-system tables (positions now also show the latest price), and the page actions sit in a sticky header
 - Settings reorganized into tabs: Profile, Password, Currencies and Health
+- Managed currencies are now picked from a list, with the name filled in automatically
 - Changing your password now validates inline and highlights the field at fault (e.g. wrong current password)
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
