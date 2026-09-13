@@ -68,22 +68,6 @@
     }
   }
 
-  const chartData = $derived.by(() => {
-    const histories = dash?.history ?? []
-    if (!histories.length) return []
-    const dateSet: Record<string, boolean> = {}
-    histories.forEach((h) => h.series.forEach((pt) => (dateSet[pt.date.slice(0, 10)] = true)))
-    const dates = Object.keys(dateSet).sort()
-    return dates.map((date) => {
-      const row: { date: string } & Record<string, string | number | null> = { date }
-      histories.forEach((h) => {
-        const pt = h.series.find((s) => s.date.slice(0, 10) === date)
-        row[h.portfolio_id] = pt ? Number(pt.value) : null
-      })
-      return row
-    })
-  })
-
   const hasMultipleCurrencies = $derived((dash?.by_currency?.length ?? 0) > 1)
 </script>
 
@@ -106,8 +90,8 @@
     <div class="space-y-6">
       <div class="rounded-card border-border bg-surface p-4 shadow-card">
         <h2 class="mb-4 font-semibold">Portfolio History</h2>
-        {#if chartData.length > 0}
-          <PortfolioLineChart data={chartData} histories={dash.history} />
+        {#if dash.history?.some((h) => h.series?.length)}
+          <PortfolioLineChart histories={dash.history} />
         {:else}
           <p class="text-sm text-muted-foreground">No price history yet</p>
         {/if}
