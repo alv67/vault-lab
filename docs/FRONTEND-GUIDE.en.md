@@ -396,6 +396,7 @@ in white).
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2) |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction dialog: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls, toasts and the delete confirm | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Currencies / Health), active tab marked with `aria-current="page"` | all four **Settings** pages (E.4) |
 
 Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
 `new Date(...).toLocaleDateString()`.

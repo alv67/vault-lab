@@ -35,7 +35,7 @@
 </script>
 
 <div class="overflow-x-auto">
-  <Table>
+  <Table aria-label="Transactions">
     <THead>
       <Tr>
         <Th>Date</Th>

@@ -18,6 +18,9 @@
 - L'header della dashboard mostra quando i prezzi sono stati aggiornati l'ultima volta
 - Dettaglio portafoglio: aggiungere/modificare una transazione ora avviene in una finestra con validazione inline e totale live, e l'eliminazione è confermata nell'app
 - Le posizioni e le transazioni del portafoglio usano le tabelle condivise del design system (le posizioni ora mostrano anche l'ultimo prezzo), e le azioni della pagina stanno in un header sticky
+- Impostazioni riorganizzate in tab: Profile, Password, Currencies e Health
+- Le valute gestite ora si scelgono da una lista, con il nome compilato automaticamente
+- Il cambio password ora valida inline ed evidenzia il campo in errore (es. password corrente sbagliata)
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 

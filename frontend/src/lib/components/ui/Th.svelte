@@ -16,6 +16,7 @@
 </script>
 
 <th
+  scope="col"
   class={cx('pb-2 font-medium', align === 'right' && 'text-right', className)}
   {...rest}
 >

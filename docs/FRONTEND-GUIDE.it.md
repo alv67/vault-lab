@@ -412,6 +412,7 @@ scuro contornato di bianco).
 | `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2) |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | finestra di aggiunta/modifica/eliminazione transazione: combobox asset, tipo (buy/sell/dividend), quantità/prezzo o importo, data, commissioni, note; validazione inline e totale live; gestisce chiamate API, toast e conferma di eliminazione | la pagina **dettaglio portafoglio** (E.2), aperta da "Add Transaction" e dall'azione di modifica della tabella |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profile / Password / Currencies / Health), tab attivo marcato con `aria-current="page"` | tutte e quattro le pagine **Settings** (E.4) |
 
 I tooltip formattano i valori monetari con `formatCurrency` (capitolo 6), le
 date con `new Date(...).toLocaleDateString()`.

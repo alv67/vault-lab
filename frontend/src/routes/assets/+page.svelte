@@ -7,6 +7,12 @@
   import Badge from '$lib/components/ui/Badge.svelte'
   import Button from '$lib/components/ui/Button.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import Table from '$lib/components/ui/Table.svelte'
+  import THead from '$lib/components/ui/THead.svelte'
+  import TBody from '$lib/components/ui/TBody.svelte'
+  import Tr from '$lib/components/ui/Tr.svelte'
+  import Th from '$lib/components/ui/Th.svelte'
+  import Td from '$lib/components/ui/Td.svelte'
   import CreateAssetModal from '$lib/components/domain/CreateAssetModal.svelte'
 
   let showCreate = $state(false)
@@ -70,28 +76,28 @@
   {#if loading}
     <p class="text-muted-foreground">Loading...</p>
   {:else}
-    <table class="w-full text-left text-sm">
-      <thead>
-        <tr class="border-b border-border text-muted-foreground">
-          <th class="pb-2">Ticker</th>
-          <th class="pb-2">Name</th>
-          <th class="pb-2">Type</th>
-          <th class="pb-2">Currency</th>
-          <th class="pb-2">Country</th>
-          <th class="pb-2 text-right">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table aria-label="Assets">
+      <THead>
+        <Tr>
+          <Th>Ticker</Th>
+          <Th>Name</Th>
+          <Th>Type</Th>
+          <Th>Currency</Th>
+          <Th>Country</Th>
+          <Th align="right">Actions</Th>
+        </Tr>
+      </THead>
+      <TBody>
         {#each assets ?? [] as a (a.id)}
-          <tr class="border-b border-border last:border-0">
-            <td class="py-2 font-medium">
+          <Tr>
+            <Td class="font-medium">
               <a href={resolve(`/assets/${a.id}`)} class="text-accent-text hover:underline">{a.ticker}</a>
-            </td>
-            <td class="py-2 text-muted-foreground">{a.name}</td>
-            <td class="py-2"><Badge>{a.type}</Badge></td>
-            <td class="py-2">{a.currency}</td>
-            <td class="py-2">{a.country || '-'}</td>
-            <td class="py-2 text-right">
+            </Td>
+            <Td class="text-muted-foreground">{a.name}</Td>
+            <Td><Badge>{a.type}</Badge></Td>
+            <Td>{a.currency}</Td>
+            <Td>{a.country || '-'}</Td>
+            <Td align="right">
               <Button
                 variant="ghost"
                 size="icon"
@@ -100,11 +106,11 @@
               >
                 <Trash2 class="h-4 w-4" />
               </Button>
-            </td>
-          </tr>
+            </Td>
+          </Tr>
         {/each}
-      </tbody>
-    </table>
+      </TBody>
+    </Table>
   {/if}
 </div>
 
