@@ -14,6 +14,8 @@
 - Dashboard portfolio history chart now draws every portfolio as a continuous line over a real timeline, and can be zoomed and panned like the portfolio charts
 - Creating assets/portfolios and importing a portfolio now happen in modal dialogs consistent with the app design
 - Redesigned sign-in / registration screen with the VaultLab logo, a Sign in / Register switch, inline field validation and a password confirmation on registration
+- Dashboard rebuilt: KPI cards per currency, an allocation donut and clickable portfolio cards
+- The dashboard header shows when prices were last updated
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
 

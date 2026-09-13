@@ -1209,6 +1209,7 @@ func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) (pr
 		log.Warn().Err(err).Msg("series recompute all failed")
 	}
 	s.bumpRev(ctx)
+	report.FinishedAt = time.Now().UTC()
 	return report, nil
 }
 

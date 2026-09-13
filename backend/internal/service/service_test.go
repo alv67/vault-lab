@@ -1886,3 +1886,22 @@ func TestFetchMorningstarExposure_CachesUnderItsOwnKey(t *testing.T) {
 		t.Fatalf("first preview not canonical: regions=%d", len(first.Regions))
 	}
 }
+
+func TestRefreshPrices_SetsFinishedAt(t *testing.T) {
+	svc := newFetchTestService(t, &fakeAssetRepo{}, &fakeExposureRepo{}, nil, &fakeYahooFetcher{}, nil)
+	portfolioID := uuid.New()
+
+	for _, pid := range []*uuid.UUID{nil, &portfolioID} {
+		start := time.Now().UTC().Add(-time.Second)
+		report, err := svc.RefreshPrices(context.Background(), pid)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if report.FinishedAt.IsZero() {
+			t.Fatal("finished_at is zero, want the refresh completion timestamp")
+		}
+		if report.FinishedAt.Before(start) || report.FinishedAt.After(time.Now().UTC()) {
+			t.Fatalf("finished_at = %v, want a timestamp between the call start and now", report.FinishedAt)
+		}
+	}
+}

@@ -14,6 +14,8 @@
 - Il grafico storico dei portafogli in dashboard ora disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
 - La creazione di asset/portafogli e l'import di un portafoglio ora avvengono in finestre modali coerenti con il design dell'app
 - Ridisegnata la schermata di accesso/registrazione con il logo VaultLab, lo switch Sign in / Register, la validazione inline dei campi e la conferma password in registrazione
+- Dashboard ridisegnata: card KPI per valuta, donut dell'allocazione e card dei portafogli cliccabili
+- L'header della dashboard mostra quando i prezzi sono stati aggiornati l'ultima volta
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 

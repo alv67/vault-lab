@@ -469,7 +469,9 @@ is not just the list of updated securities: it is a **report** with:
 - `issues` — the problems, each with a stable code:
   `rate_limited` (Yahoo refused because of too many calls), `http_<status>`
   (a specific HTTP error) or `error`;
-- `rate_limited` — a quick summary: "was there a rate limit block?".
+- `rate_limited` — a quick summary: "was there a rate limit block?";
+- `finished_at` — when the refresh run completed (UTC timestamp; the dashboard
+  shows it as "Prices updated: …").
 
 The frontend uses this report to show a non-blocking warning if some update
 failed.

@@ -579,6 +579,9 @@ sessione**, `pricesApi.refresh()` e poi rifare il fetch dei dati. Il
 - altrimenti, se `issues.length > 0` → "N aggiornamenti prezzi non riusciti
   (Yahoo)".
 
+La dashboard conserva inoltre `finished_at` dal report per mostrare la riga
+"Prices updated: …" nell'header.
+
 Questo mantiene l'UI funzionante quando viene aperta come deep-link senza
 passare dalla dashboard.
 

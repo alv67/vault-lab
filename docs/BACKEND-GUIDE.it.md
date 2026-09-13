@@ -466,7 +466,9 @@ risposta non è solo la lista dei titoli aggiornati: è un **report** con:
 - `issues` — i problemi, ognuno con un codice stabile:
   `rate_limited` (Yahoo ha rifiutato per troppe chiamate), `http_<status>`
   (un errore HTTP specifico) o `error`;
-- `rate_limited` — un riepilogo rapido: "c'è stato un blocco da rate limit?".
+- `rate_limited` — un riepilogo rapido: "c'è stato un blocco da rate limit?";
+- `finished_at` — quando l'aggiornamento è terminato (timestamp UTC; la
+  dashboard lo mostra come "Prices updated: …").
 
 Il frontend usa questo report per mostrare un avviso non bloccante se qualche
 aggiornamento è fallito.
