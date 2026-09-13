@@ -8,10 +8,6 @@
 - Colori coerenti con il tema su tutte le pagine e i grafici, così l'interfaccia è leggibile sia in chiaro sia in scuro
 - Le azioni distruttive ora usano una finestra di conferma dell'app invece del prompt nativo del browser
 - Le notifiche (toast) sono state ridisegnate in linea col tema e rese accessibili agli screen reader
-- Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
-- Health della sincronizzazione prezzi: la card Success Rate mostra `N/A` invece di `NaN%` quando non ci sono dati nel periodo
-- Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
-- Il grafico storico dei portafogli in dashboard ora disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
 - La creazione di asset/portafogli e l'import di un portafoglio ora avvengono in finestre modali coerenti con il design dell'app
 - Ridisegnata la schermata di accesso/registrazione con il logo VaultLab, lo switch Sign in / Register, la validazione inline dei campi e la conferma password in registrazione
 - Dashboard ridisegnata: card KPI per valuta, donut dell'allocazione e card dei portafogli cliccabili
@@ -21,8 +17,13 @@
 - Impostazioni riorganizzate in tab: Profile, Password, Currencies e Health
 - Le valute gestite ora si scelgono da una lista, con il nome compilato automaticamente
 - Il cambio password ora valida inline ed evidenzia il campo in errore (es. password corrente sbagliata)
+
+### Correzioni
+- Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
+- Il grafico storico dei portafogli in dashboard disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
+- Health della sincronizzazione prezzi: le card Success Rate e Rate Limited mostrano ora i valori reali (il rate poteva restare bloccato su `N/A`, o mostrare `NaN%` senza dati)
+- Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
 - Gli asset non gestiti da Yahoo (manual / none) non generano più errori di sincronizzazione nella dashboard di health
-- Health della sincronizzazione prezzi: le card Success Rate e Rate Limited mostrano ora i valori reali (il rate poteva restare bloccato su `N/A`)
 
 ## v0.3.0 — 11 Set 2026
 
