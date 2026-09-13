@@ -297,10 +297,10 @@
               {#each classAlloc.classes as c (c.class)}
                 <tr class="border-b border-border last:border-0">
                   <td class="py-2 font-medium">{ASSET_CLASS_LABELS[c.class] ?? c.class}</td>
-                  <td class="py-2 text-right">
+                  <td class="py-2 text-right tabular-nums">
                     {formatCurrency(c.value, classAlloc.currency)}
                   </td>
-                  <td class="py-2 text-right font-medium">
+                  <td class="py-2 text-right font-medium tabular-nums">
                     {formatPercent(c.weight)}
                   </td>
                 </tr>

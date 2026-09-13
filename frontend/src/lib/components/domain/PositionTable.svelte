@@ -63,7 +63,7 @@
 </script>
 
 <div class="overflow-x-auto">
-  <Table>
+  <Table aria-label="Positions">
     <THead>
       <Tr>
         <Th>Ticker</Th>

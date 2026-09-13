@@ -93,7 +93,11 @@
               <h3 class="font-semibold">{p.name}</h3>
               <p class="text-xs text-muted-foreground">{p.currency}</p>
             </div>
-            <a href={resolve(`/portfolios/${p.id}`)} class="text-accent-text hover:underline">
+            <a
+              href={resolve(`/portfolios/${p.id}`)}
+              aria-label={`Open ${p.name}`}
+              class="text-accent-text hover:underline"
+            >
               <ExternalLink class="h-4 w-4" />
             </a>
           </div>

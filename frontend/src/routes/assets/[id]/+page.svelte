@@ -809,6 +809,9 @@
           <button
             onclick={() => (metaMenuOpen = !metaMenuOpen)}
             class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Apri menu azioni dati"
+            aria-haspopup="true"
+            aria-expanded={metaMenuOpen}
             title="Aggiorna da Yahoo"
           >
             <EllipsisVertical class="h-5 w-5" />

@@ -120,8 +120,8 @@
             {#each data as c (c.sector)}
               <tr class="border-b border-border last:border-0">
                 <td class="py-2 font-medium">{c.sector}</td>
-                <td class="py-2 text-right">{formatCurrency(c.value, currency)}</td>
-                <td class="py-2 text-right font-medium">{formatPercent(c.weight)}</td>
+                <td class="py-2 text-right tabular-nums">{formatCurrency(c.value, currency)}</td>
+                <td class="py-2 text-right font-medium tabular-nums">{formatPercent(c.weight)}</td>
               </tr>
             {/each}
           </tbody>
