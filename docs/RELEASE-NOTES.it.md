@@ -22,6 +22,7 @@
 - Le valute gestite ora si scelgono da una lista, con il nome compilato automaticamente
 - Il cambio password ora valida inline ed evidenzia il campo in errore (es. password corrente sbagliata)
 - Gli asset non gestiti da Yahoo (manual / none) non generano più errori di sincronizzazione nella dashboard di health
+- Health della sincronizzazione prezzi: le card Success Rate e Rate Limited mostrano ora i valori reali (il rate poteva restare bloccato su `N/A`)
 
 ## v0.3.0 — 11 Set 2026
 

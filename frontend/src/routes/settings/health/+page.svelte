@@ -15,8 +15,8 @@
   interface HealthSummary {
     successes: number
     failures: number
-    successRate: number
-    rateLimited: number
+    success_rate: number
+    rate_limited: number
     has_data: boolean
   }
 
@@ -96,8 +96,8 @@
         {#if !summary.has_data}
           <div class="text-2xl font-bold tabular-nums text-muted-foreground">N/A</div>
         {:else}
-          <div class="text-2xl font-bold tabular-nums {summary.successRate > 0.9 ? 'text-positive' : 'text-warning'}">
-            {formatRate(summary.successRate)}
+          <div class="text-2xl font-bold tabular-nums {summary.success_rate > 0.9 ? 'text-positive' : 'text-warning'}">
+            {formatRate(summary.success_rate)}
           </div>
         {/if}
       </div>
@@ -111,7 +111,7 @@
       </div>
       <div class="rounded-card border border-border bg-surface p-4 shadow-card">
         <div class="mb-1 text-sm text-muted-foreground">Rate Limited</div>
-        <div class="text-2xl font-bold tabular-nums text-warning">{summary.rateLimited}</div>
+        <div class="text-2xl font-bold tabular-nums text-warning">{summary.rate_limited}</div>
       </div>
     </div>
 

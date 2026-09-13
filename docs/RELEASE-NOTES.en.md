@@ -22,6 +22,7 @@
 - Managed currencies are now picked from a list, with the name filled in automatically
 - Changing your password now validates inline and highlights the field at fault (e.g. wrong current password)
 - Assets not priced by Yahoo (manual / none) no longer generate sync errors in the price-sync health dashboard
+- Price-sync health: the Success Rate and Rate Limited cards now show the actual values (the rate could stay stuck on `N/A`)
 
 ## v0.3.0 — 11 Sep 2026
 
