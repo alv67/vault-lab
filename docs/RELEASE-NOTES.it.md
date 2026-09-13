@@ -8,10 +8,6 @@
 - Colori coerenti con il tema su tutte le pagine e i grafici, così l'interfaccia è leggibile sia in chiaro sia in scuro
 - Le azioni distruttive ora usano una finestra di conferma dell'app invece del prompt nativo del browser
 - Le notifiche (toast) sono state ridisegnate in linea col tema e rese accessibili agli screen reader
-- Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
-- Health della sincronizzazione prezzi: la card Success Rate mostra `N/A` invece di `NaN%` quando non ci sono dati nel periodo
-- Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
-- Il grafico storico dei portafogli in dashboard ora disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
 - La creazione di asset/portafogli e l'import di un portafoglio ora avvengono in finestre modali coerenti con il design dell'app
 - Ridisegnata la schermata di accesso/registrazione con il logo VaultLab, lo switch Sign in / Register, la validazione inline dei campi e la conferma password in registrazione
 - Dashboard ridisegnata: card KPI per valuta, donut dell'allocazione e card dei portafogli cliccabili
@@ -21,6 +17,39 @@
 - Impostazioni riorganizzate in tab: Profile, Password, Currencies e Health
 - Le valute gestite ora si scelgono da una lista, con il nome compilato automaticamente
 - Il cambio password ora valida inline ed evidenzia il campo in errore (es. password corrente sbagliata)
+
+### Correzioni
+- Le allocazioni del portafoglio si aggiornano subito dopo aver aggiunto, modificato o eliminato una transazione, senza ricaricare la pagina
+- Il grafico storico dei portafogli in dashboard disegna ogni portafoglio come una linea continua su una timeline reale, e si può zoomare e spostare come i grafici del portafoglio
+- Health della sincronizzazione prezzi: le card Success Rate e Rate Limited mostrano ora i valori reali (il rate poteva restare bloccato su `N/A`, o mostrare `NaN%` senza dati)
+- Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
+- Gli asset non gestiti da Yahoo (manual / none) non generano più errori di sincronizzazione nella dashboard di health
+
+## v0.3.0 — 11 Set 2026
+
+### Nuove funzionalità
+- Scegli come ogni asset riceve i suoi prezzi: `Yahoo`, `Manual` o `None` (evita errori Yahoo per ticker non-Yahoo come alcuni bond)
+- Il grafico storico dell'asset ora carica tutto lo storico e fa lo zoom in-place usando i selettori 1M/3M/1Y/YTD/MAX (nessun ricaricamento inutile)
+- Nuovo range `YTD` (da inizio anno) sul grafico storico dell'asset
+- Marcatori degli split mostrati sul grafico storico dell'asset (es. `Split 4:1`)
+- L'esposizione (regioni/settori) dell'asset si modifica in una modale dedicata, con tabelle dei pesi validate e compilazione automatica da JustETF e Yahoo
+- Modifica la distribuzione geografica con un elenco per-paese (aggiungi/rimuovi paesi e imposta ogni peso), oltre a regioni e settori
+- L'esposizione geografica e settoriale può essere compilata anche da Morningstar (regioni ufficiali), oltre a JustETF e Yahoo
+- Ogni distribuzione mostra da dove arrivano i dati e quando sono stati aggiornati l'ultima volta (es. `da Morningstar (2026-09-05)`)
+- Le letture dai provider sono in cache, quindi riaprire i prefill è immediato
+
+### Correzioni
+- Riaprire un editor di esposizione ora riparte sempre dai dati salvati: le modifiche non salvate vengono scartate
+
+## v0.2.0 — 30 Ago 2026
+
+### Nuove funzionalità
+- Valori coerenti nel riepilogo del portafoglio anche quando manca un tasso di cambio
+- Chart di distribuzione geografica e settoriale per portafogli e dashboard
+- Classi di asset e allocazione per classe di investimento
+- Storico dei tassi di cambio, così serie e chart restano corretti nel tempo
+- Pagina dettaglio asset con riferimenti, esposizione e storico prezzi completo
+- Esposizione ETF automatica (paesi/regioni e settori) con ricerca del codice ISIN partendo dal ticker
 
 ## v0.1.0 — 25 Ago 2026 (prima release ufficiale)
 
@@ -38,29 +67,3 @@
 - Importo investito per valuta nella dashboard
 - Aggiornamento prezzi automatico e manuale con dashboard di health della sincronizzazione
 - Aggiornamento automatico periodico di prezzi asset e tassi di cambio, che aggiorna valori e storico fino all'ultima esecuzione
-
-## v0.2.0 — 30 Ago 2026
-
-### Nuove funzionalità
-- Valori coerenti nel riepilogo del portafoglio anche quando manca un tasso di cambio
-- Chart di distribuzione geografica e settoriale per portafogli e dashboard
-- Classi di asset e allocazione per classe di investimento
-- Storico dei tassi di cambio, così serie e chart restano corretti nel tempo
-- Pagina dettaglio asset con riferimenti, esposizione e storico prezzi completo
-- Esposizione ETF automatica (paesi/regioni e settori) con ricerca del codice ISIN partendo dal ticker
-
-## v0.3.0 — 11 Set 2026
-
-### Nuove funzionalità
-- Scegli come ogni asset riceve i suoi prezzi: `Yahoo`, `Manual` o `None` (evita errori Yahoo per ticker non-Yahoo come alcuni bond)
-- Il grafico storico dell'asset ora carica tutto lo storico e fa lo zoom in-place usando i selettori 1M/3M/1Y/YTD/MAX (nessun ricaricamento inutile)
-- Nuovo range `YTD` (da inizio anno) sul grafico storico dell'asset
-- Marcatori degli split mostrati sul grafico storico dell'asset (es. `Split 4:1`)
-- L'esposizione (regioni/settori) dell'asset si modifica in una modale dedicata, con tabelle dei pesi validate e compilazione automatica da JustETF e Yahoo
-- Modifica la distribuzione geografica con un elenco per-paese (aggiungi/rimuovi paesi e imposta ogni peso), oltre a regioni e settori
-- L'esposizione geografica e settoriale può essere compilata anche da Morningstar (regioni ufficiali), oltre a JustETF e Yahoo
-- Ogni distribuzione mostra da dove arrivano i dati e quando sono stati aggiornati l'ultima volta (es. `da Morningstar (2026-09-05)`)
-- Le letture dai provider sono in cache, quindi riaprire i prefill è immediato
-
-### Correzioni
-- Riaprire un editor di esposizione ora riparte sempre dai dati salvati: le modifiche non salvate vengono scartate

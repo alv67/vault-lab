@@ -149,6 +149,9 @@ func (f *fakeFXRepo) History(ctx context.Context, base, quote string) ([]model.F
 type fakeAssetRepo struct {
 	asset *model.Asset
 	err   error
+	// assets backs FindByIDs so the history/sync paths can be tested with a
+	// mix of price sources.
+	assets []*model.Asset
 	// updateCalls and lastUpdate record asset writes so tests can assert the
 	// exposure fetches persist nothing but the auto-resolved ISIN.
 	updateCalls int
@@ -176,7 +179,7 @@ func (f *fakeAssetRepo) FindByTicker(ctx context.Context, ticker string) (*model
 	return nil, nil
 }
 func (f *fakeAssetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error) {
-	return nil, nil
+	return f.assets, nil
 }
 func (f *fakeAssetRepo) Search(ctx context.Context, query string) ([]*model.Asset, error) {
 	return nil, nil
@@ -263,6 +266,13 @@ type fakeYahooFetcher struct {
 	// style counters record the calls so tests can assert the fetch ran.
 	weightings           []model.ExposureRow
 	profileExtendedCalls int
+	// historyCalls/splitCalls count the backfill entries; historyTickers and
+	// splitTickers record the assets actually forwarded so tests can assert
+	// non-Yahoo assets never reach the fetcher.
+	historyCalls   int
+	splitCalls     int
+	historyTickers []string
+	splitTickers   []string
 }
 
 func (f *fakeYahooFetcher) FetchAssetProfile(ctx context.Context, ticker string) (string, string, string, error) {
@@ -288,9 +298,17 @@ func (f *fakeYahooFetcher) RefreshStaleForPortfolio(ctx context.Context, portfol
 	return price.RefreshReport{}, nil
 }
 func (f *fakeYahooFetcher) EnsureHistory(ctx context.Context, assets []price.HistoryAsset) error {
+	f.historyCalls++
+	for _, a := range assets {
+		f.historyTickers = append(f.historyTickers, a.Ticker)
+	}
 	return nil
 }
 func (f *fakeYahooFetcher) EnsureSplits(ctx context.Context, assets []*model.Asset) error {
+	f.splitCalls++
+	for _, a := range assets {
+		f.splitTickers = append(f.splitTickers, a.Ticker)
+	}
 	return nil
 }
 
@@ -337,6 +355,53 @@ func newFetchTestService(t *testing.T, a *fakeAssetRepo, e *fakeExposureRepo, lk
 		Lookup:    lk,
 	}
 	return New(repos, nil, yf, etf, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
+}
+
+// fakeTransactionRepo is a minimal TransactionRepository stand-in for the
+// history/split sync paths: MinDateByAsset returns canned first-transaction
+// dates, the rest are inert stubs.
+type fakeTransactionRepo struct {
+	minDates map[uuid.UUID]time.Time
+}
+
+func (f *fakeTransactionRepo) Create(ctx context.Context, tx *model.Transaction) (*model.Transaction, error) {
+	return tx, nil
+}
+func (f *fakeTransactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error) {
+	return nil, nil
+}
+func (f *fakeTransactionRepo) FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error) {
+	return nil, nil
+}
+func (f *fakeTransactionRepo) MinDateByAsset(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]time.Time, error) {
+	if f.minDates == nil {
+		return map[uuid.UUID]time.Time{}, nil
+	}
+	return f.minDates, nil
+}
+func (f *fakeTransactionRepo) MinDateByCurrency(ctx context.Context) (map[string]time.Time, error) {
+	return nil, nil
+}
+func (f *fakeTransactionRepo) CountByAsset(ctx context.Context, assetID uuid.UUID) (int64, error) {
+	return 0, nil
+}
+func (f *fakeTransactionRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.Transaction, error) {
+	return nil, nil
+}
+func (f *fakeTransactionRepo) Update(ctx context.Context, tx *model.Transaction) error { return nil }
+func (f *fakeTransactionRepo) Delete(ctx context.Context, id uuid.UUID) error           { return nil }
+
+func newSyncTestService(t *testing.T, a *fakeAssetRepo, tx *fakeTransactionRepo, yf yahooFetcher) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:       a,
+		Portfolio:   &fakePortfolioRepo{},
+		Transaction: tx,
+		Exposure:    &fakeExposureRepo{},
+		FX:          &fakeFXRepo{},
+		Lookup:      &fakeLookupRepo{},
+	}
+	return New(repos, nil, yf, nil, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
 }
 
 func holding(id, currency, country, sector string, typ model.AssetType, qty, lastClose decimal.Decimal) *model.Holding {
@@ -1903,5 +1968,117 @@ func TestRefreshPrices_SetsFinishedAt(t *testing.T) {
 		if report.FinishedAt.Before(start) || report.FinishedAt.After(time.Now().UTC()) {
 			t.Fatalf("finished_at = %v, want a timestamp between the call start and now", report.FinishedAt)
 		}
+	}
+}
+
+func TestIsYahooPriced(t *testing.T) {
+	cases := []struct {
+		source string
+		want   bool
+	}{
+		{"yahoo", true},
+		{"", true}, // legacy default: the column postdates the first assets
+		{"manual", false},
+		{"none", false},
+	}
+	for _, tc := range cases {
+		a := &model.Asset{Ticker: "X", PriceSource: tc.source}
+		if got := isYahooPriced(a); got != tc.want {
+			t.Fatalf("isYahooPriced(price_source=%q) = %v, want %v", tc.source, got, tc.want)
+		}
+	}
+}
+
+func TestFilterYahooAssets(t *testing.T) {
+	assets := []*model.Asset{
+		{ID: uuid.New(), Ticker: "AAPL", PriceSource: "yahoo"},
+		{ID: uuid.New(), Ticker: "LEGACY", PriceSource: ""},
+		{ID: uuid.New(), Ticker: "BTC", PriceSource: "manual"},
+		{ID: uuid.New(), Ticker: "CASH", PriceSource: "none"},
+	}
+	got := filterYahooAssets(assets)
+	if len(got) != 2 || got[0].Ticker != "AAPL" || got[1].Ticker != "LEGACY" {
+		t.Fatalf("filtered = %+v, want [AAPL LEGACY] in input order", got)
+	}
+	if out := filterYahooAssets(nil); len(out) != 0 {
+		t.Fatalf("filter(nil) = %+v, want empty", out)
+	}
+}
+
+// TestSyncAssets_OnlyForwardsYahooPriced covers the GetPortfolioHistory
+// filtering too: that path builds its EnsureHistory/EnsureSplits inputs with
+// the same filterYahooAssets helper (a full GetPortfolioHistory test would
+// need the whole series/Split repository surface stubbed).
+func TestSyncAssets_OnlyForwardsYahooPriced(t *testing.T) {
+	assets := []*model.Asset{
+		{ID: uuid.New(), Ticker: "AAPL", PriceSource: "yahoo"},
+		{ID: uuid.New(), Ticker: "BTC", PriceSource: "manual"},
+		{ID: uuid.New(), Ticker: "LEGACY", PriceSource: ""},
+		{ID: uuid.New(), Ticker: "CASH", PriceSource: "none"},
+	}
+	ids := make([]uuid.UUID, 0, len(assets))
+	for _, a := range assets {
+		ids = append(ids, a.ID)
+	}
+	yf := &fakeYahooFetcher{}
+	svc := newSyncTestService(t, &fakeAssetRepo{assets: assets}, &fakeTransactionRepo{}, yf)
+
+	if err := svc.syncAssets(context.Background(), ids); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if yf.historyCalls != 1 || yf.splitCalls != 1 {
+		t.Fatalf("fetcher calls = history %d splits %d, want 1 and 1", yf.historyCalls, yf.splitCalls)
+	}
+	want := []string{"AAPL", "LEGACY"}
+	if len(yf.historyTickers) != len(want) || yf.historyTickers[0] != want[0] || yf.historyTickers[1] != want[1] {
+		t.Fatalf("EnsureHistory tickers = %v, want %v (manual/none must not reach Yahoo)", yf.historyTickers, want)
+	}
+	if len(yf.splitTickers) != len(want) || yf.splitTickers[0] != want[0] || yf.splitTickers[1] != want[1] {
+		t.Fatalf("EnsureSplits tickers = %v, want %v (manual/none must not reach Yahoo)", yf.splitTickers, want)
+	}
+}
+
+func TestSyncAssets_AllNonYahooSkipsFetcher(t *testing.T) {
+	assets := []*model.Asset{
+		{ID: uuid.New(), Ticker: "BTC", PriceSource: "manual"},
+		{ID: uuid.New(), Ticker: "CASH", PriceSource: "none"},
+	}
+	ids := []uuid.UUID{assets[0].ID, assets[1].ID}
+	yf := &fakeYahooFetcher{}
+	svc := newSyncTestService(t, &fakeAssetRepo{assets: assets}, &fakeTransactionRepo{}, yf)
+
+	if err := svc.syncAssets(context.Background(), ids); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if yf.historyCalls != 0 || yf.splitCalls != 0 {
+		t.Fatalf("fetcher calls = history %d splits %d, want 0 and 0", yf.historyCalls, yf.splitCalls)
+	}
+}
+
+func TestBackfillAssetHistory_SkipsNonYahooAssets(t *testing.T) {
+	for _, source := range []string{"manual", "none"} {
+		asset := &model.Asset{ID: uuid.New(), Ticker: "BTC", PriceSource: source}
+		yf := &fakeYahooFetcher{}
+		svc := newFetchTestService(t, &fakeAssetRepo{asset: asset}, &fakeExposureRepo{}, nil, yf, nil)
+
+		if err := svc.BackfillAssetHistory(context.Background(), asset.ID); err != nil {
+			t.Fatalf("price_source=%q: unexpected error: %v", source, err)
+		}
+		if yf.historyCalls != 0 {
+			t.Fatalf("price_source=%q: EnsureHistory calls = %d, want 0 (silent no-op)", source, yf.historyCalls)
+		}
+	}
+}
+
+func TestBackfillAssetHistory_FullsYahooAsset(t *testing.T) {
+	asset := &model.Asset{ID: uuid.New(), Ticker: "AAPL", PriceSource: "yahoo"}
+	yf := &fakeYahooFetcher{}
+	svc := newFetchTestService(t, &fakeAssetRepo{asset: asset}, &fakeExposureRepo{}, nil, yf, nil)
+
+	if err := svc.BackfillAssetHistory(context.Background(), asset.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if yf.historyCalls != 1 || len(yf.historyTickers) != 1 || yf.historyTickers[0] != "AAPL" {
+		t.Fatalf("EnsureHistory calls = %d tickers = %v, want 1 [AAPL]", yf.historyCalls, yf.historyTickers)
 	}
 }

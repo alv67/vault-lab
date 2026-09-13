@@ -436,8 +436,9 @@ criteria:
    skip.
 
 Only assets with `price_source = 'yahoo'` (or empty, for safety) are ever
-sent to Yahoo; assets with `price_source = 'manual'` or `'none'` are
-skipped entirely and never reported as stale.
+sent to Yahoo — for current quotes, history and splits; assets with
+`price_source = 'manual'` or `'none'` are skipped entirely and never reported
+as stale.
 
 When updates are needed, current quotes and exchange rates are fetched **in
 batch** using Yahoo's `spark` endpoint: a single call for groups of 50
@@ -873,9 +874,10 @@ otherwise continue".
   `POST /assets/{id}/fetch-morningstar-exposure`) and its `GET /api/v1/etf/search`
   endpoint (tickers with an exchange suffix are normalized before querying).
 - Assets can have `price_source` set to `'yahoo'` (default), `'manual'` or
-  `'none'`. Only Yahoo-priced assets are fetched by the worker and
-  `RefreshStale`; manual/none assets are skipped entirely (no Yahoo request,
-  no health errors).
+  `'none'`. Only Yahoo-priced assets are fetched — by the worker, `RefreshStale`,
+  the history/split backfill (`GetPortfolioHistory`, `SyncAssetData`) and the
+  single-asset history backfill; manual/none assets are skipped entirely (no
+  Yahoo request, no health errors), and backfilling their history is a no-op.
 - There are alternative SQL methods for summaries and allocations
   (`GetSummary`, `GetAllocation`, `GetROI`) that are not used by the service
   layer: the financial calculation lives in the AVCO engine (chapter 8), not
