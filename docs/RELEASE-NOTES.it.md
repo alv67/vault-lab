@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.0 — 13 Set 2026
+
 ### Nuove funzionalità
 - Nuovo tema scuro, attivo di default, con le opzioni Chiaro / Scuro / Sistema
 - Navigazione ridisegnata: sidebar collassabile, header in alto con selettore del tema e menu utente, e drawer a scomparsa su mobile

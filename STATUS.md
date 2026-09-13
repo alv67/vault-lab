@@ -20,7 +20,11 @@ e EPIC B completo (distribuzione geo/settoriale, asset class, FX history, charts
 **v0.3.0** — terza release su `main` (11 Set 2026): asset editing overhaul (price_source
 Yahoo/Manual/None, chart in-place con YTD e marcatori split, modale esposizione) ed editing
 dell'esposizione per-paese con fonte Morningstar/JustETF, cache e provenienza.
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0` su `main`.
+**v0.4.0** — quarta release su `main` (13 Set 2026): design system & dark mode (EPIC D),
+rebuild delle pagine e dei componenti di dominio (EPIC E: asset/portafogli/modali/login/
+impostazioni a tab), dashboard e dettaglio portafoglio rinnovati, Health più chiaro
+(periodo Today/24h/100, paginazione, fix N/A) e CI GitHub Actions.
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 

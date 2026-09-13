@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.0 — 13 Sep 2026
+
 ### Features
 - New dark theme, enabled by default, with Light / Dark / System options
 - Redesigned navigation: collapsible sidebar, top header with the theme selector and the user menu, and a slide-in drawer on mobile

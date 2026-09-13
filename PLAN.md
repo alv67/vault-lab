@@ -174,10 +174,12 @@ vault-lab/
 
 ---
 
-## Stato attuale (11 Set 2026)
+## Stato attuale (13 Set 2026)
 
-**Release v0.3.0** pubblicata su `main` (asset editing overhaul e editing dell'esposizione per-paese).
-Precedenti release: **v0.1.0** (25 Ago 2026, prima release ufficiale) e **v0.2.0** (30 Ago 2026, EPIC A + EPIC B).
+**Release v0.4.0** pubblicata su `main` (design system & dark mode, rebuild delle pagine e dei
+componenti di dominio, dashboard/portafoglio rinnovati, Health più chiaro, CI).
+Precedenti release: **v0.1.0** (25 Ago 2026), **v0.2.0** (30 Ago 2026, EPIC A + EPIC B) e
+**v0.3.0** (11 Set 2026, asset editing overhaul).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
 procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
@@ -190,6 +192,9 @@ countries/regions/sectors) e **Morningstar come fonte esposizione** (B.14, #59: 
 bootstrap Chromium headless per WAF+JWT, rotta backend
 `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend).
 Poi EPIC D (design system e dark mode, completata: token, tema a 3 modalità con default dark,
-primitive `ui/` e nuovo AppShell responsive), EPIC C (metric di rischio) ed EPIC E (pagine dominio),
-e i rimanenti item di condivisione/CSV della Fase 1. Vedi STATUS.md per lo stato dettagliato.
+primitive `ui/` e nuovo AppShell responsive), EPIC C (metric di rischio) ed EPIC E (pagine e
+componenti di dominio, completata in v0.4.0: dashboard, dettaglio portafoglio, assets/portafogli
+con modali, login e impostazioni a tab).
+Prossimi: **EPIC I — Dashboard & portfolio v2** (vista aggregata in valuta base, chart e tabelle)
+ed **EPIC C — metric di rischio**. Vedi STATUS.md per lo stato dettagliato.
 
