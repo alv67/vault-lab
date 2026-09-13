@@ -17,8 +17,8 @@ func NewHealthHandler(svc *service.HealthService) *HealthHandler {
 
 func (h *HealthHandler) GetPriceHealth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	
-	summary, events, err := h.svc.GetPriceHealth(ctx)
+
+	summary, events, err := h.svc.GetPriceHealth(ctx, r.URL.Query().Get("period"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
