@@ -181,7 +181,7 @@ frontend/
         ├── portfolios/     # portfolios list + CRUD + import
         ├── portfolios/[id]/ # portfolio detail (transactions, charts)
         ├── settings/       # profile, password, currency whitelist
-        └── settings/health/ # price-sync health dashboard
+        └── admin/health/   # price-sync health dashboard (admin area)
 ```
 
 > There is **no separate `/register` page**: the login page contains a
@@ -843,14 +843,12 @@ Called endpoints: `settingsApi.listCurrencies()`, `updateProfile()`,
 - **Profile** (name/email) and **Change password**
   (`POST /users/me/password` with `current_password` + `new_password`,
   frontend check that the two new ones match).
-- **Infrastruttura** card with a link to the health dashboard
-  (`/settings/health`).
 - **Valute gestite**: the currency whitelist CRUD — add a 3-letter code (a
   422 from the backend means Yahoo has no USD→code conversion and the frontend
   shows a specific message; 409 means already present), delete with confirm
   (409 = in use or protected). Symbols rendered with `currencySymbol()`.
 
-### `/settings/health` — Price Sync Health (`routes/settings/health/+page.svelte`)
+### `/admin/health` — Price Sync Health (`routes/admin/health/+page.svelte`)
 
 The only page that uses the **generic client**: `api.get('/health/prices?period=today|24h|100')`
 (same-origin `/api/v1/health/prices`). A period selector (Today / Last 24h /

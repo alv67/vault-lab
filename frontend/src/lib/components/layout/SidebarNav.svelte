@@ -5,13 +5,14 @@
   import { cx } from '../ui/utils'
 
   /**
-   * Navigation inside the sidebar (EPIC D.3): main section on top, Settings
-   * section pinned to the bottom. `collapsed` renders the icon-rail variant
-   * (64px): labels disappear, so each link carries an `aria-label`/`title`.
+   * Navigation inside the sidebar (EPIC D.3): main section on top, Admin and
+   * Settings sections pinned to the bottom. `collapsed` renders the icon-rail
+   * variant (64px): labels disappear, so each link carries an
+   * `aria-label`/`title`.
    *
    * The active entry is the item whose path is the *longest* prefix of the
    * current URL (with `/` matching exactly): only one link ever gets
-   * `aria-current="page"`, so `/settings/health` highlights Health alone
+   * `aria-current="page"`, so `/admin/health` highlights Health alone
    * and `/settings` alone highlights Settings.
    */
   type IconType = typeof LayoutDashboard
@@ -26,9 +27,12 @@
     { to: '/assets', label: 'Assets', icon: Banknote as IconType },
   ] as const
 
+  const adminItems = [
+    { to: '/admin/health', label: 'Health', icon: Activity as IconType },
+  ] as const
+
   const settingsItems = [
     { to: '/settings', label: 'Settings', icon: Settings as IconType },
-    { to: '/settings/health', label: 'Health', icon: Activity as IconType },
   ] as const
 
   function matches(to: string, pathname: string): boolean {
@@ -38,7 +42,7 @@
 
   const activeTo = $derived.by(() => {
     let best: string | null = null
-    for (const item of [...mainItems, ...settingsItems]) {
+    for (const item of [...mainItems, ...adminItems, ...settingsItems]) {
       if (
         matches(item.to, page.url.pathname) &&
         (best === null || item.to.length > best.length)
@@ -75,6 +79,29 @@
         {#if !collapsed}{item.label}{/if}
       </a>
     {/each}
+  </div>
+
+  <div class="border-t border-border p-3">
+    {#if !collapsed}
+      <div class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Admin
+      </div>
+    {/if}
+    <div class="space-y-1">
+      {#each adminItems as item (item.to)}
+        {@const Icon = item.icon}
+        <a
+          href={resolve(item.to)}
+          class={itemClasses(item.to)}
+          aria-current={item.to === activeTo ? 'page' : undefined}
+          aria-label={collapsed ? item.label : undefined}
+          title={collapsed ? item.label : undefined}
+        >
+          <Icon class="h-5 w-5 shrink-0" />
+          {#if !collapsed}{item.label}{/if}
+        </a>
+      {/each}
+    </div>
   </div>
 
   <div class="border-t border-border p-3">

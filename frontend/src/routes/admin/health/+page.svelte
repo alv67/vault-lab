@@ -1,7 +1,6 @@
 <script lang="ts">
   import { toast } from '$lib/stores/toast.svelte'
   import { api } from '$lib/services/api'
-  import SettingsTabs from '$lib/components/domain/SettingsTabs.svelte'
   import Button from '$lib/components/ui/Button.svelte'
   import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
@@ -113,8 +112,6 @@
       </Button>
     </div>
   </div>
-
-  <SettingsTabs class="mb-8" />
 
   {#if loading}
     <div class="flex justify-center py-12">
