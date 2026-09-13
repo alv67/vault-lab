@@ -2,6 +2,117 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* ── Semantic design tokens (EPIC D) ─────────────────────────────────
+     Values are space-separated HSL triples (no hsl() wrapper) so Tailwind
+     can compose them with alpha: hsl(var(--token) / <alpha-value>).
+     chart-* tokens are raw hex because ECharts feeds them straight to the
+     canvas, which cannot resolve an HSL-triple variable.
+     Keep in sync with the static mirrors in lib/chartTheme.ts and
+     lib/chartPalette.ts. */
+  :root {
+    color-scheme: light;
+
+    --background: 210 40% 96.1%;
+    --foreground: 222.2 47.4% 11.2%;
+    --surface: 0 0% 100%;
+    --surface-raised: 0 0% 100%;
+    --muted: 214.3 31.8% 91.4%;
+    --muted-foreground: 215.3 19.3% 34.5%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 212.7 26.8% 83.9%;
+    --ring: 221.2 83.2% 53.3%;
+    --accent: 221.2 83.2% 53.3%;
+    --accent-hover: 224.3 76.3% 48.3%;
+    --accent-foreground: 0 0% 100%;
+    --accent-text: 224.3 76.3% 48.3%;
+    --positive: 142.1 70.6% 29.8%;
+    --negative: 0 72.2% 50.6%;
+    --warning: 26 90.5% 37.1%;
+    --overlay: 0 0% 0%;
+
+    --chart-1: #2563eb;
+    --chart-2: #10b981;
+    --chart-3: #f59e0b;
+    --chart-4: #ef4444;
+    --chart-5: #8b5cf6;
+    --chart-6: #ec4899;
+    --chart-7: #14b8a6;
+    --chart-8: #f97316;
+    --chart-9: #6366f1;
+    --chart-10: #84cc16;
+    --chart-11: #06b6d4;
+    --chart-12: #a855f7;
+    --chart-muted: #9ca3af;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --surface: 222.2 47.4% 11.2%;
+    --surface-raised: 217.2 32.6% 17.5%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 215.3 25% 26.7%;
+    --ring: 213.1 93.9% 67.8%;
+    --accent: 221.2 83.2% 53.3%;
+    --accent-hover: 217.2 91.2% 59.8%;
+    --accent-foreground: 0 0% 100%;
+    --accent-text: 213.1 93.9% 67.8%;
+    --positive: 142 69% 58%;
+    --negative: 0 91% 71%;
+    --warning: 43.3 96.4% 56.3%;
+    --overlay: 0 0% 0%;
+
+    --chart-1: #60a5fa;
+    --chart-2: #34d399;
+    --chart-3: #fbbf24;
+    --chart-4: #f87171;
+    --chart-5: #a78bfa;
+    --chart-6: #f472b6;
+    --chart-7: #2dd4bf;
+    --chart-8: #fb923c;
+    --chart-9: #818cf8;
+    --chart-10: #a3e635;
+    --chart-11: #22d3ee;
+    --chart-12: #c084fc;
+    --chart-muted: #64748b;
+  }
+
+  html {
+    /* Native controls (checkboxes, radios, range sliders) follow the theme. */
+    accent-color: hsl(var(--accent));
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Plain form controls stay readable when the theme flips. Explicit
+     Tailwind classes on the elements still win (utilities layer).
+     Checkboxes/radios/buttons are excluded to preserve native rendering. */
+  input:not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit']):not([type='reset']),
+  select,
+  textarea {
+    color: inherit;
+    background-color: hsl(var(--surface));
+  }
+}
+
+@layer components {
+  /* Shared focus recipe for the design system (EPIC D). Equivalent raw
+     utility stack, documented here for reuse:
+       focus-visible:outline-none focus-visible:ring-2
+       focus-visible:ring-ring focus-visible:ring-offset-2
+       focus-visible:ring-offset-background */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+}
+
 /* Hide the native number-input steppers in the exposure modals: the weight
    fields are typed with two decimals and the 0.1 steppers are unusable. */
 input.no-spinner::-webkit-outer-spin-button,

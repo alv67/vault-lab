@@ -19,8 +19,10 @@ type HealthEvent struct {
 }
 
 type HealthSummary struct {
+	Period      string  `json:"period"`
 	Successes   int     `json:"successes"`
 	Failures    int     `json:"failures"`
 	SuccessRate float64 `json:"success_rate"`
 	RateLimited int     `json:"rate_limited"`
+	HasData     bool    `json:"has_data"`
 }

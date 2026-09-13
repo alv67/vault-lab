@@ -74,7 +74,7 @@ func (f *YahooFetcher) fetchQuotesBatch(ctx context.Context, assets []*model.Ass
 		resp, err := f.fetchSpark(ctx, tickers(chunk))
 		if err != nil {
 			for _, a := range chunk {
-				issues = append(issues, FetchIssue{Symbol: a.Ticker, Code: issueCode(err), Message: err.Error()})
+				issues = append(issues, FetchIssue{Symbol: a.Ticker, RequestType: "spark", AssetID: &a.ID, Code: issueCode(err), Message: fmt.Sprintf("spark %s: %v", a.Ticker, err)})
 			}
 			continue
 		}
@@ -84,7 +84,7 @@ func (f *YahooFetcher) fetchQuotesBatch(ctx context.Context, assets []*model.Ass
 			if !ok {
 				// Missing from the batch response: fall back to a single call.
 				if err := f.fetchQuote(ctx, a); err != nil {
-					issues = append(issues, FetchIssue{Symbol: a.Ticker, Code: issueCode(err), Message: err.Error()})
+					issues = append(issues, FetchIssue{Symbol: a.Ticker, RequestType: "chart", AssetID: &a.ID, Code: issueCode(err), Message: fmt.Sprintf("chart %s: %v", a.Ticker, err)})
 				} else {
 					refreshed = append(refreshed, a.Ticker)
 				}
@@ -99,11 +99,11 @@ func (f *YahooFetcher) fetchQuotesBatch(ctx context.Context, assets []*model.Ass
 				}
 			}
 			if idx == -1 {
-				issues = append(issues, FetchIssue{Symbol: a.Ticker, Code: "error", Message: "no close data"})
+				issues = append(issues, FetchIssue{Symbol: a.Ticker, RequestType: "spark", AssetID: &a.ID, Code: "error", Message: fmt.Sprintf("spark %s: no close data", a.Ticker)})
 				continue
 			}
 			if idx >= len(sq.Timestamp) {
-				issues = append(issues, FetchIssue{Symbol: a.Ticker, Code: "error", Message: "no close timestamp"})
+				issues = append(issues, FetchIssue{Symbol: a.Ticker, RequestType: "spark", AssetID: &a.ID, Code: "error", Message: fmt.Sprintf("spark %s: no close timestamp", a.Ticker)})
 				continue
 			}
 
@@ -118,7 +118,7 @@ func (f *YahooFetcher) fetchQuotesBatch(ctx context.Context, assets []*model.Ass
 				Volume:  0,
 				Source:  "yahoo",
 			}); err != nil {
-				issues = append(issues, FetchIssue{Symbol: a.Ticker, Code: "error", Message: fmt.Sprintf("save price: %v", err)})
+				issues = append(issues, FetchIssue{Symbol: a.Ticker, RequestType: "spark", AssetID: &a.ID, Code: "error", Message: fmt.Sprintf("spark %s: save price: %v", a.Ticker, err)})
 				continue
 			}
 			refreshed = append(refreshed, a.Ticker)

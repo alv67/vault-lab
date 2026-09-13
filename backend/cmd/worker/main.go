@@ -51,7 +51,7 @@ func main() {
 
 	repos := repository.New(dbPool, repository.NewLookupCache(cacheClient))
 	c := cache.New(cacheClient)
-	healthSvc := service.NewHealthService(repos, rdb)
+	healthSvc := service.NewHealthService(repos)
 
 	fetcher := price.NewYahooFetcher(repos, cfg.PriceFetchInterval,
 		price.WithMinInterval(cfg.YahooMinInterval),

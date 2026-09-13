@@ -170,17 +170,19 @@ frontend/
 ├── nginx.conf              # file statici + proxy /api/ verso backend:8080
 ├── static/vault.svg        # favicon
 └── src/
-    ├── app.html            # HTML radice (classi body, favicon, titolo)
-    ├── app.css             # @tailwind base/components/utilities
+    ├── app.html            # HTML radice (bootstrap tema, meta theme-color, favicon, titolo)
+    ├── app.css             # @tailwind + token semantici (:root / .dark) + base layer
     ├── app.d.ts            # namespace App di SvelteKit (segnaposto)
     ├── lib/                # codice condiviso (la "parte interessante")
-    │   ├── components/     # Layout, Toaster + i 4 wrapper ECharts
+    │   ├── components/     # primitive ui/, layout/ (AppShell), Toaster + wrapper ECharts
     │   ├── services/api.ts # l'unico client API (capitolo 5)
-    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts (rune Svelte 5)
+    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts, theme.svelte.ts (rune Svelte 5)
+    │   ├── chartPalette.ts # palette serie + risoluzione token a runtime (dark-aware)
+    │   ├── chartTheme.ts   # temi ECharts registrati per light/dark
     │   └── format.ts       # formattatori + etichette classi (capitolo 6)
     └── routes/             # le pagine
         ├── +layout.ts      # ssr=false, prerender=false
-        ├── +layout.svelte  # guardia auth, guscio app, Toaster
+        ├── +layout.svelte  # guardia auth, AppShell, Toaster
         ├── +page.svelte    # Dashboard (/)
         ├── login/          # login + registrazione (una pagina, un toggle)
         ├── assets/         # elenco titoli + creazione (autocomplete)
@@ -188,7 +190,7 @@ frontend/
         ├── portfolios/     # elenco portafogli + CRUD + import
         ├── portfolios/[id]/ # dettaglio portafoglio (transazioni, grafici)
         ├── settings/       # profilo, password, whitelist valute
-        └── settings/health/ # health dashboard dei prezzi
+        └── admin/health/   # health dashboard dei prezzi (area admin)
 ```
 
 > **Non esiste una pagina `/register` separata**: la pagina di login contiene un
@@ -361,7 +363,9 @@ Ogni componente grafico segue lo stesso schema:
 </script>
 
 <div class="h-[340px] w-full">
-  <Chart {init} {options} />
+  {#key resolved()}
+    <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+  {/key}
 </div>
 ```
 
@@ -371,16 +375,44 @@ La chiamata `use(...)` registra solo i moduli di cui il grafico ha bisogno
 `EChartsOption` e ricalcolate con `$derived.by`, così il grafico reagisce ai
 cambiamenti di `$props`.
 
+### Grafici dark-aware
+
+Anche i grafici seguono il tema (capitolo 8). L'helper `resolved()` dello store
+del tema dice se l'app sta disegnando in chiaro o scuro; il blocco
+`{#key resolved()}` forza il wrapper a **reinizializzare** il grafico quando il
+tema cambia, perché `svelte-echarts` legge la prop `theme` solo una volta al
+mount. Due helper lo rendono possibile:
+
+- `lib/chartTheme.ts` registra due temi ECharts (`vaultlab-light`,
+  `vaultlab-dark`) costruiti dagli stessi token del CSS (colori di assi,
+  legenda, tooltip) e li espone come `VAULTLAB_CHART_THEMES`;
+- `lib/chartPalette.ts` espone `resolvePalette()` (i colori serie
+  `--chart-1..12`, letti dal DOM e messi in cache per tema) e
+  `chartSemanticColors()` per le linee speciali (cost basis, realizzato,
+  marcatori split, fetta "Other").
+
+Le label delle torte richiedono un colore esplicito: a differenza di assi e
+legenda, le label delle pie ECharts **non** ereditano il `textStyle` del tema,
+quindi ogni donut imposta `label.color` dal foreground del tema e disattiva il
+bordo bianco di default (altrimenti, in scuro, le label apparirebbero come testo
+scuro contornato di bianco).
+
 ### I wrapper dei grafici
 
 | Componente | Grafico | Usato per |
 |---|---|---|
 | `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/YTD/MAX. Carica sempre tutto lo storico: i selettori fanno uno **zoom in-place** (coppia `start`/`end` percentuali, `end`=100) senza ricaricare dati; uno zoom/spostamento manuale **deseleziona** il pulsante attivo e preserva la vista. Gli **split** sono disegnati come `markLine` tratteggiata viola etichettata con il rapporto (`Split 4:1`), come in `PositionChart`. Stato vuoto → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la **storico performance** del dettaglio portafoglio: un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
-| `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio), asse x a categorie di date | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`) |
+| `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio) su asse x **temporale**, costruita dai punti di ogni portafoglio (niente unione con `null`), `connectNulls` + `lttb`, dataZoom `inside` + `slider` | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`) |
 | `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate; `complete={false}` la rende **aperta** quando le righe sommano < 100 (una fetta residua trasparente tiene veritieri gli angoli — niente fetta grigia "Other") | pagina dettaglio asset (donut regioni con `complete={false}` e donut settori), le due modali esposizione (in modalità `mute`: regioni in `ExposureGeoModal`, settori in `ExposureSectorModal`) e il donut **"Allocazione per classi"** del portafoglio (B.12). I paesi (pagina e modale geografica) sono liste a barre, mai una pie. Accetta `ExposureRow[]` (`{name, weight}`) |
 | `GeographyChart.svelte` (`lib/components/domain/`) | **ciambella** (stessi raggio/palette di `ExposurePie`) + tabella delle righe complete accanto; il tooltip mostra il valore nella valuta del portafoglio e il peso; la fetta `Other` è in grigio spento | la card **geografia** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `RegionAllocation[]` (`{region, value, weight}`); le righe a peso zero restano in tabella ma non vengono disegnate. Le prop opzionali `covered`/`excluded` (stringhe decimali) alimentano una nota di copertura ("Copre il X% del portafoglio…") mostrata quando il valore escluso è > 0 |
 | `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `SectorAllocation[]` (`{sector, value, weight}`), più la stessa nota di copertura opzionale `covered`/`excluded` di `GeographyChart` |
+| `PositionTable.svelte` (`lib/components/domain/`) | tabella posizioni generica sul tipo `PositionRow` (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` mostrano le colonne opzionali, `showPrice` aggiunge la colonna Price (prima di Qty, formattata con `priceCurrency`, visibile anche sulle righe chiuse), `linkAssets` collega il ticker alla pagina asset; le righe chiuse mostrano `-` su tutte le celle tranne il realizzato | l'accordion posizioni della **dashboard** (E.1) e la tabella Positions del **dettaglio portafoglio** (E.2) |
+| `AllocationDonut.svelte` (`lib/components/domain/`) | ciambella theme-aware di quote `{name, value}[]` (pesi ricalcolati sul totale positivo); `showValue={false}` nasconde il valore nel tooltip (donut multi-valuta) | la card "Allocation by portfolio" della **dashboard** (E.1) |
+| `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
+| `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2) |
+| `AddTransactionModal.svelte` (`lib/components/domain/`) | finestra di aggiunta/modifica/eliminazione transazione: combobox asset, tipo (buy/sell/dividend), quantità/prezzo o importo, data, commissioni, note; validazione inline e totale live; gestisce chiamate API, toast e conferma di eliminazione | la pagina **dettaglio portafoglio** (E.2), aperta da "Add Transaction" e dall'azione di modifica della tabella |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profile / Password / Currencies / Health), tab attivo marcato con `aria-current="page"` | tutte e quattro le pagine **Settings** (E.4) |
 
 I tooltip formattano i valori monetari con `formatCurrency` (capitolo 6), le
 date con `new Date(...).toLocaleDateString()`.
@@ -410,35 +442,85 @@ date con `new Date(...).toLocaleDateString()`.
 
 ---
 
-## 8. Stile e UX
+## 8. Stile, design system e dark mode
 
-- **Tailwind CSS 3.4**: configurato in `tailwind.config.js` (contenuto = tutti
-  i `.svelte`/`.ts` sotto `src`, nessun tema custom), caricato tramite
-  `app.css` (le tre direttive `@tailwind`) e PostCSS (`postcss.config.js`:
-  `tailwindcss` + `autoprefixer`).
-- **Classi utility, nessuna libreria di componenti**: le card sono il pattern
-  ricorrente `rounded-xl bg-white p-4 shadow`; il colore principale è il
-  blue-600 (`bg-blue-600`, `text-blue-600`); guadagni/verdi con green-600,
-  perdite con red-600, avvisi con amber-500.
+La UI si basa su un piccolo design system interno introdotto nell'**EPIC D**.
+
+### Token semantici
+
+I colori non sono più scritti direttamente nelle pagine. `tailwind.config.js`
+definisce un insieme di token di colore **semantici** — `background`,
+`foreground`, `surface`, `surface-raised`, `muted`, `muted-foreground`,
+`border`, `input`, `ring`, `accent` (+ `accent-hover`/`accent-foreground`/
+`accent-text`), `positive`, `negative`, `warning`, `overlay`, `chart-1..12`,
+`chart-muted` — mappati su custom property CSS definite in `app.css` (`:root` e
+`.dark`). Poiché i valori sono terne HSL composte con
+`hsl(var(--token) / <alpha-value>)`, i modificatori di opacità funzionano
+(`bg-accent/10`).
+
+- Raggi: `rounded-card` / `rounded-control`; elevazione: `shadow-card` /
+  `shadow-raised`; focus coerente: la classe `.focus-ring`.
+- Tailwind è caricato tramite `app.css` (le tre direttive `@tailwind`) e
+  PostCSS (`postcss.config.js`: `tailwindcss` + `autoprefixer`).
+- `lib/ui-colors.ts` centralizza i colori testo di P&L (`pnlColorClass`,
+  `totalColorClass`), prima duplicati in quattro pagine.
+
+### Dark mode
+
+- **Lo scuro è il default**; l'utente può scegliere **Chiaro**, **Scuro** o
+  **Sistema** (segue l'OS) dal selettore del tema nell'header.
+- La scelta è salvata in `localStorage` (`vaultlab-theme`) ed è gestita da
+  `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`); è
+  sincronizzata tra le schede e segue i cambi dell'OS in modalità `system`.
+- Uno script inline in `app.html` imposta la classe `.dark` **prima del primo
+  paint**, così un reload in scuro non mostra mai un lampo bianco (niente FOUC).
+  `darkMode: 'class'` nella config di Tailwind fa sì che una sola classe cambi
+  tutti i token.
+
+### Primitive UI
+
+I componenti riusabili vivono in `src/lib/components/ui/`: `Button` (varianti
+primary/secondary/outline/ghost/danger/link, dimensioni, loading), `Input`,
+`Textarea`, `Select`, `Field`, `Card` (+ `CardHeader`/`CardContent`), `Badge`,
+`Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, le primitive
+`Table` (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` e
+`StatCard`. Le pagine e la shell le riusano invece di duplicare markup. Le
+azioni distruttive usano `ConfirmDialog` al posto del `confirm()` nativo del
+browser.
+
+### La shell dell'app
+
+`src/lib/components/layout/` contiene la shell responsive: `AppShell` (la
+radice, `h-dvh` + skip-link), `Sidebar` (collassabile a rail di sole icone; lo
+stato è persistito in `localStorage['vaultlab-sidebar']`), `SidebarNav` (voce
+attiva derivata dall'URL), `AppHeader` (sticky, con selettore tema e menu
+utente), `UserMenu`, `ThemeToggle` e `MobileDrawer` (sotto `lg`: off-canvas con
+overlay, focus trap e ripristino). Ha sostituito il vecchio `Layout.svelte`
+fisso.
+
+### Icone, toast e lingua
+
 - **Icone**: `lucide-svelte`. Esempi: `LayoutDashboard`, `Briefcase`,
-  `Banknote`, `Settings`, `LogOut`, `ChevronUp` (shell app); `Plus`, `Trash2`,
+  `Banknote`, `Settings`, `LogOut`, `PanelLeft` (shell app); `Plus`, `Trash2`,
   `Pencil`, `Download`, `Upload`, `Search`, `Loader2`, `EllipsisVertical`,
   `X`, `ExternalLink`, `Activity` (pagine); `CheckCircle2`, `XCircle`,
   `AlertTriangle` (toast).
-- **Toast** (sostituiscono `react-hot-toast` della vecchia app): un piccolo
-  store a rune in `lib/stores/toast.svelte.ts` (`toast.success/error/warning`)
-  aggiunge elementi che si chiudono da soli dopo 3,5 s (4,5 s per i warning);
-  `lib/components/Toaster.svelte` mostra la pila fissa in alto a destra con
-  card colorate (verde/ambra/rossa) e icone. `<Toaster />` è montato una volta
-  in `routes/+layout.svelte`, quindi ogni pagina può fare toast.
+- **Toast**: un piccolo store a rune in `lib/stores/toast.svelte.ts`
+  (`toast.success/error/warning`, più `toast.dismiss`) aggiunge elementi che si
+  chiudono da soli dopo 3,5 s (4,5 s per i warning); `lib/components/Toaster.svelte`
+  mostra la pila fissa in alto a destra con card **theme-aware**
+  (`surface-raised`), icone semantiche, pulsante di chiusura e `aria-live`
+  (`role="alert"` per gli errori). `<Toaster />` è montato una volta in
+  `routes/+layout.svelte`, quindi ogni pagina può fare toast.
 - **Responsive / mobile-first**: flex e grid si adattano per breakpoint
   (`flex flex-col gap-4 md:flex-row`, `grid grid-cols-2 md:grid-cols-4`,
   `sm:grid-cols-2 lg:grid-cols-3`, `md:grid-cols-3 lg:grid-cols-6`), le tabelle
-  lunghe sono avvolte in `overflow-x-auto`, e la shell
-  (`lib/components/Layout.svelte`) è una sidebar fissa (`w-64`) + area
-  principale scrollabile, usabile anche su schermi stretti.
-- **App-wide**: `app.html` imposta il body a `bg-gray-50 text-gray-900
-  antialiased`, la lingua `en` e la favicon `/vault.svg`.
+  lunghe sono avvolte in `overflow-x-auto`, e sotto `lg` la shell diventa un
+  drawer mobile.
+- **App-wide**: `app.html` mantiene `lang="en"` e la favicon `/vault.svg`,
+  imposta i meta `theme-color` chiaro/scuro ed esegue il bootstrap del tema
+  pre-paint; background/foreground del body ora arrivano dai token via
+  `app.css`.
 - **Nota sulla lingua**: la UI è volutamente mista inglese/italiano — la
   maggior parte dei titoli è in inglese, mentre diverse etichette, stati vuoti
   e messaggi di toast sono in italiano ("cambio mancante", "Nessuna allocazione
@@ -473,8 +555,9 @@ Uno store a rune che contiene `auth.user` e `auth.isLoading`:
 - quando lo stato è pronto: gli utenti non autenticati su qualsiasi pagina
   tranne `/login` vengono reindirizzati con `goto('/login', { replaceState:
   true })`; gli utenti autenticati su `/login` vengono mandati a `/`;
-- per gli utenti autenticati disegna la shell (`Layout.svelte`) attorno al
-  contenuto della pagina;
+- per gli utenti autenticati disegna la shell responsive
+  (`lib/components/layout/AppShell.svelte`, capitolo 8) attorno al contenuto
+  della pagina;
 - monta `<Toaster />`;
 - una volta per caricamento di pagina (flag `synced`) chiama
   `assetApi.sync()` (`POST /assets/sync`) — la task in background del backend
@@ -501,6 +584,9 @@ sessione**, `pricesApi.refresh()` e poi rifare il fetch dei dati. Il
   aggiornati";
 - altrimenti, se `issues.length > 0` → "N aggiornamenti prezzi non riusciti
   (Yahoo)".
+
+La dashboard conserva inoltre `finished_at` dal report per mostrare la riga
+"Prices updated: …" nell'header.
 
 Questo mantiene l'UI funzionante quando viene aperta come deep-link senza
 passare dalla dashboard.
@@ -785,21 +871,22 @@ Endpoint chiamati: `settingsApi.listCurrencies()`, `updateProfile()`,
 - **Profile** (nome/email) e **Change password**
   (`POST /users/me/password` con `current_password` + `new_password`,
   verifica lato frontend che le due nuove coincidano).
-- Card **Infrastruttura** con il link alla health dashboard
-  (`/settings/health`).
 - **Valute gestite**: il CRUD della whitelist valute — aggiungi un codice di 3
   lettere (un 422 dal backend significa che Yahoo non ha la conversione
   USD→codice e il frontend mostra un messaggio dedicato; 409 = già presente),
   elimina con conferma (409 = in uso o protetta). I simboli sono renderizzati
   con `currencySymbol()`.
 
-### `/settings/health` — Price Sync Health (`routes/settings/health/+page.svelte`)
+### `/admin/health` — Price Sync Health (`routes/admin/health/+page.svelte`)
 
-L'unica pagina che usa il **client generico**: `api.get('/health/prices')`
-(stessa origine `/api/v1/health/prices`). Mostra 4 card di riepilogo (Success
-Rate, Total Successes, Total Failures, Rate Limited) e una tabella degli eventi
-recenti (timestamp, tipo, badge dello stato, codice, messaggio, durata), con un
-pulsante "Refresh Now".
+L'unica pagina che usa il **client generico**: `api.get('/health/prices?period=today|24h|100')`
+(stessa origine `/api/v1/health/prices`). Un selettore di periodo (Today / Last
+24h / Last 100) limita il riepilogo, che il backend calcola dalla tabella
+`health_events` sulla finestra scelta (non si azzera più al riavvio). Mostra 4
+card di riepilogo (Success Rate, Total Successes, Total Failures, Rate Limited)
+e una tabella paginata degli eventi recenti (timestamp, tipo, badge dello stato,
+codice, messaggio, durata; 50 per pagina con Previous/Next e indicazione
+dell'intervallo), con un pulsante "Refresh Now".
 
 ---
 

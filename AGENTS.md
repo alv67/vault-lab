@@ -25,3 +25,11 @@
   project documents first (AGENTS.md, PLAN.md, STATUS.md, `docs/` guides en/it)
   and update them together with the code. A PR must NOT be closed until its
   related documentation (endpoints, behavior, UI, status tables) is updated.
+- **Release notes** (`docs/RELEASE-NOTES.en.md` / `.it.md`): one line per
+  feature/fix, written from the end user's point of view (what they see and use
+  in the app — no internal/backend details). Add the lines under the current
+  release section; when publishing, create a new section with version and date.
+  Sections are ordered **newest first**: `Unreleased` on top, then the latest
+  released version down to the oldest. Group the lines under `Features` and
+  `Fixes` (in Italian, `Nuove funzionalità` / `Correzioni`); omit `Fixes` when
+  a release has none.

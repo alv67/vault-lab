@@ -5,8 +5,10 @@
   import { resolve } from '$app/paths'
   import { goto } from '$app/navigation'
   import { auth, initAuth } from '$lib/stores/auth.svelte'
+  import '$lib/stores/theme.svelte' // side effect: theme listeners + <html class="dark"> sync
   import { assetApi } from '$lib/services/api'
-  import Layout from '$lib/components/Layout.svelte'
+  import AppShell from '$lib/components/layout/AppShell.svelte'
+  import Spinner from '$lib/components/ui/Spinner.svelte'
   import Toaster from '$lib/components/Toaster.svelte'
 
   let { children } = $props()
@@ -37,11 +39,11 @@
 </script>
 
 {#if auth.isLoading}
-  <div class="flex h-screen items-center justify-center">
-    <div class="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+  <div class="grid h-dvh place-items-center bg-background">
+    <Spinner size="lg" class="text-accent-text" />
   </div>
 {:else if auth.user}
-  <Layout>{@render children()}</Layout>
+  <AppShell>{@render children()}</AppShell>
 {:else}
   {@render children()}
 {/if}

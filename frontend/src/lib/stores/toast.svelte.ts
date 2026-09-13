@@ -27,4 +27,6 @@ export const toast = {
   success: (message: string) => show('success', message),
   error: (message: string) => show('error', message),
   warning: (message: string) => show('warning', message, 4500),
+  /** Public dismissal used by the Toaster's close buttons (EPIC D.2). */
+  dismiss,
 }

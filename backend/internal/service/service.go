@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,6 +86,26 @@ func defaultAssetClassForType(t model.AssetType) string {
 // asset's price data is obtained (Yahoo fetcher or manual/none).
 var priceSources = map[string]bool{
 	"yahoo": true, "manual": true, "none": true,
+}
+
+// isYahooPriced reports whether an asset's market data is fetched from Yahoo
+// Finance. An empty price_source is the legacy default (the column postdates
+// the first assets) and means Yahoo.
+func isYahooPriced(a *model.Asset) bool {
+	return a.PriceSource == "" || a.PriceSource == "yahoo"
+}
+
+// filterYahooAssets keeps only the Yahoo-priced assets, the only ones the
+// fetcher may ever be called for: manual/none assets have no Yahoo data, so
+// every history/split backfill for them fails and floods Health with errors.
+func filterYahooAssets(assets []*model.Asset) []*model.Asset {
+	yahoo := make([]*model.Asset, 0, len(assets))
+	for _, a := range assets {
+		if isYahooPriced(a) {
+			yahoo = append(yahoo, a)
+		}
+	}
+	return yahoo
 }
 
 const (
@@ -1139,8 +1160,12 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 
 	results, err := price.LookupAsset(ctx, query)
 	if err != nil {
+		// price.LookupAsset never surfaces HTTP statuses as typed errors, so
+		// remote search failures are always recorded with code "error".
+		s.recordSearchHealth(ctx, "search "+query+": "+err.Error(), "failure", "error")
 		return nil, err
 	}
+	s.recordSearchHealth(ctx, "search "+query+": "+strconv.Itoa(len(results))+" results", "success", "")
 
 	if data, err := json.Marshal(results); err == nil {
 		if err := s.repos.Lookup.Set(ctx, key, data, s.lookupCacheTTL); err != nil {
@@ -1149,6 +1174,24 @@ func (s *Service) LookupAsset(ctx context.Context, query string) ([]price.AssetL
 	}
 
 	return results, nil
+}
+
+// recordSearchHealth logs a lookup health event. Health tracking is optional
+// (nil in tests) and must never fail the surrounding lookup.
+func (s *Service) recordSearchHealth(ctx context.Context, message, status, code string) {
+	if s.Health == nil {
+		return
+	}
+	if err := s.Health.RecordEvent(ctx, &model.HealthEvent{
+		ID:        uuid.New(),
+		EventType: "search",
+		Status:    status,
+		Code:      code,
+		Message:   message,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		log.Warn().Err(err).Msg("failed to record search health event")
+	}
 }
 
 // RefreshPrices refreshes stale stored closes for the given portfolio (or all
@@ -1186,6 +1229,7 @@ func (s *Service) RefreshPrices(ctx context.Context, portfolioID *uuid.UUID) (pr
 		log.Warn().Err(err).Msg("series recompute all failed")
 	}
 	s.bumpRev(ctx)
+	report.FinishedAt = time.Now().UTC()
 	return report, nil
 }
 
@@ -1452,6 +1496,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				Name:        h.Name,
 				Currency:    h.Currency,
 				Qty:         h.Qty,
+				LastClose:   h.LastClose,
 				Cost:        h.Cost,
 				CostCCY:     h.CostCCY,
 				Realized:    h.Realized,
@@ -1835,15 +1880,35 @@ func (s *Service) GetPortfolioHistory(ctx context.Context, portfolioID uuid.UUID
 		for _, tx := range txs {
 			txByAsset[tx.AssetID] = append(txByAsset[tx.AssetID], tx)
 		}
-		historyAssets := make([]price.HistoryAsset, 0, len(txByAsset))
-		assetPtrs := make([]*model.Asset, 0, len(txByAsset))
+		// Only Yahoo-priced assets may be sent to the fetcher: manual/none
+		// assets would fail the history/split backfill and flood the Health
+		// page with errors. The rest of the computation still covers every
+		// asset from its stored data.
+		txAssetIDs := make([]uuid.UUID, 0, len(txByAsset))
+		for aid := range txByAsset {
+			txAssetIDs = append(txAssetIDs, aid)
+		}
+		txAssets, err := s.repos.Asset.FindByIDs(ctx, txAssetIDs)
+		if err != nil {
+			return nil, err
+		}
+		yahooByID := make(map[uuid.UUID]*model.Asset, len(txAssets))
+		for _, a := range filterYahooAssets(txAssets) {
+			yahooByID[a.ID] = a
+		}
+		historyAssets := make([]price.HistoryAsset, 0, len(yahooByID))
+		assetPtrs := make([]*model.Asset, 0, len(yahooByID))
 		for aid, assetTxs := range txByAsset {
+			a, ok := yahooByID[aid]
+			if !ok {
+				continue
+			}
 			historyAssets = append(historyAssets, price.HistoryAsset{
 				ID:     aid,
-				Ticker: assetTxs[0].AssetTicker,
+				Ticker: a.Ticker,
 				From:   series.DayOf(assetTxs[0].Date),
 			})
-			assetPtrs = append(assetPtrs, &model.Asset{ID: aid, Ticker: assetTxs[0].AssetTicker})
+			assetPtrs = append(assetPtrs, a)
 		}
 		if err := s.fetcher.EnsureHistory(ctx, historyAssets); err != nil {
 			log.Warn().Err(err).Msg("history ensure failed")
@@ -2111,11 +2176,11 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 	return created, nil
 }
 
-// SyncAssetData refreshes asset-level market data for every asset
-// independently of any portfolio: split events are re-checked and the price
-// history is brought up to date. It is meant to run once per app load.
+// SyncAssetData refreshes asset-level market data for every Yahoo-priced
+// asset independently of any portfolio: split events are re-checked and the
+// price history is brought up to date. It is meant to run once per app load.
 func (s *Service) SyncAssetData(ctx context.Context) error {
-	assets, err := s.repos.Asset.List(ctx)
+	assets, err := s.repos.Asset.ListYahoo(ctx)
 	if err != nil {
 		return err
 	}
@@ -2145,6 +2210,13 @@ func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {
 	if err != nil {
 		return err
 	}
+	// Defensive filter: only Yahoo-priced assets may reach the fetcher, so
+	// every caller (not just SyncAssetData) is safe from Health-flooding
+	// failures on manual/none assets.
+	assets = filterYahooAssets(assets)
+	if len(assets) == 0 {
+		return nil
+	}
 	firstDates, err := s.repos.Transaction.MinDateByAsset(ctx, ids)
 	if err != nil {
 		return err
@@ -2164,7 +2236,9 @@ func (s *Service) syncAssets(ctx context.Context, ids []uuid.UUID) error {
 }
 
 // BackfillAssetHistory forces a full price-history backfill for a single
-// asset, regardless of stored data. Used by the asset detail page.
+// asset, regardless of stored data. Used by the asset detail page. Assets
+// priced outside Yahoo (manual/none) are a silent no-op: they have no Yahoo
+// data, so a backfill would only produce a Health error.
 func (s *Service) BackfillAssetHistory(ctx context.Context, id uuid.UUID) error {
 	asset, err := s.repos.Asset.FindByID(ctx, id)
 	if err != nil {
@@ -2172,6 +2246,9 @@ func (s *Service) BackfillAssetHistory(ctx context.Context, id uuid.UUID) error 
 			return ErrAssetNotFound
 		}
 		return err
+	}
+	if !isYahooPriced(asset) {
+		return nil
 	}
 	if err := s.fetcher.EnsureHistory(ctx, []price.HistoryAsset{{ID: asset.ID, Ticker: asset.Ticker, Full: true}}); err != nil {
 		return err

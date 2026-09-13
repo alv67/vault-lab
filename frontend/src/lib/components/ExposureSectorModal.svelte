@@ -3,7 +3,8 @@
   import type { ExposureRow } from '$lib/services/api'
   import ExposurePie from './ExposurePie.svelte'
   import ProvenanceBadge from './ProvenanceBadge.svelte'
-  import { colorForRow } from '$lib/chartPalette'
+  import { colorForRow, resolvePalette } from '$lib/chartPalette'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   let {
     open = $bindable(false),
@@ -43,6 +44,10 @@
     assetType: string
   } = $props()
 
+  // Resolved chart palette: keeps the table swatches in sync with the donut
+  // colors and re-evaluates on theme flips.
+  const palette = $derived(resolvePalette(resolved()))
+
   function handleKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape' && open) {
       onClose()
@@ -60,7 +65,7 @@
 
 {#if open}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay/50"
     onclick={handleBackdropClick}
     onkeydown={(e) => e.key === 'Escape' && onClose()}
     role="dialog"
@@ -69,13 +74,13 @@
     tabindex="-1"
   >
     <div
-      class="relative mx-4 max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+      class="relative mx-4 max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-card border-border bg-surface p-6 shadow-raised"
     >
       <div class="mb-6 flex items-center justify-between">
         <h2 class="text-lg font-semibold">Modifica distribuzione settoriale</h2>
         <button
           onclick={onClose}
-          class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label="Chiudi"
         >
           <X class="h-5 w-5" />
@@ -83,7 +88,7 @@
       </div>
 
       <!-- Sectors -->
-      <div class="flex flex-col rounded-xl border border-gray-200 bg-gray-50 p-4">
+      <div class="flex flex-col rounded-card border border-border bg-muted p-4">
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
             <h3 class="font-medium">Distribuzione settoriale</h3>
@@ -95,10 +100,10 @@
               disabled={fetchingETF || assetType !== 'etf'}
               title="Prefill da JustETF"
               aria-label="Prefill settori da JustETF"
-              class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if fetchingETF}
-                <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
               {:else}
                 <img
                   class="h-5 w-5 rounded"
@@ -112,10 +117,10 @@
               disabled={prefilling}
               title="Prefill da Yahoo"
               aria-label="Prefill settori da Yahoo"
-              class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if prefilling}
-                <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
               {:else}
                 <img
                   class="h-5 w-5 rounded"
@@ -129,10 +134,10 @@
               disabled={fetchingMorningstar || assetType !== 'etf'}
               title="Prefill da Morningstar"
               aria-label="Prefill settori da Morningstar"
-              class="rounded-lg border border-gray-300 bg-white p-1.5 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+              class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if fetchingMorningstar}
-                <Loader2 class="h-5 w-5 animate-spin text-gray-500" />
+                <Loader2 class="h-5 w-5 animate-spin text-muted-foreground" />
               {:else}
                 <img
                   class="h-5 w-5 rounded"
@@ -147,19 +152,19 @@
           <div class="flex-1">
             <table class="w-full text-left text-sm">
               <thead>
-                <tr class="border-b text-gray-500">
+                <tr class="border-b border-border text-muted-foreground">
                   <th class="pb-2">Settore GICS</th>
                   <th class="pb-2 text-right">Peso %</th>
                 </tr>
               </thead>
               <tbody>
                 {#each sectorsEdit as s (s.name)}
-                  <tr class="border-b last:border-0">
+                  <tr class="border-b border-border last:border-0">
                     <td class="py-2">
                       <span class="flex items-center gap-2">
                         <span
                           class="inline-block h-3 w-3 shrink-0 rounded"
-                          style="background-color: {colorForRow(s, sectorsEdit)};"
+                          style="background-color: {colorForRow(s, sectorsEdit, palette)};"
                         ></span>
                         {s.name}
                       </span>
@@ -175,21 +180,21 @@
                           s.weight = e.currentTarget.value
                           onSectorsDirty()
                         }}
-                        class="no-spinner w-24 rounded-lg border px-3 py-1.5 text-right text-sm"
+                        class="no-spinner w-24 rounded-control border border-input px-3 py-1.5 text-right text-sm tabular-nums"
                       />
                     </td>
                   </tr>
                 {/each}
-                <tr class="border-t font-semibold">
+                <tr class="border-t border-border font-semibold">
                   <td class="py-2">Totale</td>
-                  <td class="py-2 text-right {sectorsValid ? 'text-green-600' : 'text-red-600'}">
+                  <td class="py-2 text-right tabular-nums {sectorsValid ? 'text-positive' : 'text-negative'}">
                     {sumSectors.toFixed(2)}%
                   </td>
                 </tr>
               </tbody>
             </table>
             {#if !sectorsValid}
-              <p class="mt-2 text-sm text-red-600">
+              <p class="mt-2 text-sm text-negative">
                 La somma dei pesi deve essere 100 (±0.5) — attuale: {sumSectors.toFixed(2)}%
               </p>
             {/if}
@@ -202,7 +207,7 @@
           <button
             onclick={saveSectors}
             disabled={!sectorsValid || savingSectors}
-            class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+            class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
           >
             {savingSectors ? 'Salvataggio...' : 'Salva'}
           </button>

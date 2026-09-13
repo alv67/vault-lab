@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (11 Set 2026)
+# VaultLab — Stato Progetto (13 Set 2026)
 
 ## Infrastruttura
 
@@ -20,7 +20,11 @@ e EPIC B completo (distribuzione geo/settoriale, asset class, FX history, charts
 **v0.3.0** — terza release su `main` (11 Set 2026): asset editing overhaul (price_source
 Yahoo/Manual/None, chart in-place con YTD e marcatori split, modale esposizione) ed editing
 dell'esposizione per-paese con fonte Morningstar/JustETF, cache e provenienza.
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0` su `main`.
+**v0.4.0** — quarta release su `main` (13 Set 2026): design system & dark mode (EPIC D),
+rebuild delle pagine e dei componenti di dominio (EPIC E: asset/portafogli/modali/login/
+impostazioni a tab), dashboard e dettaglio portafoglio rinnovati, Health più chiaro
+(periodo Today/24h/100, paginazione, fix N/A) e CI GitHub Actions.
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 
@@ -440,7 +444,35 @@ e Morningstar permette di cercare sul mercato esatto.
   come nel `PositionChart` del portafoglio.
 - EPIC C (#39) — Metric di rischio: Sharpe, max drawdown, volatilità, regressione, Monte Carlo
 - EPIC E (#38) — Pagine e componenti dominio (rebuilt dashboard, tabelle, modali)
-- EPIC D (#37) — Design system & dark mode
+
+### EPIC D — Design system & dark mode (#37) — ✅ Completata
+Branch unico `feat/D-design-system`, 5 commit:
+- `feat(tokens)` — token semantici (CSS custom properties HSL in `app.css` mappate in `tailwind.config.js` con `<alpha-value>`), store tema a 3 modalità (light/dark/system, **default dark**), script anti-FOUC in `app.html`, `lib/chartTheme.ts` (temi ECharts `vaultlab-light`/`vaultlab-dark`) e `lib/chartPalette.ts` (palette risolta a runtime).
+- `feat(ui)` — sweep dei colori hardcoded (~333 classi palette + hex) verso i token su tutte le pagine/componenti; grafici dark-aware.
+- `feat(ui)` — primitive in `src/lib/components/ui/` (Button, Input, Field, Select, Card, Badge, Modal, ConfirmDialog, Spinner, Skeleton, EmptyState, Table, SegmentedControl, StatCard) + refactor Toaster/ProvenanceBadge; i 4 `confirm()` nativi sostituiti da `ConfirmDialog`.
+- `feat(shell)` — `AppShell` responsive: sidebar collassabile (stato persistito in localStorage), header sticky, UserMenu, ThemeToggle a 3 modalità, MobileDrawer accessibile; `Layout.svelte` rimosso.
+- `feat(theme)` — dark mode di default + rimozione della pagina dev `/settings/theme-tokens`.
+- Fix: label dei donut leggibili in dark (le label ECharts non ereditavano il `textStyle` del tema → fill scuro + bordo bianco).
+- Documentazione: `docs/FRONTEND-GUIDE.en/it.md` (styling/tema, chart, layout) e `docs/RELEASE-NOTES.en/it.md`.
+
+### Ondata 0 — Fix & infrastruttura (13 Set 2026)
+
+- H.1 (#32) — GitHub Actions: `.github/workflows/ci.yml` con due job (backend: `go build` + `go vet` + `go test`; frontend: `npm ci` + `npm run check` + `npm run lint`) su push e pull request verso `develop`/`main`. Fase 0 completa.
+- H.4 (#46) — Price sync health: campo `has_data` nel summary; la card Success Rate mostra **N/A** (niente più `NaN%`) quando non ci sono eventi nel periodo; `formatRate` robusto a null/undefined/NaN.
+- H.5 (#47) — Logging API: `FetchIssue` con `request_type` (`chart`/`spark`/`search`/`fx`) e `asset_id`; `HealthEvent.AssetID` popolato sugli eventi per-asset; messaggi di successo con l'elenco dei ticker; registrazione degli eventi `search` (lookup) prima assenti.
+- E.9 (#71) — Le allocazioni del portafoglio (classi, geo, settori) vengono rifetchate dopo create/update/delete di una transazione, senza reload.
+- H.2 (#33, parziale) — Nuovi unit test per le allocazioni backend: `GetPortfolioAllocation` (multi-valuta, FX mancante, skip qty/prezzo) e `GetPortfolioClassAllocation` (raggruppamento/ordinamento, skip FX), più allocazione settoriale ETF (`backend/internal/service/allocation_test.go`).
+- H.9 (#90) — Asset non-Yahoo (`manual`/`none`) non più interrogati per history/split: filtro `price_source` in `GetPortfolioHistory`, `SyncAssetData`/`syncAssets` e `BackfillAssetHistory` (no-op). Niente più eventi health `history_fetch`/`split_fetch` per questi asset.
+- H.11 (#93) — Health summary calcolato dal DB (`health_events`) su finestra selezionabile **Today / Last 24h / Last 100 events** (rimossi i contatori Redis orari); `period` e `has_data` nella risposta, selettore nella pagina Health.
+- H.10 (#91, parziale) — Paginazione della lista eventi Health (`limit`/`offset`, `events_total`; UI 50/pagina con Previous/Next). Restano: copertura di tutte le chiamate esterne (meta/profilo, JustETF/Morningstar, successi) e retention di `health_events`.
+
+### Ondata 1 — EPIC E ✅ completata
+
+- E.8 (#54) — Chart storico portafogli in dashboard: asse `time` con i punti di ogni portafoglio (niente più unione di date con `null` che spezzava le linee), `connectNulls` + `sampling: lttb`, `dataZoom` inside/slider come `PositionChart`. `PortfolioLineChart` non prende più la prop `data` (usato solo dalla dashboard).
+- E.3 (#20) — Componenti di dominio riusabili: `AssetSearchAutocomplete`, `CurrencySelect`, `CreateAssetModal`, `CreatePortfolioModal`, `ImportPortfolioModal`. Pagine assets/portfolios ripulite dai form inline (Badge per il tipo, `ui/Button`/`ui/Card`/`ui/EmptyState`), login ridisegnato (logo, `SegmentedControl` Sign in/Register, `Field`/`Input`, validazione inline, conferma password in registrazione).
+- E.1 (#18) — Dashboard ridisegnata: KPI `ui/StatCard` per valuta, `AllocationDonut` per portafoglio, portafogli come card cliccabili, `PositionTable` condiviso nell'accordion, `EmptyState`/`Spinner`. Backend: `finished_at` in `RefreshReport`, mostrato nell'header come "Prices updated".
+- E.2 (#19) — Dettaglio portafoglio: `AssetCombobox`, `TransactionTable`, `AddTransactionModal` (form + validazione inline + totale live + delete con ConfirmDialog). KPI con `StatCard`, posizioni con `PositionTable` condiviso (con colonna Price), azioni in header sticky; refetch post-mutation (E.9) preservato.
+- E.4 (#21) — Settings divisa in tab via subroute (`/settings` Profile, `/settings/password`, `/settings/currencies`, `/settings/health`) con `SettingsTabs`; cambio password con validazione inline e mappatura errori `401`/`400` sui campi. Sweep a11y/numerico: `ui/Th` con `scope="col"`, tabelle assets/health/valute con primitive `ui/Table`, `aria-label` sui bottoni icona, `tabular-nums`/allineamento a destra sui numeri.
 
 ## Fase 3 — Pianificata
 

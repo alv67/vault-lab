@@ -7,7 +7,9 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatPercent } from '$lib/format'
   import type { ExposureRow } from '$lib/services/api'
-  import { CHART_PALETTE } from '$lib/chartPalette'
+  import { resolvePalette } from '$lib/chartPalette'
+  import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { resolved } from '$lib/stores/theme.svelte'
 
   use([PieChart, TooltipComponent, CanvasRenderer])
 
@@ -63,8 +65,16 @@
     return slices
   })
 
+  // Series palette consumed by both the donut and the HTML legend below;
+  // depends on resolved() so colors (and the {#key} re-init) follow the theme.
+  const palette = $derived(resolvePalette(resolved()))
+  // Pie labels do not inherit the ECharts theme textStyle: without an explicit
+  // color they keep the default dark fill + white text border, which is
+  // unreadable on a dark card ("outlined in white").
+  const labelColor = $derived(VAULTLAB_CHART_THEMES[resolved()].textStyle.color)
+
   const options = $derived.by((): EChartsOption => ({
-    color: CHART_PALETTE,
+    color: palette,
     tooltip: {
       trigger: 'item',
       formatter: (params: unknown) => {
@@ -82,23 +92,31 @@
         radius: ['45%', '70%'],
         center: ['50%', '50%'],
         avoidLabelOverlap: true,
-        label: mute ? { show: false } : { formatter: '{b}: {d}%', fontSize: 11 },
+        label: mute
+          ? { show: false }
+          : {
+              formatter: '{b}: {d}%',
+              fontSize: 11,
+              color: labelColor,
+              textBorderColor: 'transparent',
+              textBorderWidth: 0,
+            },
         labelLine: mute ? { show: false } : { length: 10, length2: 10 },
         data: pieData,
       },
     ],
   }))
-
-  const palette = CHART_PALETTE
 </script>
 
 {#if rows.length === 0}
-  <div class="flex h-[280px] w-full items-center justify-center text-sm text-gray-400">
+  <div class="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
     Nessuna distribuzione
   </div>
 {:else}
   <div class="h-[240px] w-full">
-    <Chart {init} {options} />
+    {#key resolved()}
+      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+    {/key}
   </div>
   {#if showLegend}
     <div class="mt-2 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
@@ -109,7 +127,7 @@
             style="background-color: {palette[i % palette.length]};"
           ></span>
           <span class="truncate">{r.name}</span>
-          <span class="ml-auto text-gray-500">{formatPercent(Number(r.weight))}</span>
+          <span class="ml-auto text-muted-foreground">{formatPercent(Number(r.weight))}</span>
         </div>
       {/each}
     </div>

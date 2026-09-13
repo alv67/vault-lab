@@ -432,8 +432,9 @@ tre criteri:
    salta.
 
 Solo gli asset con `price_source = 'yahoo'` (o vuoto, per sicurezza) vengono
-inviati a Yahoo; gli asset con `price_source = 'manual'` o `'none'` vengono
-saltati del tutto e non appaiono tra gli asset obsoleti.
+inviati a Yahoo — per quotazioni, storico e split; gli asset con
+`price_source = 'manual'` o `'none'` vengono saltati del tutto e non appaiono
+tra gli asset obsoleti.
 
 Quando bisogna aggiornare, le quotazioni correnti e i tassi di cambio vengono
 presi **in batch** tramite l'endpoint `spark` di Yahoo: una sola chiamata per
@@ -466,7 +467,9 @@ risposta non è solo la lista dei titoli aggiornati: è un **report** con:
 - `issues` — i problemi, ognuno con un codice stabile:
   `rate_limited` (Yahoo ha rifiutato per troppe chiamate), `http_<status>`
   (un errore HTTP specifico) o `error`;
-- `rate_limited` — un riepilogo rapido: "c'è stato un blocco da rate limit?".
+- `rate_limited` — un riepilogo rapido: "c'è stato un blocco da rate limit?";
+- `finished_at` — quando l'aggiornamento è terminato (timestamp UTC; la
+  dashboard lo mostra come "Prices updated: …").
 
 Il frontend usa questo report per mostrare un avviso non bloccante se qualche
 aggiornamento è fallito.
@@ -870,9 +873,11 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   `GET /api/v1/etf/search` (i ticker con suffisso borsa vengono normalizzati
   prima della query).
 - Gli asset possono avere `price_source` impostato su `'yahoo'` (default),
-  `'manual'` o `'none'`. Solo gli asset con prezzo Yahoo vengono elaborati dal
-  worker e da `RefreshStale`; gli asset manual/none vengono saltati del tutto
-  (nessuna chiamata Yahoo, nessun errore di health).
+  `'manual'` o `'none'`. Solo gli asset con prezzo Yahoo vengono elaborati — dal
+  worker, da `RefreshStale`, dal backfill history/split (`GetPortfolioHistory`,
+  `SyncAssetData`) e dal backfill del singolo asset; gli asset manual/none
+  vengono saltati del tutto (nessuna chiamata Yahoo, nessun errore di health) e
+  il backfill del loro storico è un no-op.
 - Esistono metodi SQL alternativi per riepiloghi e allocazioni
   (`GetSummary`, `GetAllocation`, `GetROI`) che non vengono usati dal livello
   service: il calcolo finanziario vive nel motore AVCO (capitolo 8), non in
