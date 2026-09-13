@@ -12,6 +12,8 @@
 - Price-sync health: the Success Rate card shows `N/A` instead of `NaN%` when there is no data for the period
 - Price-sync health: failed sync messages now state the request type (chart / spark / search / fx) and the related ticker or currency
 - Dashboard portfolio history chart now draws every portfolio as a continuous line over a real timeline, and can be zoomed and panned like the portfolio charts
+- Creating assets/portfolios and importing a portfolio now happen in modal dialogs consistent with the app design
+- Redesigned sign-in / registration screen with the VaultLab logo, a Sign in / Register switch and inline field validation
 
 ## v0.1.0 — 25 Aug 2026 (first official release)
 
