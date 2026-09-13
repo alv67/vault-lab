@@ -13,8 +13,9 @@ const (
 	HealthPeriod24h   = "24h"
 	HealthPeriodLastN = "100"
 
-	healthLastNEvents  = 100
-	healthLatestEvents = 100
+	healthLastNEvents   = 100
+	healthDefaultEvents = 100
+	healthMaxEvents     = 500
 )
 
 type HealthService struct {
@@ -46,11 +47,28 @@ func healthWindowFor(period string, now time.Time) healthWindow {
 	}
 }
 
+// normalizeHealthPage clamps the events pagination: non-positive limits fall
+// back to the default page size, oversized limits are capped, and offsets
+// never go below zero.
+func normalizeHealthPage(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = healthDefaultEvents
+	}
+	if limit > healthMaxEvents {
+		limit = healthMaxEvents
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
 func (s *HealthService) RecordEvent(ctx context.Context, event *model.HealthEvent) error {
 	return s.repos.Health.RecordEvent(ctx, event)
 }
 
-func (s *HealthService) GetPriceHealth(ctx context.Context, period string) (*model.HealthSummary, []*model.HealthEvent, error) {
+func (s *HealthService) GetPriceHealth(ctx context.Context, period string, limit, offset int) (*model.HealthSummary, []*model.HealthEvent, int, error) {
+	limit, offset = normalizeHealthPage(limit, offset)
 	window := healthWindowFor(period, time.Now().UTC())
 
 	var summary *model.HealthSummary
@@ -61,7 +79,7 @@ func (s *HealthService) GetPriceHealth(ctx context.Context, period string) (*mod
 		summary, err = s.repos.Health.SummarySince(ctx, window.since)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	summary.Period = window.period
@@ -71,10 +89,15 @@ func (s *HealthService) GetPriceHealth(ctx context.Context, period string) (*mod
 		summary.SuccessRate = float64(summary.Successes) / float64(total)
 	}
 
-	events, err := s.repos.Health.GetLatestEvents(ctx, healthLatestEvents)
+	eventsTotal, err := s.repos.Health.CountEvents(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
-	return summary, events, nil
+	events, err := s.repos.Health.GetEventsPage(ctx, limit, offset)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	return summary, events, eventsTotal, nil
 }

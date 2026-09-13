@@ -1,7 +1,6 @@
 <script lang="ts">
   import { toast } from '$lib/stores/toast.svelte'
   import { api } from '$lib/services/api'
-  import SettingsTabs from '$lib/components/domain/SettingsTabs.svelte'
   import Button from '$lib/components/ui/Button.svelte'
   import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
@@ -33,6 +32,8 @@
     created_at: string
   }
 
+  const PAGE_SIZE = 50
+
   const periodItems = [
     { value: 'today', label: 'Today' },
     { value: '24h', label: 'Last 24h' },
@@ -40,21 +41,32 @@
   ]
 
   let period = $state('today')
+  let offset = $state(0)
   let summary = $state<HealthSummary | null>(null)
   let events = $state<HealthEvent[]>([])
+  let eventsTotal = $state(0)
   let loading = $state(true)
 
   const periodLabel = $derived(periodItems.find((item) => item.value === period)?.label ?? period)
+  const rangeLabel = $derived(
+    events.length === 0
+      ? `0 of ${eventsTotal}`
+      : `${offset + 1}–${offset + events.length} of ${eventsTotal}`,
+  )
 
   async function fetchHealth() {
     loading = true
     try {
-      const data = (await api.get(`/health/prices?period=${period}`)) as {
+      const data = (await api.get(
+        `/health/prices?period=${period}&limit=${PAGE_SIZE}&offset=${offset}`,
+      )) as {
         summary: HealthSummary
         events: HealthEvent[]
+        events_total: number
       }
       summary = data.summary
       events = data.events ?? []
+      eventsTotal = data.events_total ?? 0
     } catch {
       toast.error('Failed to fetch health data')
     } finally {
@@ -65,6 +77,15 @@
   $effect(() => {
     fetchHealth()
   })
+
+  function getPeriod() {
+    return period
+  }
+
+  function setPeriod(value: string) {
+    period = value
+    offset = 0
+  }
 
   function formatRate(val: number | null | undefined) {
     if (val === null || val === undefined || Number.isNaN(val)) return 'N/A'
@@ -85,14 +106,12 @@
       <p class="text-muted-foreground">Monitoring Yahoo Finance API connectivity and performance</p>
     </div>
     <div class="flex flex-wrap items-center gap-3">
-      <SegmentedControl items={periodItems} bind:value={period} ariaLabel="Health period" />
+      <SegmentedControl items={periodItems} bind:value={getPeriod, setPeriod} ariaLabel="Health period" />
       <Button variant="secondary" onclick={fetchHealth} disabled={loading}>
         {loading ? 'Refreshing...' : 'Refresh Now'}
       </Button>
     </div>
   </div>
-
-  <SettingsTabs class="mb-8" />
 
   {#if loading}
     <div class="flex justify-center py-12">
@@ -162,6 +181,27 @@
             {/each}
           </TBody>
         </Table>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-4">
+        <span class="text-sm text-muted-foreground tabular-nums">{rangeLabel}</span>
+        <div class="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={offset === 0}
+            onclick={() => (offset = Math.max(0, offset - PAGE_SIZE))}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={offset + PAGE_SIZE >= eventsTotal}
+            onclick={() => (offset += PAGE_SIZE)}
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </div>
   {/if}

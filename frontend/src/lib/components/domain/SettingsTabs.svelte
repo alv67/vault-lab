@@ -15,7 +15,6 @@
     { to: '/settings', label: 'Profile' },
     { to: '/settings/password', label: 'Password' },
     { to: '/settings/currencies', label: 'Currencies' },
-    { to: '/settings/health', label: 'Health' },
   ] as const
 </script>
 

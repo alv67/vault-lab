@@ -190,7 +190,7 @@ frontend/
         ├── portfolios/     # elenco portafogli + CRUD + import
         ├── portfolios/[id]/ # dettaglio portafoglio (transazioni, grafici)
         ├── settings/       # profilo, password, whitelist valute
-        └── settings/health/ # health dashboard dei prezzi
+        └── admin/health/   # health dashboard dei prezzi (area admin)
 ```
 
 > **Non esiste una pagina `/register` separata**: la pagina di login contiene un
@@ -871,23 +871,22 @@ Endpoint chiamati: `settingsApi.listCurrencies()`, `updateProfile()`,
 - **Profile** (nome/email) e **Change password**
   (`POST /users/me/password` con `current_password` + `new_password`,
   verifica lato frontend che le due nuove coincidano).
-- Card **Infrastruttura** con il link alla health dashboard
-  (`/settings/health`).
 - **Valute gestite**: il CRUD della whitelist valute — aggiungi un codice di 3
   lettere (un 422 dal backend significa che Yahoo non ha la conversione
   USD→codice e il frontend mostra un messaggio dedicato; 409 = già presente),
   elimina con conferma (409 = in uso o protetta). I simboli sono renderizzati
   con `currencySymbol()`.
 
-### `/settings/health` — Price Sync Health (`routes/settings/health/+page.svelte`)
+### `/admin/health` — Price Sync Health (`routes/admin/health/+page.svelte`)
 
 L'unica pagina che usa il **client generico**: `api.get('/health/prices?period=today|24h|100')`
 (stessa origine `/api/v1/health/prices`). Un selettore di periodo (Today / Last
 24h / Last 100) limita il riepilogo, che il backend calcola dalla tabella
 `health_events` sulla finestra scelta (non si azzera più al riavvio). Mostra 4
 card di riepilogo (Success Rate, Total Successes, Total Failures, Rate Limited)
-e una tabella degli eventi recenti (timestamp, tipo, badge dello stato, codice,
-messaggio, durata), con un pulsante "Refresh Now".
+e una tabella paginata degli eventi recenti (timestamp, tipo, badge dello stato,
+codice, messaggio, durata; 50 per pagina con Previous/Next e indicazione
+dell'intervallo), con un pulsante "Refresh Now".
 
 ---
 

@@ -17,6 +17,8 @@
 - Settings reorganized into tabs: Profile, Password, Currencies and Health
 - Managed currencies are now picked from a list, with the name filled in automatically
 - Changing your password now validates inline and highlights the field at fault (e.g. wrong current password)
+- The price-sync health events list is now paginated, so the full history can be browsed
+- The price-sync health page moved to a dedicated Admin section in the sidebar
 
 ### Fixes
 - Portfolio allocations update immediately after adding, editing or deleting a transaction, with no page reload

@@ -12,12 +12,15 @@ import (
 type fakeHealthRepo struct {
 	recorded []*model.HealthEvent
 
-	sinceCalls   []time.Time
-	lastNCalls   []int
-	latestCalled int
+	sinceCalls []time.Time
+	lastNCalls []int
+	pageCalls  int
+	pageLimit  int
+	pageOffset int
 
 	sinceSummary *model.HealthSummary
 	lastNSummary *model.HealthSummary
+	count        int
 	events       []*model.HealthEvent
 }
 
@@ -26,9 +29,15 @@ func (f *fakeHealthRepo) RecordEvent(ctx context.Context, event *model.HealthEve
 	return nil
 }
 
-func (f *fakeHealthRepo) GetLatestEvents(ctx context.Context, limit int) ([]*model.HealthEvent, error) {
-	f.latestCalled = limit
+func (f *fakeHealthRepo) GetEventsPage(ctx context.Context, limit, offset int) ([]*model.HealthEvent, error) {
+	f.pageCalls++
+	f.pageLimit = limit
+	f.pageOffset = offset
 	return f.events, nil
+}
+
+func (f *fakeHealthRepo) CountEvents(ctx context.Context) (int, error) {
+	return f.count, nil
 }
 
 func (f *fakeHealthRepo) SummarySince(ctx context.Context, since time.Time) (*model.HealthSummary, error) {
@@ -84,7 +93,7 @@ func TestGetPriceHealthTodayUsesSummarySince(t *testing.T) {
 	}
 	svc := NewHealthService(&repository.Repository{Health: repo})
 
-	summary, events, err := svc.GetPriceHealth(context.Background(), "today")
+	summary, events, _, err := svc.GetPriceHealth(context.Background(), "today", 0, 0)
 	if err != nil {
 		t.Fatalf("GetPriceHealth: %v", err)
 	}
@@ -108,8 +117,9 @@ func TestGetPriceHealthTodayUsesSummarySince(t *testing.T) {
 	if summary.RateLimited != 1 {
 		t.Fatalf("RateLimited = %d, want 1", summary.RateLimited)
 	}
-	if repo.latestCalled != 100 {
-		t.Fatalf("GetLatestEvents limit = %d, want 100", repo.latestCalled)
+	if repo.pageCalls != 1 || repo.pageLimit != 100 || repo.pageOffset != 0 {
+		t.Fatalf("GetEventsPage calls = %d with (limit=%d, offset=%d); want 1 with (100, 0)",
+			repo.pageCalls, repo.pageLimit, repo.pageOffset)
 	}
 	_ = events
 }
@@ -120,7 +130,7 @@ func TestGetPriceHealth24hUsesSummarySince(t *testing.T) {
 	}
 	svc := NewHealthService(&repository.Repository{Health: repo})
 
-	summary, _, err := svc.GetPriceHealth(context.Background(), "24h")
+	summary, _, _, err := svc.GetPriceHealth(context.Background(), "24h", 0, 0)
 	if err != nil {
 		t.Fatalf("GetPriceHealth: %v", err)
 	}
@@ -145,7 +155,7 @@ func TestGetPriceHealthLastNUsesSummaryLastN(t *testing.T) {
 	}
 	svc := NewHealthService(&repository.Repository{Health: repo})
 
-	summary, _, err := svc.GetPriceHealth(context.Background(), "100")
+	summary, _, _, err := svc.GetPriceHealth(context.Background(), "100", 0, 0)
 	if err != nil {
 		t.Fatalf("GetPriceHealth: %v", err)
 	}
@@ -169,7 +179,7 @@ func TestGetPriceHealthInvalidPeriodFallsBackToToday(t *testing.T) {
 	}
 	svc := NewHealthService(&repository.Repository{Health: repo})
 
-	summary, _, err := svc.GetPriceHealth(context.Background(), "nonsense")
+	summary, _, _, err := svc.GetPriceHealth(context.Background(), "nonsense", 0, 0)
 	if err != nil {
 		t.Fatalf("GetPriceHealth: %v", err)
 	}
@@ -194,5 +204,93 @@ func TestHealthRecordEventPersistsOnlyToDB(t *testing.T) {
 	}
 	if len(repo.recorded) != 1 || repo.recorded[0] != event {
 		t.Fatalf("recorded = %v, want the single event", repo.recorded)
+	}
+}
+
+func TestNormalizeHealthPage(t *testing.T) {
+	tcs := []struct {
+		name       string
+		limit      int
+		offset     int
+		wantLimit  int
+		wantOffset int
+	}{
+		{"unset falls back to defaults", 0, 0, 100, 0},
+		{"negative falls back to defaults", -5, -10, 100, 0},
+		{"oversized limit is capped", 1000, 0, 500, 0},
+		{"max limit is allowed", 500, 0, 500, 0},
+		{"min limit is allowed", 1, 0, 1, 0},
+		{"valid page is kept", 25, 75, 25, 75},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			limit, offset := normalizeHealthPage(tc.limit, tc.offset)
+			if limit != tc.wantLimit || offset != tc.wantOffset {
+				t.Fatalf("normalizeHealthPage(%d, %d) = (%d, %d), want (%d, %d)",
+					tc.limit, tc.offset, limit, offset, tc.wantLimit, tc.wantOffset)
+			}
+		})
+	}
+}
+
+func TestGetPriceHealthPassesNormalizedPaginationAndReturnsTotal(t *testing.T) {
+	repo := &fakeHealthRepo{
+		sinceSummary: &model.HealthSummary{Successes: 120, Failures: 17},
+		count:        137,
+		events:       []*model.HealthEvent{{EventType: "price_sync", Status: "success"}},
+	}
+	svc := NewHealthService(&repository.Repository{Health: repo})
+
+	_, events, total, err := svc.GetPriceHealth(context.Background(), "today", 10000, -5)
+	if err != nil {
+		t.Fatalf("GetPriceHealth: %v", err)
+	}
+	if repo.pageCalls != 1 {
+		t.Fatalf("GetEventsPage calls = %d, want 1", repo.pageCalls)
+	}
+	if repo.pageLimit != 500 || repo.pageOffset != 0 {
+		t.Fatalf("GetEventsPage(limit=%d, offset=%d), want (500, 0)", repo.pageLimit, repo.pageOffset)
+	}
+	if total != 137 {
+		t.Fatalf("total = %d, want 137", total)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+}
+
+func TestGetPriceHealthUsesDefaultPageWhenUnset(t *testing.T) {
+	repo := &fakeHealthRepo{
+		sinceSummary: &model.HealthSummary{Successes: 1},
+		count:        42,
+	}
+	svc := NewHealthService(&repository.Repository{Health: repo})
+
+	_, _, total, err := svc.GetPriceHealth(context.Background(), "today", 0, 0)
+	if err != nil {
+		t.Fatalf("GetPriceHealth: %v", err)
+	}
+	if repo.pageLimit != 100 || repo.pageOffset != 0 {
+		t.Fatalf("GetEventsPage(limit=%d, offset=%d), want (100, 0)", repo.pageLimit, repo.pageOffset)
+	}
+	if total != 42 {
+		t.Fatalf("total = %d, want 42", total)
+	}
+}
+
+func TestGetPriceHealthKeepsValidPagination(t *testing.T) {
+	repo := &fakeHealthRepo{
+		sinceSummary: &model.HealthSummary{Successes: 1},
+		count:        300,
+	}
+	svc := NewHealthService(&repository.Repository{Health: repo})
+
+	_, _, _, err := svc.GetPriceHealth(context.Background(), "today", 25, 50)
+	if err != nil {
+		t.Fatalf("GetPriceHealth: %v", err)
+	}
+	if repo.pageLimit != 25 || repo.pageOffset != 50 {
+		t.Fatalf("GetEventsPage(limit=%d, offset=%d), want (25, 50)", repo.pageLimit, repo.pageOffset)
 	}
 }
