@@ -24,6 +24,7 @@
 - Price-sync health: the Success Rate and Rate Limited cards now show the real values (the rate could stay stuck on `N/A`, or show `NaN%` when there was no data)
 - Price-sync health: failed sync messages now state the request type (chart / spark / search / fx) and the related ticker or currency
 - Assets not priced by Yahoo (manual / none) no longer generate sync errors in the price-sync health dashboard
+- Price-sync health: the summary totals no longer reset on restart and can be scoped to Today / Last 24h / Last 100 events
 
 ## v0.3.0 — 11 Sep 2026
 

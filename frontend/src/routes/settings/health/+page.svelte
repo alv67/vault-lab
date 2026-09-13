@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
   import { toast } from '$lib/stores/toast.svelte'
   import { api } from '$lib/services/api'
   import SettingsTabs from '$lib/components/domain/SettingsTabs.svelte'
   import Button from '$lib/components/ui/Button.svelte'
+  import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
   import Table from '$lib/components/ui/Table.svelte'
   import THead from '$lib/components/ui/THead.svelte'
@@ -18,6 +18,7 @@
     success_rate: number
     rate_limited: number
     has_data: boolean
+    period?: string
   }
 
   interface HealthEvent {
@@ -32,14 +33,23 @@
     created_at: string
   }
 
+  const periodItems = [
+    { value: 'today', label: 'Today' },
+    { value: '24h', label: 'Last 24h' },
+    { value: '100', label: 'Last 100' },
+  ]
+
+  let period = $state('today')
   let summary = $state<HealthSummary | null>(null)
   let events = $state<HealthEvent[]>([])
   let loading = $state(true)
 
+  const periodLabel = $derived(periodItems.find((item) => item.value === period)?.label ?? period)
+
   async function fetchHealth() {
     loading = true
     try {
-      const data = (await api.get('/health/prices')) as {
+      const data = (await api.get(`/health/prices?period=${period}`)) as {
         summary: HealthSummary
         events: HealthEvent[]
       }
@@ -52,7 +62,7 @@
     }
   }
 
-  onMount(() => {
+  $effect(() => {
     fetchHealth()
   })
 
@@ -69,14 +79,17 @@
 </script>
 
 <div class="mx-auto max-w-6xl p-6">
-  <div class="mb-6 flex items-center justify-between">
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div>
       <h1 class="text-2xl font-bold text-foreground">Price Sync Health</h1>
       <p class="text-muted-foreground">Monitoring Yahoo Finance API connectivity and performance</p>
     </div>
-    <Button variant="secondary" onclick={fetchHealth} disabled={loading}>
-      {loading ? 'Refreshing...' : 'Refresh Now'}
-    </Button>
+    <div class="flex flex-wrap items-center gap-3">
+      <SegmentedControl items={periodItems} bind:value={period} ariaLabel="Health period" />
+      <Button variant="secondary" onclick={fetchHealth} disabled={loading}>
+        {loading ? 'Refreshing...' : 'Refresh Now'}
+      </Button>
+    </div>
   </div>
 
   <SettingsTabs class="mb-8" />
@@ -90,6 +103,7 @@
       No health data available.
     </div>
   {:else}
+    <div class="mb-3 text-sm text-muted-foreground">Period: {periodLabel}</div>
     <div class="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
       <div class="rounded-card border border-border bg-surface p-4 shadow-card">
         <div class="mb-1 text-sm text-muted-foreground">Success Rate</div>

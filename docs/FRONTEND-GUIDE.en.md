@@ -852,11 +852,13 @@ Called endpoints: `settingsApi.listCurrencies()`, `updateProfile()`,
 
 ### `/settings/health` — Price Sync Health (`routes/settings/health/+page.svelte`)
 
-The only page that uses the **generic client**: `api.get('/health/prices')`
-(same-origin `/api/v1/health/prices`). It shows 4 summary cards (Success Rate,
-Total Successes, Total Failures, Rate Limited) and a table of the recent
-events (timestamp, type, status badge, code, message, duration), with a
-"Refresh Now" button.
+The only page that uses the **generic client**: `api.get('/health/prices?period=today|24h|100')`
+(same-origin `/api/v1/health/prices`). A period selector (Today / Last 24h /
+Last 100) scopes the summary, which the backend computes from the
+`health_events` table over the selected window (it no longer resets on
+restart). It shows 4 summary cards (Success Rate, Total Successes, Total
+Failures, Rate Limited) and a table of the recent events (timestamp, type,
+status badge, code, message, duration), with a "Refresh Now" button.
 
 ---
 

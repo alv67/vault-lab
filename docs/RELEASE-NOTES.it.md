@@ -24,6 +24,7 @@
 - Health della sincronizzazione prezzi: le card Success Rate e Rate Limited mostrano ora i valori reali (il rate poteva restare bloccato su `N/A`, o mostrare `NaN%` senza dati)
 - Health della sincronizzazione prezzi: i messaggi di errore ora indicano il tipo di richiesta (chart / spark / search / fx) e il relativo ticker o valuta
 - Gli asset non gestiti da Yahoo (manual / none) non generano più errori di sincronizzazione nella dashboard di health
+- Health della sincronizzazione prezzi: i totali non si azzerano più al riavvio e si possono limitare a Today / Last 24h / Last 100 eventi
 
 ## v0.3.0 — 11 Set 2026
 

@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/amelamela/vault-lab/internal/model"
 )
@@ -11,6 +13,8 @@ import (
 type HealthRepository interface {
 	RecordEvent(ctx context.Context, event *model.HealthEvent) error
 	GetLatestEvents(ctx context.Context, limit int) ([]*model.HealthEvent, error)
+	SummarySince(ctx context.Context, since time.Time) (*model.HealthSummary, error)
+	SummaryLastN(ctx context.Context, n int) (*model.HealthSummary, error)
 }
 
 type healthRepo struct {
@@ -52,4 +56,34 @@ func (r *healthRepo) GetLatestEvents(ctx context.Context, limit int) ([]*model.H
 		events = append(events, e)
 	}
 	return events, nil
+}
+
+func (r *healthRepo) SummarySince(ctx context.Context, since time.Time) (*model.HealthSummary, error) {
+	return r.scanSummary(r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FILTER (WHERE status = 'success'),
+		        COUNT(*) FILTER (WHERE status <> 'success'),
+		        COUNT(*) FILTER (WHERE code = 'rate_limited')
+		 FROM health_events
+		 WHERE created_at >= $1`, since))
+}
+
+func (r *healthRepo) SummaryLastN(ctx context.Context, n int) (*model.HealthSummary, error) {
+	return r.scanSummary(r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FILTER (WHERE status = 'success'),
+		        COUNT(*) FILTER (WHERE status <> 'success'),
+		        COUNT(*) FILTER (WHERE code = 'rate_limited')
+		 FROM (
+			 SELECT status, code
+			 FROM health_events
+			 ORDER BY created_at DESC
+			 LIMIT $1
+		 ) recent`, n))
+}
+
+func (r *healthRepo) scanSummary(row pgx.Row) (*model.HealthSummary, error) {
+	summary := &model.HealthSummary{}
+	if err := row.Scan(&summary.Successes, &summary.Failures, &summary.RateLimited); err != nil {
+		return nil, err
+	}
+	return summary, nil
 }
