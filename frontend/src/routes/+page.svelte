@@ -129,28 +129,50 @@
   {:else}
     <div class="space-y-6">
       <div class="space-y-4">
-        {#each dash.by_currency as c (c.currency)}
-          <div class="space-y-2">
-            {#if hasMultipleCurrencies}
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.currency}</p>
-            {/if}
-            <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <StatCard label="Invested" value={formatCurrency(c.invested, c.currency)} />
-              <StatCard
-                label="Current Value"
-                value={formatCurrency(c.value, c.currency)}
-                valueClass="text-2xl sm:text-3xl"
-              />
-              <StatCard
-                label="Gain/Loss"
-                value={formatCurrency(c.gain_loss, c.currency)}
-                delta={formatPercent(c.gain_loss_pct)}
-                deltaValue={Number(c.gain_loss_pct)}
-              />
-              <StatCard label="ROI" value={formatPercent(c.gain_loss_pct)} />
-            </div>
+        {#if dash.summary}
+          <!-- Primary KPIs: consolidated totals in the user's base currency
+               (EPIC I.1). The per-currency loop below becomes a secondary
+               breakdown, shown only when portfolios actually differ. -->
+          <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard label="Invested" value={formatCurrency(dash.summary.invested, dash.base_currency)} />
+            <StatCard
+              label="Current Value"
+              value={formatCurrency(dash.summary.value, dash.base_currency)}
+              valueClass="text-2xl sm:text-3xl"
+            />
+            <StatCard
+              label="Gain/Loss"
+              value={formatCurrency(dash.summary.gain_loss, dash.base_currency)}
+              delta={formatPercent(dash.summary.gain_loss_pct)}
+              deltaValue={Number(dash.summary.gain_loss_pct)}
+            />
+            <StatCard label="ROI" value={formatPercent(dash.summary.gain_loss_pct)} />
           </div>
-        {/each}
+        {/if}
+        {#if !dash.summary || hasMultipleCurrencies}
+          {#each dash.by_currency as c (c.currency)}
+            <div class="space-y-2">
+              {#if hasMultipleCurrencies}
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.currency}</p>
+              {/if}
+              <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <StatCard label="Invested" value={formatCurrency(c.invested, c.currency)} />
+                <StatCard
+                  label="Current Value"
+                  value={formatCurrency(c.value, c.currency)}
+                  valueClass="text-2xl sm:text-3xl"
+                />
+                <StatCard
+                  label="Gain/Loss"
+                  value={formatCurrency(c.gain_loss, c.currency)}
+                  delta={formatPercent(c.gain_loss_pct)}
+                  deltaValue={Number(c.gain_loss_pct)}
+                />
+                <StatCard label="ROI" value={formatPercent(c.gain_loss_pct)} />
+              </div>
+            </div>
+          {/each}
+        {/if}
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2">
@@ -168,7 +190,7 @@
           <AllocationDonut
             data={portfolioSlices}
             title="Allocation by portfolio"
-            currency={dash.by_currency[0]?.currency ?? 'USD'}
+            currency={dash.base_currency || dash.by_currency[0]?.currency || 'USD'}
             showValue={!hasMultipleCurrencies}
           />
           {#if hasMultipleCurrencies}

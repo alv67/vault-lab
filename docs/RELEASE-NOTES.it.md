@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+### Nuove funzionalità
+- Scegli la tua valuta base in Impostazioni → Profilo: la dashboard ora consolida totali, storico dei portafogli e allocazioni in quella valuta
+
 ## v0.4.0 — 13 Set 2026
 
 ### Nuove funzionalità

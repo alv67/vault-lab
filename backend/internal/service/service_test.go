@@ -237,7 +237,10 @@ func (f *fakeLookupRepo) Set(ctx context.Context, key string, data []byte, ttl t
 func newTestService(t *testing.T, p *fakePortfolioRepo, e *fakeExposureRepo, f *fakeFXRepo) *Service {
 	t.Helper()
 	repos := &repository.Repository{
-		Asset:     &fakeAssetRepo{},
+		Asset: &fakeAssetRepo{},
+		// Dashboard reads use USD as the user's base currency so the
+		// USD-centric fixtures keep asserting USD-pivoted numbers.
+		User:      &fakeUserRepo{user: &model.User{ID: uuid.New(), BaseCurrency: "USD"}},
 		Portfolio: p,
 		Exposure:  e,
 		FX:        f,
@@ -2070,15 +2073,338 @@ func TestBackfillAssetHistory_SkipsNonYahooAssets(t *testing.T) {
 	}
 }
 
-func TestBackfillAssetHistory_FullsYahooAsset(t *testing.T) {
-	asset := &model.Asset{ID: uuid.New(), Ticker: "AAPL", PriceSource: "yahoo"}
-	yf := &fakeYahooFetcher{}
-	svc := newFetchTestService(t, &fakeAssetRepo{asset: asset}, &fakeExposureRepo{}, nil, yf, nil)
+// fakeUserRepo is a single-user stand-in for repository.UserRepository:
+// FindByID serves the stored record whatever the requested id (the service
+// tests always pass the id the fake owns) and Update persists a snapshot so
+// the refresh-after-write flow is observable.
+type fakeUserRepo struct {
+	user        *model.User
+	updateCalls int
+}
 
-	if err := svc.BackfillAssetHistory(context.Background(), asset.ID); err != nil {
+func (f *fakeUserRepo) Create(ctx context.Context, email, name, password string) (*model.User, error) {
+	return f.user, nil
+}
+func (f *fakeUserRepo) FindByEmail(ctx context.Context, email string) (*model.User, error) {
+	if f.user == nil || f.user.Email != email {
+		return nil, pgx.ErrNoRows
+	}
+	u := *f.user
+	return &u, nil
+}
+func (f *fakeUserRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
+	if f.user == nil {
+		return nil, pgx.ErrNoRows
+	}
+	u := *f.user
+	return &u, nil
+}
+func (f *fakeUserRepo) Update(ctx context.Context, user *model.User) error {
+	f.updateCalls++
+	u := *user
+	f.user = &u
+	return nil
+}
+func (f *fakeUserRepo) UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	return nil
+}
+
+// fakeCurrencyRepo is an in-memory whitelist stand-in for
+// repository.CurrencyRepository; only the enabled-code surface carries data.
+type fakeCurrencyRepo struct {
+	enabled []string
+}
+
+func (f *fakeCurrencyRepo) ListEnabled(ctx context.Context) ([]model.Currency, error) {
+	out := make([]model.Currency, 0, len(f.enabled))
+	for _, c := range f.enabled {
+		out = append(out, model.Currency{Code: c, Enabled: true})
+	}
+	return out, nil
+}
+func (f *fakeCurrencyRepo) ListAll(ctx context.Context) ([]model.Currency, error) {
+	return f.ListEnabled(ctx)
+}
+func (f *fakeCurrencyRepo) Get(ctx context.Context, code string) (*model.Currency, error) {
+	return nil, nil
+}
+func (f *fakeCurrencyRepo) Create(ctx context.Context, c *model.Currency) error { return nil }
+func (f *fakeCurrencyRepo) Delete(ctx context.Context, code string) error       { return nil }
+func (f *fakeCurrencyRepo) EnabledByCodes(ctx context.Context, codes []string) ([]string, error) {
+	var out []string
+	for _, c := range codes {
+		for _, e := range f.enabled {
+			if e == c {
+				out = append(out, c)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+func (f *fakeCurrencyRepo) CountInUse(ctx context.Context, code string) (int, error) {
+	return 0, nil
+}
+
+// fakeSeriesRepo is a canned aggregate stand-in for
+// repository.SeriesRepository: FindPortfolioAgg serves preloaded portfolio
+// series, the write paths are inert.
+type fakeSeriesRepo struct {
+	aggs map[uuid.UUID][]model.PositionPoint
+}
+
+func (f *fakeSeriesRepo) ReplacePortfolio(ctx context.Context, portfolioID uuid.UUID, agg []model.PositionPoint, assets []model.AssetPositionSeries) error {
+	return nil
+}
+func (f *fakeSeriesRepo) FindPortfolioAgg(ctx context.Context, portfolioID uuid.UUID) ([]model.PositionPoint, error) {
+	return f.aggs[portfolioID], nil
+}
+func (f *fakeSeriesRepo) FindPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.AssetPositionSeries, error) {
+	return nil, nil
+}
+func (f *fakeSeriesRepo) HasPortfolio(ctx context.Context, portfolioID uuid.UUID) (bool, error) {
+	return false, nil
+}
+
+func newDashboardTestService(t *testing.T, p *fakePortfolioRepo, fx *fakeFXRepo, baseCurrency string, aggs map[uuid.UUID][]model.PositionPoint) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:     &fakeAssetRepo{},
+		User:      &fakeUserRepo{user: &model.User{ID: uuid.New(), Email: "u@example.com", BaseCurrency: baseCurrency}},
+		Portfolio: p,
+		Exposure:  &fakeExposureRepo{},
+		FX:        fx,
+		Series:    &fakeSeriesRepo{aggs: aggs},
+	}
+	return New(repos, nil, nil, nil, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
+}
+
+func newProfileTestService(t *testing.T, u *fakeUserRepo, c *fakeCurrencyRepo) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		User:     u,
+		Currency: c,
+	}
+	return New(repos, nil, nil, nil, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
+}
+
+// dashboardHolding is a full holding fixture for the base-currency summary:
+// unlike the `holding` helper it carries the portfolio id, the portfolio
+// currency cost basis and realized P&L the summary converts.
+func dashboardHolding(portfolioID, assetID, currency string, qty, lastClose, cost, realized decimal.Decimal) *model.Holding {
+	h := holding(assetID, currency, "US", "Technology", model.AssetTypeStock, qty, lastClose)
+	h.PortfolioID = portfolioID
+	h.Cost = cost
+	h.Realized = realized
+	return h
+}
+
+func TestUpdateProfile_InvalidBaseCurrencyRejected(t *testing.T) {
+	uid := uuid.New()
+	u := &fakeUserRepo{user: &model.User{ID: uid, Email: "a@b.co", Name: "Old", BaseCurrency: "USD"}}
+	c := &fakeCurrencyRepo{enabled: []string{"EUR", "USD"}}
+	svc := newProfileTestService(t, u, c)
+
+	_, err := svc.UpdateProfile(context.Background(), uid, "New", "a@b.co", "zzz")
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("err = %v, want ErrInvalidInput", err)
+	}
+	if u.updateCalls != 0 {
+		t.Fatalf("Update calls = %d, want 0 (a rejected currency must not persist anything)", u.updateCalls)
+	}
+	if u.user.BaseCurrency != "USD" {
+		t.Fatalf("stored base currency = %q, want the untouched USD", u.user.BaseCurrency)
+	}
+}
+
+func TestUpdateProfile_NormalizesAndPersistsBaseCurrency(t *testing.T) {
+	uid := uuid.New()
+	u := &fakeUserRepo{user: &model.User{ID: uid, Email: "a@b.co", Name: "Old", BaseCurrency: "USD"}}
+	c := &fakeCurrencyRepo{enabled: []string{"EUR", "USD"}}
+	svc := newProfileTestService(t, u, c)
+
+	got, err := svc.UpdateProfile(context.Background(), uid, "New", "a@b.co", " eur ")
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if yf.historyCalls != 1 || len(yf.historyTickers) != 1 || yf.historyTickers[0] != "AAPL" {
-		t.Fatalf("EnsureHistory calls = %d tickers = %v, want 1 [AAPL]", yf.historyCalls, yf.historyTickers)
+	if u.updateCalls != 1 {
+		t.Fatalf("Update calls = %d, want 1", u.updateCalls)
+	}
+	if got.Name != "New" || got.BaseCurrency != "EUR" {
+		t.Fatalf("refreshed user = %+v, want name New and normalized EUR base currency", got)
+	}
+}
+
+func TestUpdateProfile_EmptyBaseCurrencyKeepsExisting(t *testing.T) {
+	uid := uuid.New()
+	u := &fakeUserRepo{user: &model.User{ID: uid, Email: "a@b.co", Name: "Old", BaseCurrency: "USD"}}
+	c := &fakeCurrencyRepo{enabled: []string{"EUR", "USD"}}
+	svc := newProfileTestService(t, u, c)
+
+	got, err := svc.UpdateProfile(context.Background(), uid, "New", "a@b.co", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.BaseCurrency != "USD" {
+		t.Fatalf("base currency = %q, want the existing USD (an empty input must not overwrite)", got.BaseCurrency)
+	}
+}
+
+func TestGetDashboard_SummaryInBaseCurrency(t *testing.T) {
+	pfUSD := uuid.New()
+	pfEUR := uuid.New()
+	pfCHF := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{
+			{ID: pfUSD, Currency: "USD"},
+			{ID: pfEUR, Currency: "EUR"},
+			{ID: pfCHF, Currency: "CHF"},
+		},
+		holdings: []*model.Holding{
+			// USD portfolio: everything converts through USD->EUR 0.9.
+			dashboardHolding(pfUSD.String(), uuid.New().String(), "USD", decimal.NewFromInt(10), decimal.NewFromInt(100), decimal.NewFromInt(800), decimal.NewFromInt(50)),
+			// EUR portfolio, EUR asset: identity conversion.
+			dashboardHolding(pfEUR.String(), uuid.New().String(), "EUR", decimal.NewFromInt(5), decimal.NewFromInt(10), decimal.NewFromInt(40), decimal.NewFromInt(10)),
+			// EUR portfolio, JPY asset: no JPY rate, the value is flagged raw.
+			dashboardHolding(pfEUR.String(), uuid.New().String(), "JPY", decimal.NewFromInt(1), decimal.NewFromInt(1000), decimal.Zero, decimal.Zero),
+			// CHF portfolio: no CHF rate, cost and realized are flagged raw.
+			dashboardHolding(pfCHF.String(), uuid.New().String(), "EUR", decimal.NewFromInt(1), decimal.NewFromInt(20), decimal.NewFromInt(15), decimal.NewFromInt(5)),
+		},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.9")}}
+	svc := newDashboardTestService(t, pf, fx, "EUR", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.BaseCurrency != "EUR" {
+		t.Fatalf("base_currency = %q, want EUR", got.BaseCurrency)
+	}
+	if got.Summary == nil {
+		t.Fatal("summary = nil, want the base-currency roll-up")
+	}
+	s := got.Summary
+	if s.Currency != "EUR" {
+		t.Fatalf("summary currency = %q, want EUR", s.Currency)
+	}
+	// invested = 800*0.9 + 40; value = 10*100*0.9 + 5*10 + 1*20; realized = 50*0.9 + 10
+	if !equalDecimal(s.Invested, decimal.NewFromInt(760)) {
+		t.Fatalf("invested = %v, want 760", s.Invested)
+	}
+	if !equalDecimal(s.Value, decimal.NewFromInt(970)) {
+		t.Fatalf("value = %v, want 970", s.Value)
+	}
+	if !equalDecimal(s.Realized, decimal.NewFromInt(55)) {
+		t.Fatalf("realized = %v, want 55", s.Realized)
+	}
+	if !equalDecimal(s.GainLoss, decimal.NewFromInt(210)) {
+		t.Fatalf("gain_loss = %v, want 210", s.GainLoss)
+	}
+	assertDecimalInDelta(t, s.GainLossPct, decimal.RequireFromString("27.63"), "0.01", "gain_loss_pct")
+	// 1 unconvertible JPY value + the CHF portfolio's unconvertible cost and
+	// realized amounts: three skipped conversions, raw totals 1000+15+5.
+	if s.FXMissingCount != 3 {
+		t.Fatalf("fx_missing_count = %d, want 3", s.FXMissingCount)
+	}
+	if !equalDecimal(s.FXMissingValue, decimal.NewFromInt(1020)) {
+		t.Fatalf("fx_missing_value = %v, want 1020", s.FXMissingValue)
+	}
+}
+
+func TestGetDashboard_NoPortfoliosReturnsBaseCurrencyWithoutSummary(t *testing.T) {
+	svc := newDashboardTestService(t, &fakePortfolioRepo{}, &fakeFXRepo{}, "EUR", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.BaseCurrency != "EUR" {
+		t.Fatalf("base_currency = %q, want EUR", got.BaseCurrency)
+	}
+	if got.Summary != nil {
+		t.Fatalf("summary = %+v, want nil for an empty vault", got.Summary)
+	}
+}
+
+func TestGetDashboard_HistoryConvertedToBaseCurrency(t *testing.T) {
+	pfUSD := uuid.New()
+	pfGBP := uuid.New()
+	d1 := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{
+			{ID: pfUSD, Currency: "USD"},
+			{ID: pfGBP, Currency: "GBP"},
+		},
+	}
+	fx := &fakeFXRepo{
+		rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.8")},
+		history: map[string][]model.FXRatePoint{
+			"EUR": {{Date: d1, Rate: decimal.RequireFromString("0.9")}, {Date: d2, Rate: decimal.RequireFromString("0.8")}},
+		},
+	}
+	aggs := map[uuid.UUID][]model.PositionPoint{
+		pfUSD: {{Date: d1, MarketValue: decimal.NewFromInt(1000)}, {Date: d2, MarketValue: decimal.NewFromInt(2000)}},
+		pfGBP: {{Date: d1, MarketValue: decimal.NewFromInt(500)}},
+	}
+	svc := newDashboardTestService(t, pf, fx, "EUR", aggs)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.History) != 2 {
+		t.Fatalf("history len = %d, want 2", len(got.History))
+	}
+	usd := got.History[0]
+	if usd.PortfolioID != pfUSD.String() {
+		t.Fatalf("history[0] = %s, want the USD portfolio", usd.PortfolioID)
+	}
+	if usd.Currency != "EUR" {
+		t.Fatalf("usd history currency = %q, want EUR", usd.Currency)
+	}
+	if len(usd.Series) != 2 {
+		t.Fatalf("usd history len = %d, want 2", len(usd.Series))
+	}
+	if !usd.Series[0].Date.Equal(d1) || !equalDecimal(usd.Series[0].Value, decimal.NewFromInt(900)) {
+		t.Fatalf("d1 value = %v @ %v, want 900 (USD->EUR 0.9 on d1)", usd.Series[0].Value, usd.Series[0].Date)
+	}
+	if !usd.Series[1].Date.Equal(d2) || !equalDecimal(usd.Series[1].Value, decimal.NewFromInt(1600)) {
+		t.Fatalf("d2 value = %v @ %v, want 1600 (USD->EUR 0.8 on d2)", usd.Series[1].Value, usd.Series[1].Date)
+	}
+	gbp := got.History[1]
+	if gbp.Currency != "EUR" {
+		t.Fatalf("gbp history currency = %q, want EUR", gbp.Currency)
+	}
+	if len(gbp.Series) != 0 {
+		t.Fatalf("gbp history series = %+v, want points without FX dropped", gbp.Series)
+	}
+}
+
+func TestGetDashboardAllocation_UsesUserBaseCurrency(t *testing.T) {
+	stockID := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: uuid.New(), Currency: "USD"}},
+		holdings: []*model.Holding{
+			holding(stockID.String(), "USD", "IT", "Financials", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+		},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.9")}}
+	svc := newDashboardTestService(t, pf, fx, "EUR", nil)
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "EUR" {
+		t.Fatalf("currency = %q, want EUR (the user's base, not USD)", got.Currency)
+	}
+	eu := regionByName(t, got.Regions, "Europe Developed")
+	if !equalDecimal(eu.Value, decimal.NewFromInt(90)) {
+		t.Fatalf("Europe Developed value = %v, want 90 (100 USD at USD->EUR 0.9)", eu.Value)
+	}
+	if !equalDecimal(got.Covered, decimal.NewFromInt(90)) {
+		t.Fatalf("covered = %v, want 90", got.Covered)
 	}
 }

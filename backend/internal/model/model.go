@@ -22,6 +22,7 @@ type User struct {
 	Name         string    `json:"name"`
 	PasswordHash string    `json:"-"`
 	Role         Role      `json:"role"`
+	BaseCurrency string    `json:"base_currency"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

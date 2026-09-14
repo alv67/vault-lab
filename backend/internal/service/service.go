@@ -253,12 +253,26 @@ func (s *Service) GetCurrentUser(ctx context.Context, claims *auth.Claims) (*mod
 	return s.repos.User.FindByID(ctx, claims.UserID)
 }
 
-func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, name, email string) (*model.User, error) {
+// UpdateProfile patches the user's name and email, and optionally the base
+// currency used by the dashboard aggregations. An empty baseCurrency keeps
+// the stored value; a non-empty one must be an enabled whitelist currency.
+func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, name, email, baseCurrency string) (*model.User, error) {
 	if name == "" {
 		return nil, ErrInvalidInput
 	}
 	if email == "" || !strings.Contains(email, "@") {
 		return nil, ErrInvalidInput
+	}
+
+	code := strings.ToUpper(strings.TrimSpace(baseCurrency))
+	if code != "" {
+		enabled, err := s.repos.Currency.EnabledByCodes(ctx, []string{code})
+		if err != nil {
+			return nil, err
+		}
+		if len(enabled) == 0 {
+			return nil, fmt.Errorf("%w: %s is not an enabled currency", ErrInvalidInput, code)
+		}
 	}
 
 	user, err := s.repos.User.FindByID(ctx, userID)
@@ -274,6 +288,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, name, ema
 		user.Email = email
 	}
 	user.Name = name
+	if code != "" {
+		user.BaseCurrency = code
+	}
 
 	if err := s.repos.User.Update(ctx, user); err != nil {
 		return nil, err
@@ -2341,15 +2358,24 @@ func (s *Service) syncAssetBackground(assetID uuid.UUID) {
 // and per-portfolio historical series.
 func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Dashboard, error) {
 	return cached(s.cache, ctx, "dash", userID.String(), cacheTTLStats, false, func() (*model.Dashboard, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		baseCurrency := user.BaseCurrency
+		if baseCurrency == "" {
+			baseCurrency = "EUR"
+		}
 		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
 		dash := &model.Dashboard{
-			ByCurrency: []model.CurrencyPerformance{},
-			Portfolios: []model.PortfolioPerformanceSummary{},
-			Assets:     []model.PortfolioAssets{},
-			History:    []model.PortfolioHistory{},
+			BaseCurrency: baseCurrency,
+			ByCurrency:   []model.CurrencyPerformance{},
+			Portfolios:   []model.PortfolioPerformanceSummary{},
+			Assets:       []model.PortfolioAssets{},
+			History:      []model.PortfolioHistory{},
 		}
 		if len(portfolios) == 0 {
 			return dash, nil
@@ -2363,7 +2389,13 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings, "")
+		pfCurrencies := make([]string, 0, len(portfolios))
+		for _, p := range portfolios {
+			if p.Currency != "" {
+				pfCurrencies = append(pfCurrencies, p.Currency)
+			}
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, baseCurrency, pfCurrencies...)
 		if err != nil {
 			return nil, err
 		}
@@ -2374,6 +2406,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		}
 
 		byCurrency := map[string]*model.CurrencyPerformance{}
+		summary := &model.DashboardSummary{Currency: baseCurrency}
 		for _, h := range holdings {
 			p := byID[mustUUID(h.PortfolioID)]
 			if p == nil {
@@ -2389,7 +2422,35 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			if h.HasPrice {
 				cp.Value = cp.Value.Add(h.Qty.Mul(h.LastClose))
 			}
+
+			// Summary totals are converted per amount, mirroring the
+			// FX-missing semantics of GetPortfolioSummary: an amount whose
+			// rate is missing is skipped from the totals, counted in
+			// FXMissingCount and added raw to FXMissingValue (currencies of
+			// skipped amounts may differ, so the flag count is what matters).
+			pfFactor, pfOK := series.FxFactor(rates, p.Currency, baseCurrency)
+			if pfOK {
+				summary.Invested = summary.Invested.Add(h.Cost.Mul(pfFactor))
+				summary.Realized = summary.Realized.Add(h.Realized.Mul(pfFactor))
+			} else {
+				summary.FXMissingCount += 2
+				summary.FXMissingValue = summary.FXMissingValue.Add(h.Cost).Add(h.Realized)
+			}
+			if h.HasPrice && h.Qty.IsPositive() {
+				value := h.Qty.Mul(h.LastClose)
+				if factor, ok := series.FxFactor(rates, h.Currency, baseCurrency); ok {
+					summary.Value = summary.Value.Add(value.Mul(factor))
+				} else {
+					summary.FXMissingCount++
+					summary.FXMissingValue = summary.FXMissingValue.Add(value)
+				}
+			}
 		}
+		summary.GainLoss = summary.Value.Sub(summary.Invested)
+		if summary.Invested.IsPositive() {
+			summary.GainLossPct = summary.GainLoss.Div(summary.Invested).Mul(decimal.NewFromInt(100))
+		}
+		dash.Summary = summary
 		for _, cp := range byCurrency {
 			cp.GainLoss = cp.Value.Sub(cp.Invested)
 			if cp.Invested.IsPositive() {
@@ -2430,6 +2491,24 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			assetsByPF[pfID] = append(assetsByPF[pfID], ap)
 		}
 
+		// The history is expressed in the base currency: each point of a
+		// portfolio is converted through USD-pivoted per-date FX rates, the
+		// same way the materialized series are consolidated upstream.
+		quoteSet := map[string]bool{baseCurrency: true}
+		for _, p := range portfolios {
+			if p.Currency != "" {
+				quoteSet[p.Currency] = true
+			}
+		}
+		quotes := make([]string, 0, len(quoteSet))
+		for c := range quoteSet {
+			quotes = append(quotes, c)
+		}
+		dr, err := series.LoadDateRates(ctx, s.repos, "USD", quotes)
+		if err != nil {
+			return nil, err
+		}
+
 		for _, p := range portfolios {
 			ps := &model.PortfolioPerformanceSummary{
 				PortfolioID:   p.ID.String(),
@@ -2466,11 +2545,19 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				seriesVals = append(seriesVals, model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
 			}
 			seriesVals = series.PortfolioPerformance(seriesVals, s.seriesMaxPoints)
+			converted := make([]model.PortfolioPerformance, 0, len(seriesVals))
+			for _, pt := range seriesVals {
+				factor, ok := dr.Factor(p.Currency, baseCurrency, pt.Date)
+				if !ok {
+					continue // no FX for this day: drop the point instead of emitting a zero
+				}
+				converted = append(converted, model.PortfolioPerformance{Date: pt.Date, Value: pt.Value.Mul(factor)})
+			}
 			dash.History = append(dash.History, model.PortfolioHistory{
 				PortfolioID:   p.ID.String(),
 				PortfolioName: p.Name,
-				Currency:      p.Currency,
-				Series:        seriesVals,
+				Currency:      baseCurrency,
+				Series:        converted,
 			})
 		}
 
@@ -2479,16 +2566,25 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 }
 
 // GetDashboardAllocation returns the user's whole-vault geographic and sector
-// allocation in USD, aggregating holdings across all portfolios.
+// allocation in their base currency, aggregating holdings across all
+// portfolios.
 func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) (*model.DashboardAllocation, error) {
 	return cached(s.cache, ctx, "dash-allocation", userID.String(), cacheTTLStats, false, func() (*model.DashboardAllocation, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		baseCurrency := user.BaseCurrency
+		if baseCurrency == "" {
+			baseCurrency = "EUR"
+		}
 		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
 		if len(portfolios) == 0 {
 			return &model.DashboardAllocation{
-				Currency: "USD",
+				Currency: baseCurrency,
 				Regions:  []*model.RegionAllocation{},
 				Sectors:  []*model.SectorAllocation{},
 				Covered:  decimal.Zero,
@@ -2504,7 +2600,7 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings, "USD")
+		rates, err := series.LoadRates(ctx, s.repos, holdings, baseCurrency)
 		if err != nil {
 			return nil, err
 		}
@@ -2517,7 +2613,7 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 			return nil, err
 		}
 
-		gBuckets, gTotal, gCov := buildBuckets(holdings, rates, "USD", geo.Regions, geoExposures,
+		gBuckets, gTotal, gCov := buildBuckets(holdings, rates, baseCurrency, geo.Regions, geoExposures,
 			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
 		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
 		for _, name := range geo.Regions {
@@ -2532,7 +2628,7 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 			}
 		}
 
-		sBuckets, sTotal, _ := buildBuckets(holdings, rates, "USD", geo.GICSSectors, secExposures,
+		sBuckets, sTotal, _ := buildBuckets(holdings, rates, baseCurrency, geo.GICSSectors, secExposures,
 			func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) })
 		sectors := make([]*model.SectorAllocation, 0, len(geo.GICSSectors)+1)
 		for _, name := range geo.GICSSectors {
@@ -2547,7 +2643,7 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 			}
 		}
 
-		return &model.DashboardAllocation{Currency: "USD", Regions: regions, Sectors: sectors, Covered: gCov.covered, Excluded: gCov.excluded}, nil
+		return &model.DashboardAllocation{Currency: baseCurrency, Regions: regions, Sectors: sectors, Covered: gCov.covered, Excluded: gCov.excluded}, nil
 	})
 }
 

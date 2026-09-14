@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+### Features
+- Choose your base currency in Settings → Profile: the dashboard now consolidates your totals, portfolio history and allocations into that currency
+
 ## v0.4.0 — 13 Sep 2026
 
 ### Features

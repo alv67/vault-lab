@@ -223,15 +223,32 @@ type PortfolioHistory struct {
 	Series        []PortfolioPerformance `json:"series"`
 }
 
+// DashboardSummary is the vault-wide roll-up of every portfolio converted to
+// the user's base currency. Amounts whose FX rate is missing are excluded from
+// the totals and reported through FXMissingCount/FXMissingValue.
+type DashboardSummary struct {
+	Currency       string          `json:"currency"`
+	Invested       decimal.Decimal `json:"invested"`
+	Value          decimal.Decimal `json:"value"`
+	GainLoss       decimal.Decimal `json:"gain_loss"`
+	GainLossPct    decimal.Decimal `json:"gain_loss_pct"`
+	Realized       decimal.Decimal `json:"realized"`
+	FXMissingCount int             `json:"fx_missing_count"`
+	FXMissingValue decimal.Decimal `json:"fx_missing_value"`
+}
+
 type Dashboard struct {
-	ByCurrency []CurrencyPerformance         `json:"by_currency"`
-	Portfolios []PortfolioPerformanceSummary `json:"portfolios"`
-	Assets     []PortfolioAssets             `json:"assets"`
-	History    []PortfolioHistory            `json:"history"`
+	BaseCurrency string                        `json:"base_currency"`
+	Summary      *DashboardSummary             `json:"summary,omitempty"`
+	ByCurrency   []CurrencyPerformance         `json:"by_currency"`
+	Portfolios   []PortfolioPerformanceSummary `json:"portfolios"`
+	Assets       []PortfolioAssets             `json:"assets"`
+	History      []PortfolioHistory            `json:"history"`
 }
 
 // DashboardAllocation groups the geographic and sector allocation of a user's
-// whole vault, aggregated across all portfolios and converted to USD.
+// whole vault, aggregated across all portfolios and converted to the user's
+// base currency.
 type DashboardAllocation struct {
 	Currency string              `json:"currency"`
 	Regions  []*RegionAllocation `json:"regions"`

@@ -37,6 +37,8 @@ export interface User {
   email: string
   name: string
   role: string
+  /** User's base currency for consolidated views (EPIC I.1, default "EUR"). */
+  base_currency: string
   created_at: string
 }
 
@@ -381,11 +383,30 @@ export interface PortfolioExportDocument {
   }[]
 }
 
+/** Aggregated dashboard totals converted into the user's base currency
+ * (EPIC I.1). Decimal fields are JSON strings, like the rest of the API. */
+export interface DashboardSummary {
+  currency: string
+  invested: string
+  value: string
+  gain_loss: string
+  gain_loss_pct: string
+  realized: string
+  /** Number of holdings whose FX rate was missing in the conversion. */
+  fx_missing_count: number
+  /** Value of those holdings (decimal string), i.e. what the count refers to. */
+  fx_missing_value: string
+}
+
 export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
   assets: PortfolioAssets[]
   history: DashboardHistory[]
+  /** User's base currency: `history` series and `summary` are expressed in it. */
+  base_currency: string
+  /** Consolidated totals in `base_currency`; absent on older backends. */
+  summary?: DashboardSummary
 }
 
 export interface FetchIssue {
@@ -535,7 +556,9 @@ export const authApi = {
   register: (email: string, name: string, password: string) =>
     request<User>('/auth/register', { method: 'POST', body: { email, name, password } }),
   me: () => request<User>('/users/me'),
-  updateProfile: (data: { name: string; email: string }) =>
+  // `base_currency` is sent only when provided (JSON.stringify drops the
+  // undefined key): the backend keeps the existing value when omitted.
+  updateProfile: (data: { name: string; email: string; base_currency?: string }) =>
     request<User>('/users/me', { method: 'PATCH', body: data }),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<void>('/users/me/password', { method: 'POST', body: data }),

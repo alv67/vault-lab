@@ -153,6 +153,7 @@ Ogni riga è un account. La password non è salvata in chiaro, ma come **hash**
 | `name` | TEXT | il nome visibile |
 | `password_hash` | TEXT | l'impronta cifrata della password |
 | `role` | TEXT | ruolo: `owner`, `admin`, `editor` o `viewer` |
+| `base_currency` | TEXT | la valuta preferita dell'utente per le aggregazioni della dashboard (default `EUR`, migrazione 000018) |
 | `created_at` / `updated_at` | TIMESTAMPTZ | quando l'account è stato creato/modificato |
 
 ### `assets` — i titoli

@@ -207,11 +207,11 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 ## 6. The database
 
 The migrations (`backend/migrations/`, files numbered from `000001` to
-`000016`) build the schema. The main tables:
+`000018`) build the schema. The main tables:
 
 | Table | Contains | Explanation |
 |---|---|---|
-| `users` | the users | email, name, password hash, role |
+| `users` | the users | email, name, password hash, role, base currency (`base_currency`, default EUR) |
 | `assets` | the securities | ticker, name, type (stock, ETF, crypto...), investment class, price source, currency, exchange, sector, industry |
 | `portfolios` | the portfolios | a portfolio belongs to a user and has a currency |
 | `portfolio_shares` | the sharing | who else can see a portfolio (and with what role) |
@@ -252,10 +252,14 @@ What happens, step by step:
    user's data is placed "in the context" of the request.
 3. **Handler**: extracts the user's data, calls the service, and sends the
    JSON response.
-4. **Service `GetDashboard`**: orchestration — it loads the user's portfolios,
-   the detailed holdings (with the average cost, chapter 8), the exchange
-   rates for the currencies involved, and the daily series saved in the
-   database.
+4. **Service `GetDashboard`**: orchestration — it loads the user (and their
+   **base currency**, see chapter 10), the user's portfolios, the detailed
+   holdings (with the average cost, chapter 8), the exchange rates for the
+   currencies involved, and the daily series saved in the database. The
+   response carries `base_currency`, a `summary` roll-up converted into the
+   base currency, and the `history` series converted day by day (points
+   without an available rate are dropped); `by_currency`, `portfolios` and
+   `assets` stay expressed in their own currency.
 5. **Repository**: runs the SQL queries, for example the query that loads the
    portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
    for future sharing support).
@@ -387,6 +391,20 @@ values, you need to convert.
 
 If a rate is missing, the conversion is not available and the application
 signals it (the model shows the `fx_missing` field).
+
+**The base currency (EPIC I.1).** Every user has a preferred currency stored
+in `users.base_currency` (default EUR) and editable via `PATCH /users/me`
+with the `base_currency` field (an omitted/empty value keeps the stored one;
+a non-empty value must be an enabled currency from the whitelist, chapter 11,
+otherwise the request is rejected with 400). All vault-wide dashboard
+aggregations are converted into it: `GET /dashboard` returns `base_currency`,
+a `summary` roll-up (invested, value, realized, gain/loss in the base
+currency — amounts whose rate is missing are excluded from the totals and
+reported by `fx_missing_count`/`fx_missing_value`), and `history` series
+converted day by day (points without an available rate are dropped);
+`GET /dashboard/allocation` is expressed in the base currency too (it used to
+be fixed USD). The per-currency (`by_currency`) and per-portfolio
+(`portfolios`, `assets`) sections of the dashboard keep their own currency.
 
 ---
 
@@ -748,7 +766,8 @@ The administrator adds a currency ──► POST /settings/currencies
                                 → verifies conversion on Yahoo → whitelist
 
 The user opens the dashboard ──► GET /dashboard:
-    holdings (AVCO) + exchange rates + series from the database → JSON to the frontend
+    holdings (AVCO) + exchange rates + series from the database
+    → summary + history converted into the user's base currency → JSON to the frontend
 
 The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     quote ranges + price history from the database → JSON to the frontend
@@ -793,7 +812,7 @@ backend/
 │   ├── repository/         # SQL queries (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # materialized daily series (Recompute, LoadRates, FxFactor)
 │   └── service/            # business logic (service.go)
-├── migrations/             # versioned SQL (000001..000016)
+├── migrations/             # versioned SQL (000001..000018)
 └── go.mod
 ```
 

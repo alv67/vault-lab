@@ -269,11 +269,15 @@ verified against the backend routes (`backend/cmd/server/main.go`).
 | `api` (generic) | get/post/put/patch/delete | the raw client, used by the health page for `GET /health/prices` |
 
 The types exported alongside (`User`, `Portfolio`, `Asset`, `Transaction`,
-`PortfolioSummary`, `AssetHolding`, `Dashboard`, `RefreshReport`, `AssetQuote`,
+`PortfolioSummary`, `AssetHolding`, `Dashboard`, `DashboardSummary`,
+`RefreshReport`, `AssetQuote`,
 `AssetExposure`, `PortfolioHistory`, `AssetPositionSeries`,
 `PortfolioExportDocument`, ...) mirror the backend models. Note that monetary
 values arrive as **strings** (e.g. `"1234.56"`) to avoid floating-point
-rounding errors; the pages convert them with `Number()` where needed.
+rounding errors; the pages convert them with `Number()` where needed. Since
+EPIC I.1 `User` carries the `base_currency` preference (`"EUR"` by default)
+and `Dashboard` gains `base_currency` plus the optional `summary`
+(`DashboardSummary`) with the consolidated totals in that currency.
 
 > **Note**: `portfolioApi` exposes the geography and sector allocation methods
 > (`geographyAllocation(id)`, `sectorAllocation(id)` — served by the backend
@@ -307,8 +311,10 @@ inline with Svelte 5 **`$derived`** runes. The main ones:
 
 - **Dashboard** (`routes/+page.svelte`): `chartData` merges the per-portfolio
   historical series into a single date-keyed table for `PortfolioLineChart`;
-  `hasMultipleCurrencies` decides whether the "Performance by Currency" table
-  is shown; `glClass` picks the green/red text class for a gain/loss.
+  `hasMultipleCurrencies` decides whether the per-currency breakdown rows are
+  shown (they are hidden when the base-currency `summary` is present and all
+  portfolios share one currency — EPIC I.1); `glClass` picks the green/red
+  text class for a gain/loss.
 - **Portfolio detail** (`routes/portfolios/[id]/+page.svelte`):
   `classAllocRows` maps the backend class keys to the Italian labels for the
   donut; `gainLossClass` / `realizedClass` / `pnlClass` color the numbers.
@@ -387,7 +393,7 @@ in white).
 |---|---|---|
 | `PriceChart.svelte` | single **line** (close prices), time x-axis, `inside` + `slider` dataZoom | the **asset detail** page (B.10): historical price with the 1M/3M/1Y/YTD/MAX selector. Always loads the full history: the selectors apply an **in-place zoom** (a `start`/`end` percentage pair, `end`=100) without re-fetching; a manual zoom/pan **deselects** the active button and preserves the view. **Splits** are drawn as a dashed purple `markLine` labelled with the ratio (`Split 4:1`), like in `PositionChart`. Empty state → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **three lines**: cost basis (gray, stepped), market value (green, smooth), realized (amber) + dashed split markers | the **portfolio detail** "Performance history": a dropdown switches between the whole portfolio and a single asset. Split events are drawn as a vertical dashed `markLine` on the market-value line labelled with the ratio (`7:1`, `4:1`) |
-| `PortfolioLineChart.svelte` | **multi-series line** (one per portfolio) on a **time** x-axis, built from each portfolio's own points (no union-with-nulls), `connectNulls` + `lttb`, `inside` + `slider` dataZoom | the **dashboard** "Portfolio History" card. The tooltip formats each series in its own currency (the currency comes from the `DashboardHistory` payload) |
+| `PortfolioLineChart.svelte` | **multi-series line** (one per portfolio) on a **time** x-axis, built from each portfolio's own points (no union-with-nulls), `connectNulls` + `lttb`, `inside` + `slider` dataZoom | the **dashboard** "Portfolio History" card. The tooltip formats each series in its own currency (the currency comes from the `DashboardHistory` payload; since EPIC I.1 the backend converts every series to the user's **base currency** per date, so the chart is comparable across portfolios) |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out; `complete={false}` renders the donut **open** when the rows sum to < 100 (a transparent residual slice keeps the angles truthful — no gray "Other" slice) | asset detail page (regions donut with `complete={false}` and the sectors donut), the two exposure modals (`mute` mode: regions in `ExposureGeoModal`, sectors in `ExposureSectorModal`), and the portfolio **class-allocation donut** (B.12). Countries are shown as bar lists (page card and geo modal), never as a pie. Accepts `ExposureRow[]` (`{name, weight}`) |
 | `GeographyChart.svelte` (`lib/components/domain/`) | **donut** (same radius/palette as `ExposurePie`) + full-row table alongside; tooltip shows the value in the portfolio currency and the weight; the `Other` slice is muted in gray | the **portfolio detail** geography card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `RegionAllocation[]` (`{region, value, weight}`); rows with zero weight stay in the table but are not drawn. Optional `covered`/`excluded` props (decimal strings) drive a coverage note ("Copre il X% del portafoglio…") shown when the excluded value is > 0 |
 | `SectorChart.svelte` (`lib/components/domain/`) | identical structure over sectors | the **portfolio detail** sector card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `SectorAllocation[]` (`{sector, value, weight}`), plus the same optional `covered`/`excluded` coverage note as `GeographyChart` |
@@ -526,7 +532,9 @@ A rune-based store that holds `auth.user` and `auth.isLoading`:
   the sign-in form.
 - `logout()` — clears both tokens, `auth.user = null` and
   `window.location.replace('/login')`.
-- `updateProfile(name, email)` — `PATCH /users/me` and refreshes `auth.user`.
+- `updateProfile(name, email, baseCurrency?)` — `PATCH /users/me` and
+  refreshes `auth.user`. `base_currency` is added to the body only when the
+  caller passes it (EPIC I.1); omitted means "keep the stored value".
 
 ### The root layout (`routes/+layout.svelte`)
 
@@ -577,15 +585,27 @@ through the dashboard.
 Called endpoints: `portfolioApi.dashboard()`, then the session
 `pricesApi.refresh()` + a fresh dashboard.
 
-- **Portfolio History** card: `PortfolioLineChart` (one line per portfolio).
+- **Summary KPI cards** (EPIC I.1): when the response carries `summary`, the
+  four hero cards at the top (Invested / Current Value / Gain/Loss with the
+  percentage delta / ROI) show the consolidated totals converted into the
+  user's **base currency** (`base_currency` from the payload, formatted with
+  `formatCurrency`).
+- **Portfolio History** card: `PortfolioLineChart` (one line per portfolio,
+  every series expressed in the base currency since EPIC I.1).
 - **Allocazione complessiva** card: `GeographyChart` + `SectorChart` side by
   side from `dashboardAllocation()` (`GET /dashboard/allocation`, aggregated
-  in USD across all portfolios); when the endpoint fails the card shows
+  in the user's base currency across all portfolios — was USD before
+  EPIC I.1); when the endpoint fails the card shows
   "Allocazione non disponibile" (the call is isolated, it does not block the
   page). Both charts receive the `covered_value`/`excluded_value` coverage
   metadata and show a note when non-equity holdings are excluded.
-- **Performance by Currency** table, only when more than one currency is used
-  (`hasMultipleCurrencies`).
+- **Allocation by portfolio** donut (`AllocationDonut`), labelled in the base
+  currency when available.
+- **Per-currency rows**: one grid of the same four KPI cards per currency in
+  `by_currency`, each group headed by its currency code. Secondary to the
+  summary since EPIC I.1: shown only when more than one currency is used
+  (`hasMultipleCurrencies`), or unchanged as the sole KPI block when the
+  backend does not return `summary`.
 - **Portfolios** table (name, currency, assets, invested, value, realized,
   gain/loss, return).
 - Expandable per-portfolio sections with the asset table (ticker link to
@@ -840,9 +860,14 @@ quote/prices.
 Called endpoints: `settingsApi.listCurrencies()`, `updateProfile()`,
 `authApi.changePassword()`.
 
-- **Profile** (name/email) and **Change password**
+- **Profile** (name/email/**base currency**) and **Change password**
   (`POST /users/me/password` with `current_password` + `new_password`,
-  frontend check that the two new ones match).
+  frontend check that the two new ones match). The base-currency selector
+  (EPIC I.1) is a `CurrencySelect` dropdown fed by `settingsApi
+  .listCurrencies()` (the enabled whitelist), initialized from
+  `auth.user.base_currency` (fallback `EUR`) and saved through
+  `updateProfile(name, email, baseCurrency)`; it drives the dashboard
+  summary/history conversion (chapter 10).
 - **Valute gestite**: the currency whitelist CRUD — add a 3-letter code (a
   422 from the backend means Yahoo has no USD→code conversion and the frontend
   shows a specific message; 409 means already present), delete with confirm
@@ -870,7 +895,8 @@ and a range label), with a "Refresh Now" button.
     `/allocation/sector`: weighted sums, zero-filled, over the 10
     macro-regions (Morningstar-aligned since B.14) and the 11 GICS sectors, both + `Other`) and
     `dashboardAllocation()` (`GET /dashboard/allocation`, the same rows
-    aggregated across all portfolios in USD). The response interfaces live
+    aggregated across all portfolios in the user's base currency since
+    EPIC I.1, USD before). The response interfaces live
     next to `PortfolioClassAllocation` in `api.ts`
     (`RegionAllocation`, `SectorAllocation`,
     `PortfolioGeographyAllocation`, `PortfolioSectorAllocation`,

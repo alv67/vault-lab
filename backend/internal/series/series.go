@@ -235,14 +235,20 @@ func RecomputeAll(ctx context.Context, repos *repository.Repository) error {
 }
 
 // LoadRates loads USD->X rates for every currency appearing in the holdings,
-// plus the given baseCurrency and USD.
-func LoadRates(ctx context.Context, repos *repository.Repository, holdings []*model.Holding, baseCurrency string) (map[string]decimal.Decimal, error) {
+// plus the given baseCurrency, any extra currencies (e.g. portfolio
+// currencies) and USD.
+func LoadRates(ctx context.Context, repos *repository.Repository, holdings []*model.Holding, baseCurrency string, extra ...string) (map[string]decimal.Decimal, error) {
 	quotes := map[string]bool{}
 	for _, h := range holdings {
 		quotes[h.Currency] = true
 	}
 	if baseCurrency != "" {
 		quotes[baseCurrency] = true
+	}
+	for _, c := range extra {
+		if c != "" {
+			quotes[c] = true
+		}
 	}
 	quotes["USD"] = true
 	list := make([]string, 0, len(quotes))

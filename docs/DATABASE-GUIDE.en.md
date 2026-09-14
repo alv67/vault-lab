@@ -151,6 +151,7 @@ Each row is an account. The password is not stored in plain text, but as a
 | `name` | TEXT | the visible name |
 | `password_hash` | TEXT | the encrypted fingerprint of the password |
 | `role` | TEXT | role: `owner`, `admin`, `editor` or `viewer` |
+| `base_currency` | TEXT | the user's preferred currency for dashboard aggregations (default `EUR`, migration 000018) |
 | `created_at` / `updated_at` | TIMESTAMPTZ | when the account was created/modified |
 
 ### `assets` — the securities

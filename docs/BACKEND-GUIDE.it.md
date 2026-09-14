@@ -199,12 +199,12 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000016`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000018`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
-| `users` | gli utenti | email, nome, hash della password, ruolo |
+| `users` | gli utenti | email, nome, hash della password, ruolo, valuta base (`base_currency`, default EUR) |
 | `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, fonte prezzi, valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
@@ -247,10 +247,14 @@ Cosa succede, passo passo:
    i dati dell'utente vengono messi "nel contesto" della richiesta.
 3. **Handler**: estrae i dati dell'utente, chiama il service, e invia la
    risposta JSON.
-4. **Service `GetDashboard`**: orchestrazione — carica i portafogli
-   dell'utente, le posizioni dettagliate (con il prezzo medio di carico,
-   capitolo 8), i tassi di cambio per le valute coinvolte, e le serie
-   giornaliere salvate nel database.
+4. **Service `GetDashboard`**: orchestrazione — carica l'utente (e la sua
+   **valuta base**, vedi capitolo 10), i portafogli dell'utente, le posizioni
+   dettagliate (con il prezzo medio di carico, capitolo 8), i tassi di cambio
+   per le valute coinvolte, e le serie giornaliere salvate nel database. La
+   risposta espone `base_currency`, un riepilogo `summary` convertito nella
+   valuta base e la serie `history` convertita giorno per giorno (i punti
+   senza tasso disponibile vengono scartati); `by_currency`, `portfolios` e
+   `assets` restano espressi nella propria valuta.
 5. **Repository**: esegue le query SQL, per esempio la query che carica i
    portafogli con un `LEFT JOIN` sulla tabella di condivisione (in modo da
    essere già pronta per un futuro supporto alla condivisione).
@@ -383,6 +387,21 @@ confrontare i valori serve convertire.
 
 Se un tasso manca, la conversione non è disponibile e l'applicazione lo segnala
 (nel modello compare il campo `fx_missing`).
+
+**La valuta base (EPIC I.1).** Ogni utente ha una valuta preferita salvata in
+`users.base_currency` (default EUR) e modificabile via `PATCH /users/me` con
+il campo `base_currency` (un valore omesso/vuoto mantiene quello salvato; un
+valore non vuoto deve essere una valuta abilitata della whitelist, capitolo
+11, altrimenti la richiesta è rifiutata con 400). Tutte le aggregazioni a
+livello di vault della dashboard sono convertite in essa: `GET /dashboard`
+restituisce `base_currency`, un riepilogo `summary` (investito, valore,
+realizzato, guadagno/perdita nella valuta base — gli importi senza tasso
+disponibile sono esclusi dai totali e riportati da
+`fx_missing_count`/`fx_missing_value`) e le serie `history` convertite giorno
+per giorno (i punti senza tasso disponibile vengono scartati); anche
+`GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
+USD). Le sezioni per-valuta (`by_currency`) e per-portafoglio (`portfolios`,
+`assets`) della dashboard mantengono la propria valuta.
 
 ---
 
@@ -746,7 +765,8 @@ L'amministratore aggiunge una valuta ──► POST /settings/currencies
                             → verifica conversione su Yahoo → whitelist
 
 L'utente apre la dashboard ──► GET /dashboard:
-    posizioni (AVCO) + tassi di cambio + serie dal database → JSON al frontend
+    posizioni (AVCO) + tassi di cambio + serie dal database
+    → summary + history convertiti nella valuta base dell'utente → JSON al frontend
 
 L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     range di quota + storico prezzi dal database → JSON al frontend
@@ -791,7 +811,7 @@ backend/
 │   ├── repository/         # query SQL (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # serie giornaliere materializzate (Recompute, LoadRates, FxFactor)
 │   └── service/            # logica di business (service.go)
-├── migrations/             # SQL versionato (000001..000016)
+├── migrations/             # SQL versionato (000001..000018)
 └── go.mod
 ```
 
