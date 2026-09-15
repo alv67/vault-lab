@@ -11,17 +11,19 @@
     pricesApi,
     type Dashboard,
     type DashboardAllocation,
+    type DashboardPerformance,
     type PortfolioAssets,
     type PortfolioPerformanceSummary,
   } from '$lib/services/api'
   import { toast } from '$lib/stores/toast.svelte'
-  import PortfolioLineChart from '$lib/components/PortfolioLineChart.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
+  import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
   import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import Card from '$lib/components/ui/Card.svelte'
   import Button from '$lib/components/ui/Button.svelte'
+  import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
   import Table from '$lib/components/ui/Table.svelte'
   import THead from '$lib/components/ui/THead.svelte'
   import TBody from '$lib/components/ui/TBody.svelte'
@@ -40,6 +42,47 @@
   let lastUpdate = $state('')
   let expanded = new SvelteSet<string>()
   let initialized = false
+
+  // Performance card (EPIC I.3): vault-wide P/L buckets in the base currency,
+  // monthly by default, switchable to annual. Isolated like the allocation
+  // card: a failed fetch just renders the chart's empty state.
+  let perf = $state<DashboardPerformance | null>(null)
+  let perfLoading = $state(true)
+  let granularity = $state<'month' | 'year'>('month')
+  const perfItems = [
+    { value: 'month', label: 'Monthly' },
+    { value: 'year', label: 'Annual' },
+  ]
+
+  // SegmentedControl binds a plain string; the accessors keep the union type.
+  function getGranularity(): string {
+    return granularity
+  }
+  function setGranularity(value: string): void {
+    if (value === 'month' || value === 'year') granularity = value
+  }
+
+  // Monotonic request id: when the toggle is flipped quickly, only the last
+  // issued request may write the state.
+  let perfReq = 0
+  async function loadPerformance(g: 'month' | 'year'): Promise<void> {
+    const req = ++perfReq
+    perfLoading = true
+    try {
+      const res = await portfolioApi.dashboardPerformance(g)
+      if (req === perfReq) perf = res
+    } catch {
+      if (req === perfReq) perf = null
+    } finally {
+      if (req === perfReq) perfLoading = false
+    }
+  }
+
+  // Runs once on mount with the default granularity and refetches whenever
+  // the Monthly/Annual toggle changes.
+  $effect(() => {
+    void loadPerformance(granularity)
+  })
 
   onMount(async () => {
     try {
@@ -70,7 +113,12 @@
           }
           return portfolioApi.dashboard()
         })
-        .then((fresh) => { dash = fresh })
+        .then((fresh) => {
+          dash = fresh
+          // The POST above cleared the GET cache and new prices can move the
+          // P/L buckets: refresh the Performance card too.
+          void loadPerformance(granularity)
+        })
         .catch(() => { /* keep current data, omit the "Prices updated" line */ })
     }
 
@@ -195,11 +243,24 @@
 
       <div class="grid gap-4 lg:grid-cols-2">
         <Card class="p-4">
-          <h2 class="mb-4 font-semibold">Portfolio History</h2>
-          {#if dash.history?.some((h) => h.series?.length)}
-            <PortfolioLineChart histories={dash.history} />
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 class="font-semibold">Performance</h2>
+            <SegmentedControl
+              items={perfItems}
+              bind:value={getGranularity, setGranularity}
+              ariaLabel="Performance granularity"
+            />
+          </div>
+          {#if perfLoading}
+            <div class="flex h-[340px] items-center justify-center text-muted-foreground">
+              <Spinner />
+            </div>
           {:else}
-            <p class="text-sm text-muted-foreground">No price history yet</p>
+            <PerformanceChart
+              buckets={perf?.buckets ?? []}
+              currency={perf?.currency || dash.base_currency || 'USD'}
+              granularity={granularity}
+            />
           {/if}
         </Card>
 

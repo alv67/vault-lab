@@ -242,7 +242,7 @@ Two fundamental ideas about the database:
 ## 7. A typical request: the dashboard
 
 Let's take `GET /api/v1/dashboard`, the richest endpoint: it serves the main
-page by showing all portfolios, securities, gains and the historical series.
+page by showing all portfolios, securities and gains.
 
 What happens, step by step:
 
@@ -254,23 +254,55 @@ What happens, step by step:
    JSON response.
 4. **Service `GetDashboard`**: orchestration — it loads the user (and their
    **base currency**, see chapter 10), the user's portfolios, the detailed
-   holdings (with the average cost, chapter 8), the exchange rates for the
-   currencies involved, and the daily series saved in the database. The
-   response carries `base_currency`, a `summary` roll-up converted into the
-   base currency, and the `history` series converted day by day (points
-   without an available rate are dropped); `by_currency`, `portfolios` and
+   holdings (with the average cost, chapter 8) and the exchange rates for the
+   currencies involved. The response carries `base_currency` and a `summary`
+   roll-up converted into the base currency; `by_currency`, `portfolios` and
    `assets` stay expressed in their own currency. The `summary` and each
    `portfolios` entry split the numbers into nested `active` and `closed`
-    objects (EPIC I.2, see chapter 8): `active` reports `invested`, `value`,
-    `gain_loss` and `gain_loss_pct` of the lots still held plus the
-    `dividends` of the positions that are still open (even if partially
-    sold), while `closed` reports `invested` (AVCO cost of the sold lots),
+     objects (EPIC I.2, see chapter 8): `active` reports `invested`, `value`,
+     `gain_loss` and `gain_loss_pct` of the lots still held plus the
+     `dividends` of the positions that are still open (even if partially
+     sold); open positions of assets that have no price at all are excluded
+     from `invested` and `value` (their cost has no market value to be
+     compared with, and counting it would fake a -100% loss), while their
+     dividends still count. `closed` reports `invested` (AVCO cost of the
+     sold lots),
     `proceeds` (net sale proceeds plus the dividends folded in by the fully
     closed positions), `realized` (proceeds − invested) and `realized_pct`
     (realized / invested × 100).
 5. **Repository**: runs the SQL queries, for example the query that loads the
    portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
    for future sharing support).
+
+### The aggregate P/L chart (`GET /dashboard/performance`, EPIC I.3)
+
+`GET /api/v1/dashboard/performance?granularity=month|year` returns one chart
+for the whole vault (all portfolios aggregated, converted to the user's base
+currency) instead of one series per portfolio. `granularity` defaults to
+`month`; any other value is rejected with 400. The response is
+`{currency, granularity, buckets[]}`, where each bucket carries `period`
+(`YYYY-MM` for months, `YYYY` for years), `pnl` and `realized`:
+
+- the **bar** (`pnl`) is the P/L *generated inside the bucket*: the total P/L
+  at the bucket's last date minus the total P/L at the previous bucket's last
+  date (baseline 0 for the first bucket), where the total P/L of a date is
+  `market_value − cost_basis + realized`;
+- the **line** (`realized`) is the cumulative realized P/L at the bucket's
+  last date.
+
+The daily points come from the materialized per-asset series `asset_series`
+(via `Series.FindPortfolio`) in the portfolio currency and are converted to
+the base currency per date through the USD-pivoted FX history: while an
+asset's rate is missing, its last converted values are forward-filled (zero
+before the first successful conversion). Positions of assets without any
+price row (e.g. a bond ETF with `price_source = none`) are recognized
+through the holdings' price flag and never contribute market value or cost
+basis to the daily totals — an unpriced position would otherwise fake a
+total loss in the month it is bought — while their realized (dividends and
+sale proceeds) always counts. The components are then aggregated across
+portfolios and assets per date, the dates are sorted ascending, the last
+date of each month/year is taken and the buckets are emitted in
+ascending order — buckets with no data are simply omitted.
 
 The typical Go pattern for reading multiple rows is:
 
@@ -422,14 +454,15 @@ a non-empty value must be an enabled currency from the whitelist, chapter 11,
 otherwise the request is rejected with 400). All vault-wide dashboard
 aggregations are converted into it: `GET /dashboard` returns `base_currency`,
 a `summary` roll-up in the base currency — nested `active` (invested, value,
-gain/loss of the lots still held, plus the dividends of the open positions)
-and `closed` (invested = AVCO cost of the sold lots, proceeds = sale proceeds
+gain/loss of the lots still held, plus the dividends of the open positions;
+unpriced open positions stay out of invested/value, see chapter 7) and
+`closed` (invested = AVCO cost of the sold lots, proceeds = sale proceeds
 + dividends of the fully closed positions, realized = proceeds − invested,
 realized_pct) — where
 amounts whose rate is missing are excluded from the totals and reported by
-`fx_missing_count`/`fx_missing_value` (only non-zero amounts are flagged) —
-and `history` series converted day by day (points without an available rate
-are dropped);
+`fx_missing_count`/`fx_missing_value` (only non-zero amounts are flagged);
+`GET /dashboard/performance` buckets the same vault-wide P/L by month or year
+in the base currency (chapter 7);
 `GET /dashboard/allocation` is expressed in the base currency too (it used to
 be fixed USD). The per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.
@@ -812,8 +845,13 @@ The administrator adds a currency ──► POST /settings/currencies
                                 → verifies conversion on Yahoo → whitelist
 
 The user opens the dashboard ──► GET /dashboard:
-    holdings (AVCO) + exchange rates + series from the database
-    → summary + history converted into the user's base currency → JSON to the frontend
+    holdings (AVCO) + exchange rates
+    → summary converted into the user's base currency → JSON to the frontend
+
+The user views the P/L chart ──► GET /dashboard/performance?granularity=month|year:
+    daily per-asset points from the materialized series + per-date FX
+    (assets with no price contribute only their realized)
+    → monthly/yearly P/L buckets in the base currency → JSON to the frontend
 
 The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     quote ranges + price history from the database → JSON to the frontend

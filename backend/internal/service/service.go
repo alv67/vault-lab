@@ -2403,8 +2403,8 @@ func finalizeBreakdowns(active *model.ActiveBreakdown, closed *model.ClosedBreak
 }
 
 // GetDashboard returns the consolidated dashboard for a user: performance
-// grouped by currency, per-portfolio summaries, assets grouped per portfolio
-// and per-portfolio historical series.
+// grouped by currency, per-portfolio summaries and assets grouped per
+// portfolio.
 func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Dashboard, error) {
 	return cached(s.cache, ctx, "dash", userID.String(), cacheTTLStats, false, func() (*model.Dashboard, error) {
 		user, err := s.repos.User.FindByID(ctx, userID)
@@ -2424,7 +2424,6 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			ByCurrency:   []model.CurrencyPerformance{},
 			Portfolios:   []model.PortfolioPerformanceSummary{},
 			Assets:       []model.PortfolioAssets{},
-			History:      []model.PortfolioHistory{},
 		}
 		if len(portfolios) == 0 {
 			return dash, nil
@@ -2489,13 +2488,17 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			}
 			addPF(&summary.Closed.Invested, h.ClosedCost)
 			addPF(&summary.Closed.Proceeds, h.Proceeds)
-			// Only open lots feed the active group: a fully closed position can
-			// still carry a negligible cost basis left by AVCO division
-			// rounding, which must not inflate active.invested. Dividends
-			// follow the position: still-open ones (even partially sold) stay
-			// in the active group, fully closed ones fold into the proceeds.
-			if h.Qty.IsPositive() {
+			// Only open lots of priced assets feed the active invested: a fully
+			// closed position can still carry a negligible cost basis left by
+			// AVCO division rounding, and an unpriced asset has no market
+			// value to compare its cost with (counting it would fake a -100%
+			// loss). Dividends follow the position: still-open ones (even
+			// partially sold or unpriced) stay in the active group, fully
+			// closed ones fold into the proceeds.
+			if h.HasPrice && h.Qty.IsPositive() {
 				addPF(&summary.Active.Invested, h.Cost)
+			}
+			if h.Qty.IsPositive() {
 				addPF(&summary.Active.Dividends, h.Dividends)
 			} else {
 				addPF(&summary.Closed.Proceeds, h.Dividends)
@@ -2554,24 +2557,6 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			assetsByPF[pfID] = append(assetsByPF[pfID], ap)
 		}
 
-		// The history is expressed in the base currency: each point of a
-		// portfolio is converted through USD-pivoted per-date FX rates, the
-		// same way the materialized series are consolidated upstream.
-		quoteSet := map[string]bool{baseCurrency: true}
-		for _, p := range portfolios {
-			if p.Currency != "" {
-				quoteSet[p.Currency] = true
-			}
-		}
-		quotes := make([]string, 0, len(quoteSet))
-		for c := range quoteSet {
-			quotes = append(quotes, c)
-		}
-		dr, err := series.LoadDateRates(ctx, s.repos, "USD", quotes)
-		if err != nil {
-			return nil, err
-		}
-
 		for _, p := range portfolios {
 			ps := &model.PortfolioPerformanceSummary{
 				PortfolioID:   p.ID.String(),
@@ -2582,13 +2567,16 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			for _, h := range holdingsByPF[p.ID] {
 				ps.Closed.Invested = ps.Closed.Invested.Add(h.ClosedCost)
 				ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Proceeds)
-				// Same guard as the vault summary: only open lots feed the
-				// active invested, so the AVCO rounding residue of a closed
-				// position (qty == 0) never inflates it. Dividends follow the
+				// Same guards as the vault summary: only open lots of priced
+				// assets feed the active invested, so neither the AVCO
+				// rounding residue of a closed position nor the uncomparable
+				// cost of an unpriced one inflates it. Dividends follow the
 				// position: still-open ones stay in the active group, fully
 				// closed ones fold into the proceeds.
-				if h.Qty.IsPositive() {
+				if h.HasPrice && h.Qty.IsPositive() {
 					ps.Active.Invested = ps.Active.Invested.Add(h.Cost)
+				}
+				if h.Qty.IsPositive() {
 					ps.Active.Dividends = ps.Active.Dividends.Add(h.Dividends)
 				} else {
 					ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Dividends)
@@ -2610,34 +2598,155 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				Currency:      p.Currency,
 				Assets:        assetsByPF[p.ID],
 			})
-
-			agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
-			if err != nil {
-				return nil, err
-			}
-			seriesVals := make([]model.PortfolioPerformance, 0, len(agg))
-			for _, pt := range agg {
-				seriesVals = append(seriesVals, model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
-			}
-			seriesVals = series.PortfolioPerformance(seriesVals, s.seriesMaxPoints)
-			converted := make([]model.PortfolioPerformance, 0, len(seriesVals))
-			for _, pt := range seriesVals {
-				factor, ok := dr.Factor(p.Currency, baseCurrency, pt.Date)
-				if !ok {
-					continue // no FX for this day: drop the point instead of emitting a zero
-				}
-				converted = append(converted, model.PortfolioPerformance{Date: pt.Date, Value: pt.Value.Mul(factor)})
-			}
-			dash.History = append(dash.History, model.PortfolioHistory{
-				PortfolioID:   p.ID.String(),
-				PortfolioName: p.Name,
-				Currency:      baseCurrency,
-				Series:        converted,
-			})
 		}
 
 		return dash, nil
 	})
+}
+
+// GetDashboardPerformance returns the vault-wide aggregate P/L chart of the
+// user in their base currency, bucketed by month or year. Each bucket's bar
+// is the P/L generated inside the bucket (total P/L at the bucket's last date
+// minus the previous bucket's, 0 baseline for the first) where the total P/L
+// of a date is market value - cost basis + realized; the line is the
+// cumulative realized P/L at that date. The daily points come from the
+// materialized per-asset series, converted per date through USD-pivoted FX
+// rates: while an asset's factor is missing its converted values are
+// forward-filled (zero before the first successful conversion). Positions of
+// assets without a market price never contribute market value or cost basis
+// (an unpriced position would fake a total loss), while their realized
+// always counts. Dates with no points produce no bucket.
+func (s *Service) GetDashboardPerformance(ctx context.Context, userID uuid.UUID, granularity string) (*model.DashboardPerformance, error) {
+	if granularity != "month" && granularity != "year" {
+		return nil, fmt.Errorf("%w: granularity must be month or year", ErrInvalidInput)
+	}
+	return cached(s.cache, ctx, "dash-perf", userID.String()+":"+granularity, cacheTTLStats, false, func() (*model.DashboardPerformance, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		baseCurrency := user.BaseCurrency
+		if baseCurrency == "" {
+			baseCurrency = "EUR"
+		}
+		perf := &model.DashboardPerformance{
+			Currency:    baseCurrency,
+			Granularity: granularity,
+			Buckets:     []model.PerformanceBucket{},
+		}
+		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if len(portfolios) == 0 {
+			return perf, nil
+		}
+
+		ids := make([]uuid.UUID, 0, len(portfolios))
+		for _, p := range portfolios {
+			ids = append(ids, p.ID)
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		// HasPrice is asset-level: it tells whether the asset has any price
+		// row. Positions of assets without a price must not feed the
+		// unrealized figures with a zero market value (they would show as a
+		// fake total loss), so they only contribute their realized.
+		pricedAsset := map[uuid.UUID]bool{}
+		for _, h := range holdings {
+			pricedAsset[mustUUID(h.AssetID)] = h.HasPrice
+		}
+
+		quoteSet := map[string]bool{baseCurrency: true}
+		for _, p := range portfolios {
+			if p.Currency != "" {
+				quoteSet[p.Currency] = true
+			}
+		}
+		quotes := make([]string, 0, len(quoteSet))
+		for c := range quoteSet {
+			quotes = append(quotes, c)
+		}
+		dr, err := series.LoadDateRates(ctx, s.repos, "USD", quotes)
+		if err != nil {
+			return nil, err
+		}
+
+		type dayTotal struct{ mv, cost, realized decimal.Decimal }
+		byDate := map[time.Time]*dayTotal{}
+		var dates []time.Time
+		for _, p := range portfolios {
+			assetSeries, err := s.repos.Series.FindPortfolio(ctx, p.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, a := range assetSeries {
+				priced := pricedAsset[mustUUID(a.AssetID)]
+				var last dayTotal
+				for _, pt := range a.Series {
+					if factor, ok := dr.Factor(p.Currency, baseCurrency, pt.Date); ok {
+						last = dayTotal{
+							mv:       pt.MarketValue.Mul(factor),
+							cost:     pt.CostBasis.Mul(factor),
+							realized: pt.Realized.Mul(factor),
+						}
+					}
+					d := series.DayOf(pt.Date)
+					day, seen := byDate[d]
+					if !seen {
+						day = &dayTotal{}
+						byDate[d] = day
+						dates = append(dates, d)
+					}
+					if priced {
+						day.mv = day.mv.Add(last.mv)
+						day.cost = day.cost.Add(last.cost)
+					}
+					day.realized = day.realized.Add(last.realized)
+				}
+			}
+		}
+		sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
+
+		// Dates are ascending and bucket periods are monotonic over them, so
+		// the newest day of each period is the last entry seen for it.
+		type bucketEnd struct {
+			period string
+			day    *dayTotal
+		}
+		var ends []bucketEnd
+		for _, d := range dates {
+			period := performancePeriod(d, granularity)
+			if n := len(ends); n > 0 && ends[n-1].period == period {
+				ends[n-1].day = byDate[d]
+			} else {
+				ends = append(ends, bucketEnd{period: period, day: byDate[d]})
+			}
+		}
+
+		prevTotal := decimal.Zero
+		buckets := make([]model.PerformanceBucket, 0, len(ends))
+		for _, b := range ends {
+			total := b.day.mv.Sub(b.day.cost).Add(b.day.realized)
+			buckets = append(buckets, model.PerformanceBucket{
+				Period:   b.period,
+				PnL:      roundAmount(total.Sub(prevTotal)),
+				Realized: roundAmount(b.day.realized),
+			})
+			prevTotal = total
+		}
+		perf.Buckets = buckets
+		return perf, nil
+	})
+}
+
+func performancePeriod(d time.Time, granularity string) string {
+	if granularity == "year" {
+		return d.Format("2006")
+	}
+	return d.Format("2006-01")
 }
 
 // GetDashboardAllocation returns the user's whole-vault geographic and sector

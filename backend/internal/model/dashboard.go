@@ -245,13 +245,6 @@ type PortfolioPositionHistory struct {
 	Splits        []SplitInfo           `json:"splits"`
 }
 
-type PortfolioHistory struct {
-	PortfolioID   string                 `json:"portfolio_id"`
-	PortfolioName string                 `json:"portfolio_name"`
-	Currency      string                 `json:"currency"`
-	Series        []PortfolioPerformance `json:"series"`
-}
-
 // DashboardSummary is the vault-wide roll-up of every portfolio converted to
 // the user's base currency, split into the active (open lots, plus the
 // dividends of positions still held) and closed (sold lots, whose proceeds
@@ -272,7 +265,26 @@ type Dashboard struct {
 	ByCurrency   []CurrencyPerformance         `json:"by_currency"`
 	Portfolios   []PortfolioPerformanceSummary `json:"portfolios"`
 	Assets       []PortfolioAssets             `json:"assets"`
-	History      []PortfolioHistory            `json:"history"`
+}
+
+// PerformanceBucket is one month or year of the dashboard performance chart:
+// Period is "YYYY-MM" for monthly and "YYYY" for yearly granularity, PnL is
+// the total P/L (market value - cost basis + realized, in base currency)
+// generated inside the bucket and Realized the cumulative realized P/L at the
+// bucket's last date.
+type PerformanceBucket struct {
+	Period   string          `json:"period"`
+	PnL      decimal.Decimal `json:"pnl"`
+	Realized decimal.Decimal `json:"realized"`
+}
+
+// DashboardPerformance is the vault-wide aggregate P/L chart across all the
+// user's portfolios, converted to their base currency and bucketed by month
+// or year.
+type DashboardPerformance struct {
+	Currency    string              `json:"currency"`
+	Granularity string              `json:"granularity"`
+	Buckets     []PerformanceBucket `json:"buckets"`
 }
 
 // DashboardAllocation groups the geographic and sector allocation of a user's

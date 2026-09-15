@@ -266,7 +266,7 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 | `authApi` | login, register, me, updateProfile, changePassword | `POST /auth/login`, `POST /auth/register`, `GET /users/me`, `PATCH /users/me`, `POST /users/me/password` |
 | `portfolioApi` | list, create, get, update, delete | `GET /portfolios`, `POST /portfolios`, `GET/PATCH/DELETE /portfolios/{id}` |
 | | summary, allocation, classAllocation, geographyAllocation, sectorAllocation, performance, roi, history | `GET /portfolios/{id}/summary`, `GET /portfolios/{id}/allocation`, `GET /portfolios/{id}/allocation/class`, `GET /portfolios/{id}/allocation/geography`, `GET /portfolios/{id}/allocation/sector`, `GET /portfolios/{id}/performance`, `GET /portfolios/{id}/roi`, `GET /portfolios/{id}/history` |
-| | dashboard, dashboardAllocation | `GET /dashboard`, `GET /dashboard/allocation` |
+| | dashboard, dashboardAllocation, dashboardPerformance | `GET /dashboard`, `GET /dashboard/allocation`, `GET /dashboard/performance?granularity=month|year` |
 | | exportDoc, importDoc | `GET /portfolios/{id}/export`, `POST /portfolios/import` |
 | `assetApi` | list, search, lookup, meta | `GET /assets`, `GET /assets/search?q=`, `GET /assets/lookup?q=`, `GET /assets/meta?ticker=` |
 | | get, create, update, remove | `GET /assets/{id}`, `POST /assets`, `PATCH /assets/{id}`, `DELETE /assets/{id}` |
@@ -296,7 +296,11 @@ investito, valore, gain/loss, gain/loss % e dividendi dei soli lotti ancora
 detenuti) e `closed` (`ClosedBreakdown`: investito = costo dei lotti venduti,
 ricavi = ricavi netti di vendita + dividendi delle posizioni completamente
 chiuse, realizzato = ricavi − investito, realizzato %) — i campi piatti sono
-spariti.
+spariti. Da EPIC I.3 `Dashboard` non porta più le serie `history` per
+portafoglio: i nuovi tipi `DashboardPerformance` / `PerformanceBucket`
+alimentano il grafico "Performance" della dashboard tramite
+`dashboardPerformance(granularity)` (`GET /dashboard/performance?granularity=month|year`,
+bucket `YYYY-MM` o `YYYY` nella valuta base dell'utente).
 
 > **Nota**: `portfolioApi` espone i metodi di allocazione geografica e
 > settoriale (`geographyAllocation(id)`, `sectorAllocation(id)` — serviti dal
@@ -328,12 +332,13 @@ nel dettaglio asset.
 Non esiste un modulo dedicato alle metriche: ogni pagina calcola i propri
 valori derivati inline con le rune **`$derived`** di Svelte 5. I principali:
 
-- **Dashboard** (`routes/+page.svelte`): `chartData` unisce le serie storiche
-  dei portafogli in un'unica tabella per data per `PortfolioLineChart`;
-  `hasMultipleCurrencies` pilota il donut "Allocation by portfolio" (valori
-  grezzi nascosti e nota "valute miste" quando i portafogli usano valute
-  diverse — EPIC I.1); `glClass` sceglie la classe testo verde/rosso per un
-  guadagno o una perdita.
+- **Dashboard** (`routes/+page.svelte`): lo stato della card Performance
+  (EPIC I.3) è un `$state` `granularity` (default 'month') più un `$state`
+  `perf` ricaricato da un `$effect` a ogni cambio del selettore (un id di
+  richiesta monotònico scarta le risposte obsolete); `hasMultipleCurrencies`
+  pilota il donut "Allocation by portfolio" (valori grezzi nascosti e nota
+  "valute miste" quando i portafogli usano valute diverse — EPIC I.1);
+  `glClass` sceglie la classe testo verde/rosso per un guadagno o una perdita.
 - **Dettaglio portafoglio** (`routes/portfolios/[id]/+page.svelte`):
   `classAllocRows` mappa le chiavi delle classi del backend sulle etichette
   italiane per il donut; `gainLossClass` / `realizedClass` / `pnlClass`
@@ -414,7 +419,7 @@ scuro contornato di bianco).
 |---|---|---|
 | `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/YTD/MAX. Carica sempre tutto lo storico: i selettori fanno uno **zoom in-place** (coppia `start`/`end` percentuali, `end`=100) senza ricaricare dati; uno zoom/spostamento manuale **deseleziona** il pulsante attivo e preserva la vista. Gli **split** sono disegnati come `markLine` tratteggiata viola etichettata con il rapporto (`Split 4:1`), come in `PositionChart`. Stato vuoto → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la **storico performance** del dettaglio portafoglio: un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
-| `PortfolioLineChart.svelte` | **line multi-serie** (una per portafoglio) su asse x **temporale**, costruita dai punti di ogni portafoglio (niente unione con `null`), `connectNulls` + `lttb`, dataZoom `inside` + `slider` | la card "Portfolio History" della **dashboard**. Il tooltip formatta ogni serie nella propria valuta (la valuta arriva dal payload `DashboardHistory`; da EPIC I.1 il backend converte ogni serie nella **valuta base** dell'utente per data, quindi il grafico è comparabile tra portafogli) |
+| `PerformanceChart.svelte` (`lib/components/domain/`) | **combo barre + linea** su asse x a **categorie** (EPIC I.3): una barra `pnl` per bucket colorata verde/rosso secondo il segno (semantici `positive`/`negative`, `itemStyle` per barra), linea `realized` cumulativa nell'ambra semantica, etichette dei periodi formate per granularità (`giu 2025` / `2025`), dataZoom `inside` + `slider`, legenda `Gain/Loss` / `Realized`, stato vuoto "No data" | la card "Performance" della **dashboard**, alimentata da `dashboardPerformance(granularity)` (`GET /dashboard/performance`, selettore mensile/annuale). **Sostituisce** il vecchio `PortfolioLineChart` "Portfolio History": le barre mostrano il P/L generato dentro ogni mese/anno, la linea il P/L realizzato cumulativo — tutto nella **valuta base** dell'utente (`currency` del payload), tooltip con `formatCurrency` |
 | `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate; `complete={false}` la rende **aperta** quando le righe sommano < 100 (una fetta residua trasparente tiene veritieri gli angoli — niente fetta grigia "Other") | pagina dettaglio asset (donut regioni con `complete={false}` e donut settori), le due modali esposizione (in modalità `mute`: regioni in `ExposureGeoModal`, settori in `ExposureSectorModal`) e il donut **"Allocazione per classi"** del portafoglio (B.12). I paesi (pagina e modale geografica) sono liste a barre, mai una pie. Accetta `ExposureRow[]` (`{name, weight}`) |
 | `GeographyChart.svelte` (`lib/components/domain/`) | **ciambella** (stessi raggio/palette di `ExposurePie`) + tabella delle righe complete accanto; il tooltip mostra il valore nella valuta del portafoglio e il peso; la fetta `Other` è in grigio spento | la card **geografia** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `RegionAllocation[]` (`{region, value, weight}`); le righe a peso zero restano in tabella ma non vengono disegnate. Le prop opzionali `covered`/`excluded` (stringhe decimali) alimentano una nota di copertura ("Copre il X% del portafoglio…") mostrata quando il valore escluso è > 0 |
 | `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio e la "Allocazione complessiva" della **dashboard** (B.8). Accetta `SectorAllocation[]` (`{sector, value, weight}`), più la stessa nota di copertura opzionale `covered`/`excluded` di `GeographyChart` |
@@ -448,8 +453,8 @@ date con `new Date(...).toLocaleDateString()`.
   `asset_class` è `equity` o `real_estate`); bond, crypto, commodity e fondi
   non classificati sono esclusi e riportati come `covered_value` /
   `excluded_value`, che i grafici trasformano in una nota di copertura.
-- **Dashboard** — `PortfolioLineChart` con il `chartData` unificato, più i
-  widget B.8 "Allocazione complessiva".
+- **Dashboard** — `PerformanceChart` alimentato da `dashboardPerformance(granularity)`
+  (EPIC I.3, selettore mensile/annuale), più i widget B.8 "Allocazione complessiva".
 
 ---
 
@@ -610,8 +615,9 @@ passare dalla dashboard.
 
 ### `/` — Dashboard (`routes/+page.svelte`)
 
-Endpoint chiamati: `portfolioApi.dashboard()`, poi il `pricesApi.refresh()` di
-sessione + una dashboard fresca.
+Endpoint chiamati: `portfolioApi.dashboard()` e
+`portfolioApi.dashboardPerformance(granularity)`, poi il `pricesApi.refresh()`
+di sessione + una dashboard fresca e un refill della Performance.
 
 - **Card Investments** (EPIC I.1, split active/closed da EPIC I.2): quando la
   risposta porta `summary`, il blocco in cima mostra i totali consolidati
@@ -627,8 +633,14 @@ sessione + una dashboard fresca.
   colonne %) è colorata con `pnlColorClass`. La tabella riusa le primitive
   `Table`/`Th`/`Td` con colonne numeriche allineate a destra in
   `tabular-nums`.
-- Card **Portfolio History**: `PortfolioLineChart` (una linea per portafoglio,
-  tutte espresse nella valuta base dall'EPIC I.1).
+- Card **Performance** (EPIC I.3, sostituisce la vecchia "Portfolio History"):
+  riga di intestazione con titolo e `SegmentedControl` ("Monthly" / "Annual")
+  legato allo stato `granularity`, e sotto `PerformanceChart` alimentato da
+  `dashboardPerformance(granularity)`: una barra `pnl` verde/rosso per bucket
+  più la linea `realized` cumulativa, nella **valuta base** dell'utente. La
+  chiamata è isolata (se fallisce resta lo stato vuoto "No data") e viene
+  ricaricata a ogni cambio di selettore; accanto, nella stessa griglia a 2
+  colonne, la donut "Allocation by portfolio".
 - Card **Allocazione complessiva**: `GeographyChart` + `SectorChart` affiancati
   da `dashboardAllocation()` (`GET /dashboard/allocation`, aggregato nella
   valuta base dell'utente su tutti i portafogli — era USD prima

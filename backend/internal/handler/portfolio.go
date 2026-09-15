@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -559,6 +560,32 @@ func (h *Handler) GetDashboardAllocation(w http.ResponseWriter, r *http.Request)
 	}
 
 	respond(w, http.StatusOK, dashAlloc)
+}
+
+func (h *Handler) GetDashboardPerformance(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	granularity := "month"
+	if query := r.URL.Query(); query.Has("granularity") {
+		granularity = query.Get("granularity")
+	}
+
+	perf, err := h.svc.GetDashboardPerformance(r.Context(), claims.UserID, granularity)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidInput) {
+			respondError(w, http.StatusBadRequest, "granularity must be month or year")
+			return
+		}
+		log.Error().Err(err).Msg("get dashboard performance failed")
+		respondError(w, http.StatusInternalServerError, "dashboard performance failed")
+		return
+	}
+
+	respond(w, http.StatusOK, perf)
 }
 
 func (h *Handler) RefreshPrices(w http.ResponseWriter, r *http.Request) {

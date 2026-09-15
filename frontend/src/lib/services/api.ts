@@ -337,11 +337,23 @@ export interface PortfolioAssets {
   assets: AssetPerformance[]
 }
 
-export interface DashboardHistory {
-  portfolio_id: string
-  portfolio_name: string
+/** One month or year bucket of the dashboard performance chart (EPIC I.3):
+ * `period` is "YYYY-MM" (monthly) or "YYYY" (annual), `pnl` the P/L generated
+ * inside the bucket (bars) and `realized` the cumulative realized P/L at the
+ * bucket's last date (line). Buckets come back ascending; empty ones are
+ * omitted. */
+export interface PerformanceBucket {
+  period: string
+  pnl: string
+  realized: string
+}
+
+/** Vault-wide P/L chart across all the user's portfolios, converted to their
+ * base currency and bucketed by month or year. */
+export interface DashboardPerformance {
   currency: string
-  series: PortfolioPerformance[]
+  granularity: 'month' | 'year'
+  buckets: PerformanceBucket[]
 }
 
 export interface PositionPoint {
@@ -418,8 +430,9 @@ export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
   assets: PortfolioAssets[]
-  history: DashboardHistory[]
-  /** User's base currency: `history` series and `summary` are expressed in it. */
+  /** User's base currency: the consolidated `summary` (and the separate
+   * `/dashboard/performance` endpoint) are expressed in it. The old `history`
+   * series was removed in EPIC I.3, superseded by `dashboardPerformance`. */
   base_currency: string
   /** Consolidated totals in `base_currency`; absent on older backends. */
   summary?: DashboardSummary
@@ -597,6 +610,10 @@ export const portfolioApi = {
   sectorAllocation: (id: string) =>
     request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
   dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
+  // EPIC I.3: vault-wide P/L buckets in the user's base currency, monthly or
+  // yearly (`period` = "YYYY-MM" / "YYYY", ascending, empty buckets omitted).
+  dashboardPerformance: (granularity: 'month' | 'year') =>
+    request<DashboardPerformance>('/dashboard/performance', { params: { granularity } }),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),

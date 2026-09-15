@@ -2146,27 +2146,27 @@ func (f *fakeCurrencyRepo) CountInUse(ctx context.Context, code string) (int, er
 	return 0, nil
 }
 
-// fakeSeriesRepo is a canned aggregate stand-in for
-// repository.SeriesRepository: FindPortfolioAgg serves preloaded portfolio
+// fakeSeriesRepo is a canned series stand-in for
+// repository.SeriesRepository: FindPortfolio serves preloaded per-asset
 // series, the write paths are inert.
 type fakeSeriesRepo struct {
-	aggs map[uuid.UUID][]model.PositionPoint
+	assets map[uuid.UUID][]model.AssetPositionSeries
 }
 
 func (f *fakeSeriesRepo) ReplacePortfolio(ctx context.Context, portfolioID uuid.UUID, agg []model.PositionPoint, assets []model.AssetPositionSeries) error {
 	return nil
 }
 func (f *fakeSeriesRepo) FindPortfolioAgg(ctx context.Context, portfolioID uuid.UUID) ([]model.PositionPoint, error) {
-	return f.aggs[portfolioID], nil
+	return nil, nil
 }
 func (f *fakeSeriesRepo) FindPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.AssetPositionSeries, error) {
-	return nil, nil
+	return f.assets[portfolioID], nil
 }
 func (f *fakeSeriesRepo) HasPortfolio(ctx context.Context, portfolioID uuid.UUID) (bool, error) {
 	return false, nil
 }
 
-func newDashboardTestService(t *testing.T, p *fakePortfolioRepo, fx *fakeFXRepo, baseCurrency string, aggs map[uuid.UUID][]model.PositionPoint) *Service {
+func newDashboardTestService(t *testing.T, p *fakePortfolioRepo, fx *fakeFXRepo, baseCurrency string, assets map[uuid.UUID][]model.AssetPositionSeries) *Service {
 	t.Helper()
 	repos := &repository.Repository{
 		Asset:     &fakeAssetRepo{},
@@ -2174,7 +2174,7 @@ func newDashboardTestService(t *testing.T, p *fakePortfolioRepo, fx *fakeFXRepo,
 		Portfolio: p,
 		Exposure:  &fakeExposureRepo{},
 		FX:        fx,
-		Series:    &fakeSeriesRepo{aggs: aggs},
+		Series:    &fakeSeriesRepo{assets: assets},
 	}
 	return New(repos, nil, nil, nil, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
 }
@@ -2208,6 +2208,15 @@ func dashboardClosedHolding(portfolioID, assetID, currency string, qty, lastClos
 	h.ClosedCost = closedCost
 	h.Proceeds = proceeds
 	h.Dividends = dividends
+	return h
+}
+
+// seriesHolding is the minimal priced holding fixture the performance chart
+// reads to know an asset is priced: it only carries the portfolio/asset ids
+// and the HasPrice flag, the figures come from the stored series.
+func seriesHolding(portfolioID uuid.UUID, assetID string) *model.Holding {
+	h := dashboardHolding(portfolioID.String(), assetID, "USD",
+		decimal.NewFromInt(1), decimal.NewFromInt(1), decimal.NewFromInt(1), decimal.Zero)
 	return h
 }
 
@@ -2494,6 +2503,87 @@ func TestGetDashboard_ClosedHoldingResidualCostStaysOutOfActive(t *testing.T) {
 	}
 }
 
+func TestGetDashboard_UnpricedOpenPositionStaysOutOfActive(t *testing.T) {
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	bondID := uuid.New().String()
+	soldBondID := uuid.New().String()
+
+	stock := dashboardHolding(pfUSD.String(), stockID, "USD",
+		decimal.NewFromInt(10), decimal.NewFromInt(100), decimal.NewFromInt(800), decimal.Zero)
+	// Open bond ETF position with price_source none: its 12663 cost has no
+	// market value to be compared with, so it must stay out of the active
+	// invested (otherwise the row would report a fake -100% loss); its
+	// dividends are real and keep feeding the active group.
+	bond := dashboardClosedHolding(pfUSD.String(), bondID, "USD",
+		decimal.NewFromInt(5), decimal.Zero, decimal.NewFromInt(12663),
+		decimal.Zero, decimal.Zero, decimal.NewFromInt(100))
+	bond.HasPrice = false
+	// A fully closed unpriced position keeps its real figures in the closed
+	// group: the sold lots' cost and the sale proceeds (a 100 net loss here).
+	soldBond := dashboardClosedHolding(pfUSD.String(), soldBondID, "USD",
+		decimal.Zero, decimal.Zero, decimal.Zero,
+		decimal.NewFromInt(1000), decimal.NewFromInt(900), decimal.Zero)
+	soldBond.HasPrice = false
+
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings:   []*model.Holding{stock, bond, soldBond},
+	}
+	fx := &fakeFXRepo{}
+	svc := newDashboardTestService(t, pf, fx, "USD", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := got.Summary
+	if s == nil {
+		t.Fatal("summary = nil, want the base-currency roll-up")
+	}
+	// Only the priced stock feeds active invested/value; the unpriced bond
+	// contributes its open-position dividends.
+	if !equalDecimal(s.Active.Invested, decimal.NewFromInt(800)) {
+		t.Fatalf("active.invested = %v, want 800 (the unpriced bond's 12663 cost must be excluded)", s.Active.Invested)
+	}
+	if !equalDecimal(s.Active.Value, decimal.NewFromInt(1000)) {
+		t.Fatalf("active.value = %v, want 1000", s.Active.Value)
+	}
+	if !equalDecimal(s.Active.GainLoss, decimal.NewFromInt(200)) {
+		t.Fatalf("active.gain_loss = %v, want 200", s.Active.GainLoss)
+	}
+	assertDecimalInDelta(t, s.Active.GainLossPct, decimal.NewFromInt(25), "0.01", "active.gain_loss_pct")
+	if !equalDecimal(s.Active.Dividends, decimal.NewFromInt(100)) {
+		t.Fatalf("active.dividends = %v, want 100 (dividends of the open unpriced position still count)", s.Active.Dividends)
+	}
+	// The closed unpriced position's realized stays in the closed group.
+	if !equalDecimal(s.Closed.Invested, decimal.NewFromInt(1000)) {
+		t.Fatalf("closed.invested = %v, want 1000", s.Closed.Invested)
+	}
+	if !equalDecimal(s.Closed.Proceeds, decimal.NewFromInt(900)) {
+		t.Fatalf("closed.proceeds = %v, want 900", s.Closed.Proceeds)
+	}
+	if !equalDecimal(s.Closed.Realized, decimal.NewFromInt(-100)) {
+		t.Fatalf("closed.realized = %v, want -100", s.Closed.Realized)
+	}
+	if s.FXMissingCount != 0 || !equalDecimal(s.FXMissingValue, decimal.Zero) {
+		t.Fatalf("fx missing = (%d, %v), want (0, 0)", s.FXMissingCount, s.FXMissingValue)
+	}
+
+	ps := got.Portfolios[0]
+	if !equalDecimal(ps.Active.Invested, decimal.NewFromInt(800)) || !equalDecimal(ps.Active.Value, decimal.NewFromInt(1000)) ||
+		!equalDecimal(ps.Active.GainLoss, decimal.NewFromInt(200)) || !equalDecimal(ps.Active.Dividends, decimal.NewFromInt(100)) {
+		t.Fatalf("portfolio active = %+v, want invested 800 value 1000 gain 200 dividends 100", ps.Active)
+	}
+	assertDecimalInDelta(t, ps.Active.GainLossPct, decimal.NewFromInt(25), "0.01", "portfolio active.gain_loss_pct")
+	if !equalDecimal(ps.Closed.Realized, decimal.NewFromInt(-100)) {
+		t.Fatalf("portfolio closed.realized = %v, want -100", ps.Closed.Realized)
+	}
+	if ps.FXMissing != 0 {
+		t.Fatalf("portfolio fx_missing = %d, want 0 (the excluded cost must not be flagged)", ps.FXMissing)
+	}
+}
+
 func TestGetDashboard_BreakdownAmountsAreRounded(t *testing.T) {
 	pfUSD := uuid.New()
 	pf := &fakePortfolioRepo{
@@ -2560,58 +2650,269 @@ func TestGetDashboard_NoPortfoliosReturnsBaseCurrencyWithoutSummary(t *testing.T
 	}
 }
 
-func TestGetDashboard_HistoryConvertedToBaseCurrency(t *testing.T) {
+func TestGetDashboardPerformance_MonthlyBucketsArePnLDeltas(t *testing.T) {
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	d1 := time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings:   []*model.Holding{seriesHolding(pfUSD, stockID)},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1100), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1250), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(50)},
+				{Date: d3, MarketValue: decimal.NewFromInt(1300), CostBasis: decimal.NewFromInt(1100), Realized: decimal.NewFromInt(50)},
+			}},
+		},
+	}
+	svc := newDashboardTestService(t, pf, &fakeFXRepo{}, "USD", assets)
+
+	got, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "USD" || got.Granularity != "month" {
+		t.Fatalf("currency/granularity = (%q, %q), want (USD, month)", got.Currency, got.Granularity)
+	}
+	// Bar per bucket = total P/L (mv - cost + realized) at the bucket's last
+	// date minus the previous one: January ends on d2 with 1250-1000+50=300,
+	// March on d3 with 1300-1100+50=250 (bar -50). February has no points:
+	// no bucket. The line is the cumulative realized at the bucket's last day.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", PnL: decimal.NewFromInt(300), Realized: decimal.NewFromInt(50)},
+		{Period: "2025-03", PnL: decimal.NewFromInt(-50), Realized: decimal.NewFromInt(50)},
+	})
+}
+
+func TestGetDashboardPerformance_YearlyBuckets(t *testing.T) {
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	d1 := time.Date(2024, 6, 10, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2025, 6, 10, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings:   []*model.Holding{seriesHolding(pfUSD, stockID)},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1050), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1200), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(60)},
+				{Date: d3, MarketValue: decimal.NewFromInt(1400), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(60)},
+			}},
+		},
+	}
+	svc := newDashboardTestService(t, pf, &fakeFXRepo{}, "USD", assets)
+
+	got, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), "year")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Granularity != "year" {
+		t.Fatalf("granularity = %q, want year", got.Granularity)
+	}
+	// 2024 ends on d2: total P/L 1200-1000+60=260 (bar 260, line 60);
+	// 2025 on d3: 1400-1000+60=460 → bar 200, line still 60 (cumulative).
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2024", PnL: decimal.NewFromInt(260), Realized: decimal.NewFromInt(60)},
+		{Period: "2025", PnL: decimal.NewFromInt(200), Realized: decimal.NewFromInt(60)},
+	})
+}
+
+func TestGetDashboardPerformance_AggregatesPortfoliosInBaseCurrency(t *testing.T) {
 	pfUSD := uuid.New()
 	pfGBP := uuid.New()
-	d1 := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
-	d2 := time.Date(2026, 1, 6, 0, 0, 0, 0, time.UTC)
+	usdAssetID := uuid.New().String()
+	gbpAssetID := uuid.New().String()
+	jan1 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	feb1 := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
 	pf := &fakePortfolioRepo{
 		portfolios: []*model.Portfolio{
 			{ID: pfUSD, Currency: "USD"},
 			{ID: pfGBP, Currency: "GBP"},
 		},
-	}
-	fx := &fakeFXRepo{
-		rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.8")},
-		history: map[string][]model.FXRatePoint{
-			"EUR": {{Date: d1, Rate: decimal.RequireFromString("0.9")}, {Date: d2, Rate: decimal.RequireFromString("0.8")}},
+		holdings: []*model.Holding{
+			seriesHolding(pfUSD, usdAssetID),
+			seriesHolding(pfGBP, gbpAssetID),
 		},
 	}
-	aggs := map[uuid.UUID][]model.PositionPoint{
-		pfUSD: {{Date: d1, MarketValue: decimal.NewFromInt(1000)}, {Date: d2, MarketValue: decimal.NewFromInt(2000)}},
-		pfGBP: {{Date: d1, MarketValue: decimal.NewFromInt(500)}},
+	fx := &fakeFXRepo{
+		rates: map[string]decimal.Decimal{
+			"EUR": decimal.RequireFromString("0.4"),
+			"GBP": decimal.RequireFromString("0.2"),
+		},
+		history: map[string][]model.FXRatePoint{
+			"EUR": {{Date: jan1, Rate: decimal.RequireFromString("0.5")}, {Date: feb1, Rate: decimal.RequireFromString("0.4")}},
+			"GBP": {{Date: feb1, Rate: decimal.RequireFromString("0.2")}},
+		},
 	}
-	svc := newDashboardTestService(t, pf, fx, "EUR", aggs)
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: usdAssetID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(800)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1200), CostBasis: decimal.NewFromInt(800), Realized: decimal.NewFromInt(100)},
+			}},
+		},
+		pfGBP: {
+			{AssetID: gbpAssetID, Series: []model.PositionPoint{
+				{Date: d2, MarketValue: decimal.NewFromInt(500), CostBasis: decimal.NewFromInt(400)},
+			}},
+		},
+	}
+	svc := newDashboardTestService(t, pf, fx, "EUR", assets)
 
-	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	got, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), "month")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got.History) != 2 {
-		t.Fatalf("history len = %d, want 2", len(got.History))
+	if got.Currency != "EUR" {
+		t.Fatalf("currency = %q, want EUR", got.Currency)
 	}
-	usd := got.History[0]
-	if usd.PortfolioID != pfUSD.String() {
-		t.Fatalf("history[0] = %s, want the USD portfolio", usd.PortfolioID)
+	// d1 (USD->EUR 0.5): total P/L (1000-800)*0.5 = 100 → January bar 100.
+	// d2 (USD->EUR 0.4, GBP->EUR 0.4/0.2=2): USD (1200-800)*0.4+100*0.4=200
+	// plus GBP (500-400)*2=200 → total 400 → February bar 300, line 100*0.4.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", PnL: decimal.NewFromInt(100), Realized: decimal.Zero},
+		{Period: "2025-02", PnL: decimal.NewFromInt(300), Realized: decimal.NewFromInt(40)},
+	})
+}
+
+func TestGetDashboardPerformance_MissingFXForwardFillsToZero(t *testing.T) {
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	feb1 := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings:   []*model.Holding{seriesHolding(pfUSD, stockID)},
 	}
-	if usd.Currency != "EUR" {
-		t.Fatalf("usd history currency = %q, want EUR", usd.Currency)
+	// No EUR snapshot at all and the first history point only covers
+	// February: January cannot be converted and contributes zeros.
+	fx := &fakeFXRepo{
+		history: map[string][]model.FXRatePoint{
+			"EUR": {{Date: feb1, Rate: decimal.RequireFromString("0.9")}},
+		},
 	}
-	if len(usd.Series) != 2 {
-		t.Fatalf("usd history len = %d, want 2", len(usd.Series))
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1100), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(20)},
+			}},
+		},
 	}
-	if !usd.Series[0].Date.Equal(d1) || !equalDecimal(usd.Series[0].Value, decimal.NewFromInt(900)) {
-		t.Fatalf("d1 value = %v @ %v, want 900 (USD->EUR 0.9 on d1)", usd.Series[0].Value, usd.Series[0].Date)
+	svc := newDashboardTestService(t, pf, fx, "EUR", assets)
+
+	got, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !usd.Series[1].Date.Equal(d2) || !equalDecimal(usd.Series[1].Value, decimal.NewFromInt(1600)) {
-		t.Fatalf("d2 value = %v @ %v, want 1600 (USD->EUR 0.8 on d2)", usd.Series[1].Value, usd.Series[1].Date)
+	// January: zero contributions → bar 0; February at 0.9:
+	// (1100-1000)*0.9 + 20*0.9 = 108 → bar 108, line 18.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", PnL: decimal.Zero, Realized: decimal.Zero},
+		{Period: "2025-02", PnL: decimal.NewFromInt(108), Realized: decimal.NewFromInt(18)},
+	})
+}
+
+func TestGetDashboardPerformance_UnpricedAssetContributesOnlyRealized(t *testing.T) {
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	bondID := uuid.New().String()
+	d1 := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2025, 3, 10, 0, 0, 0, 0, time.UTC)
+	stock := seriesHolding(pfUSD, stockID)
+	bond := seriesHolding(pfUSD, bondID)
+	bond.HasPrice = false
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings:   []*model.Holding{stock, bond},
 	}
-	gbp := got.History[1]
-	if gbp.Currency != "EUR" {
-		t.Fatalf("gbp history currency = %q, want EUR", gbp.Currency)
+	// The bond ETF has no price row at all: its 12663 cost shows up in the
+	// series with a zero market value. Counting the pair would fake a total
+	// loss in January; only its realized (dividends in February, the sale
+	// result in March) is real and must be kept.
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1100), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1200), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(50)},
+				{Date: d3, MarketValue: decimal.NewFromInt(1200), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(50)},
+			}},
+			{AssetID: bondID, Series: []model.PositionPoint{
+				{Date: d1, CostBasis: decimal.NewFromInt(12663)},
+				{Date: d2, CostBasis: decimal.NewFromInt(12663), Realized: decimal.NewFromInt(100)},
+				{Date: d3, Realized: decimal.NewFromInt(200)},
+			}},
+		},
 	}
-	if len(gbp.Series) != 0 {
-		t.Fatalf("gbp history series = %+v, want points without FX dropped", gbp.Series)
+	svc := newDashboardTestService(t, pf, &fakeFXRepo{}, "USD", assets)
+
+	got, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The bond's cost never enters the totals: January is just the stock's
+	// 1100-1000=100. February adds the stock's 100 growth + 50 realized and
+	// the bond's 100 dividends → 350 (bar 250, line 50+100). March: the bond
+	// is sold (cost gone) with cumulative realized 200 → total 450 (bar 100,
+	// line 50+200).
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", PnL: decimal.NewFromInt(100), Realized: decimal.Zero},
+		{Period: "2025-02", PnL: decimal.NewFromInt(250), Realized: decimal.NewFromInt(150)},
+		{Period: "2025-03", PnL: decimal.NewFromInt(100), Realized: decimal.NewFromInt(250)},
+	})
+}
+
+func TestGetDashboardPerformance_EmptyVaultHasNoBuckets(t *testing.T) {
+	svc := newDashboardTestService(t, &fakePortfolioRepo{}, &fakeFXRepo{}, "EUR", nil)
+
+	got, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "EUR" || got.Granularity != "month" {
+		t.Fatalf("currency/granularity = (%q, %q), want (EUR, month)", got.Currency, got.Granularity)
+	}
+	if got.Buckets == nil || len(got.Buckets) != 0 {
+		t.Fatalf("buckets = %+v, want an empty non-nil slice", got.Buckets)
+	}
+}
+
+func TestGetDashboardPerformance_InvalidGranularity(t *testing.T) {
+	svc := newDashboardTestService(t, &fakePortfolioRepo{}, &fakeFXRepo{}, "EUR", nil)
+
+	for _, g := range []string{"", "week", "MONTH"} {
+		if _, err := svc.GetDashboardPerformance(context.Background(), uuid.New(), g); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("granularity %q: err = %v, want ErrInvalidInput", g, err)
+		}
+	}
+}
+
+func assertPerfBuckets(t *testing.T, got, want []model.PerformanceBucket) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("buckets = %+v, want %d buckets", got, len(want))
+	}
+	for i, w := range want {
+		if got[i].Period != w.Period {
+			t.Fatalf("buckets[%d].period = %q, want %q", i, got[i].Period, w.Period)
+		}
+		if !equalDecimal(got[i].PnL, w.PnL) {
+			t.Fatalf("buckets[%d].pnl = %v, want %v", i, got[i].PnL, w.PnL)
+		}
+		if !equalDecimal(got[i].Realized, w.Realized) {
+			t.Fatalf("buckets[%d].realized = %v, want %v", i, got[i].Realized, w.Realized)
+		}
 	}
 }
 
