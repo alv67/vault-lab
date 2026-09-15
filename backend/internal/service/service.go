@@ -2039,11 +2039,13 @@ func (s *Service) ExportPortfolio(ctx context.Context, portfolioID uuid.UUID, us
 	sort.Slice(assets, func(i, j int) bool { return assets[i].Ticker < assets[j].Ticker })
 	for _, a := range assets {
 		doc.Assets = append(doc.Assets, model.ExportAsset{
-			Ticker:   a.Ticker,
-			Name:     a.Name,
-			Type:     a.Type,
-			Currency: a.Currency,
-			ISIN:     a.ISIN,
+			Ticker:      a.Ticker,
+			Name:        a.Name,
+			Type:        a.Type,
+			Currency:    a.Currency,
+			ISIN:        a.ISIN,
+			PriceSource: a.PriceSource,
+			AssetClass:  a.AssetClass,
 		})
 	}
 	for _, tx := range txs {
@@ -2070,7 +2072,13 @@ func (s *Service) ExportPortfolio(ctx context.Context, portfolioID uuid.UUID, us
 // mode the target portfolio is deleted and recreated from the document. Both
 // paths run atomically.
 func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *model.PortfolioExport, mode, name string, targetID *uuid.UUID) (*model.Portfolio, error) {
-	if doc == nil || doc.Version != 1 {
+	if doc == nil {
+		return nil, ErrInvalidInput
+	}
+	if doc.Version > 1 {
+		return nil, fmt.Errorf("%w: unsupported export version %d", ErrInvalidInput, doc.Version)
+	}
+	if doc.Version != 1 {
 		return nil, ErrInvalidInput
 	}
 	if strings.TrimSpace(doc.Portfolio.Name) == "" {
@@ -2102,6 +2110,12 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 		}
 
 		assetByTicker := map[string]*model.Asset{}
+		// The defaults below keep documents exported by older app versions
+		// importable: those files predate fields like price_source/asset_class
+		// and may omit any optional value, so every missing piece is filled
+		// with a constraint-satisfying default instead of failing the insert.
+		// An unknown or absent price_source falls back to "yahoo" rather than
+		// erroring, the same default Service.CreateAsset applies.
 		createAsset := func(ticker string) (*model.Asset, error) {
 			if a, ok := assetByTicker[ticker]; ok {
 				return a, nil
@@ -2111,22 +2125,32 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 				return nil, err
 			}
 			if a == nil {
-				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD", AssetClass: "equity"}
+				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD", PriceSource: "yahoo"}
 				for i := range doc.Assets {
-					if strings.EqualFold(doc.Assets[i].Ticker, ticker) {
-						if doc.Assets[i].Name != "" {
-							a.Name = doc.Assets[i].Name
-						}
-						a.ISIN = doc.Assets[i].ISIN
-						if doc.Assets[i].Type != "" {
-							a.Type = doc.Assets[i].Type
-							a.AssetClass = defaultAssetClassForType(a.Type)
-						}
-						if doc.Assets[i].Currency != "" {
-							a.Currency = doc.Assets[i].Currency
-						}
-						break
+					ea := doc.Assets[i]
+					if !strings.EqualFold(ea.Ticker, ticker) {
+						continue
 					}
+					if ea.Name != "" {
+						a.Name = ea.Name
+					}
+					a.ISIN = ea.ISIN
+					if ea.Type != "" {
+						a.Type = ea.Type
+					}
+					if ea.Currency != "" {
+						a.Currency = ea.Currency
+					}
+					if ea.AssetClass != "" {
+						a.AssetClass = ea.AssetClass
+					}
+					if priceSources[ea.PriceSource] {
+						a.PriceSource = ea.PriceSource
+					}
+					break
+				}
+				if a.AssetClass == "" {
+					a.AssetClass = defaultAssetClassForType(a.Type)
 				}
 				a, err = rx.Asset.Create(ctx, a)
 				if err != nil {

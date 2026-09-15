@@ -6,6 +6,9 @@
 - Choose your base currency in Settings → Profile: the dashboard now consolidates your totals, portfolio history and allocations into that currency
 - The dashboard now separates active and closed investments at vault and per-portfolio level: for the closed part you see the cost of the sold lots, the proceeds and the realized capital gain/loss; dividend rows are shown with the active investments and, once a position is fully closed, they are included in the proceeds
 
+### Fixes
+- Importing a portfolio exported by an older version of the app no longer fails: missing information is filled with sensible defaults
+
 ## v0.4.0 — 13 Sep 2026
 
 ### Features

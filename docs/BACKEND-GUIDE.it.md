@@ -776,6 +776,24 @@ Un esempio di uso: l'importazione di un portafoglio in modalità "sostituisci"
 cancella e ricrea il portafoglio **atomicamente** — se un passaggio fallisce,
 il vecchio portafoglio resta intatto.
 
+### Export/import del portafoglio: versionamento e compatibilità
+
+`GET /portfolios/{id}/export` produce un documento JSON con un campo
+`version` (la versione del formato, attualmente `1`); `POST /portfolios/import`
+lo consuma. Il formato è deliberatamente **additivo**: i campi aggiunti in
+seguito — come i `price_source` e `asset_class` per asset che ora l'export
+scrive — sono opzionali (`omitempty`), quindi i documenti prodotti da versioni
+precedenti dell'app restano validi e recuperabili.
+
+Quando l'importer crea un asset il cui ticker non esiste ancora, ogni
+informazione mancante viene riempita con un default che soddisfa i vincoli del
+database: il nome ripiega sul ticker, il tipo su `stock`, la valuta su `USD`,
+`asset_class` sulla classe di default per il tipo e `price_source` su `yahoo`.
+Un `price_source` sconosciuto nel documento non fa fallire l'importazione:
+anche in questo caso si ripiega su `yahoo`. Un documento con `version` più
+recente di quella supportata dall'importer viene rifiutato con un 400 chiaro
+(`unsupported export version N`) invece di un errore generico.
+
 ---
 
 ## 16. Il ciclo dei dati completo

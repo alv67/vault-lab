@@ -776,6 +776,24 @@ An example use: importing a portfolio in "replace" mode deletes and recreates
 the portfolio **atomically** — if a step fails, the old portfolio remains
 intact.
 
+### Portfolio export/import: versioning and backward compatibility
+
+`GET /portfolios/{id}/export` produces a JSON document with a `version` field
+(the format version, currently `1`); `POST /portfolios/import` consumes it.
+The format is deliberately **additive**: fields added later on — such as the
+per-asset `price_source` and `asset_class` that the export now writes — are
+optional (`omitempty`), so documents produced by older app versions remain
+valid and recoverable.
+
+When the importer creates an asset whose ticker does not exist yet, every
+missing piece is filled with a default that satisfies the database
+constraints: name falls back to the ticker, type to `stock`, currency to
+`USD`, `asset_class` to the default class for the type, and `price_source` to
+`yahoo`. An unknown `price_source` in the document does not fail the import:
+it also falls back to `yahoo`. A document whose `version` is newer than what
+the importer understands is rejected with a clear 400
+(`unsupported export version N`) instead of a generic failure.
+
 ---
 
 ## 16. The complete data flow

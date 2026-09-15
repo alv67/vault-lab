@@ -220,6 +220,12 @@ type Split struct {
 // PortfolioExport is the JSON document produced by portfolio export and
 // consumed by portfolio import. It is designed to be human-readable and
 // editable: assets and transactions are referenced by ticker.
+//
+// Version is the document format version (export currently writes 1). Fields
+// added later on are optional and additive (omitempty): importers must
+// tolerate their absence and apply sensible defaults, so documents written by
+// older app versions keep importing. A document whose Version is newer than
+// what the importer understands is rejected explicitly.
 type PortfolioExport struct {
 	Version      int                 `json:"version"`
 	ExportedAt   time.Time           `json:"exported_at"`
@@ -240,6 +246,11 @@ type ExportAsset struct {
 	Type     AssetType `json:"type"`
 	Currency string    `json:"currency"`
 	ISIN     string    `json:"isin,omitempty"`
+	// PriceSource and AssetClass are additive (version-1-compatible) fields:
+	// they are omitted when empty and fall back to importer defaults when
+	// missing from an older document.
+	PriceSource string `json:"price_source,omitempty"`
+	AssetClass  string `json:"asset_class,omitempty"`
 }
 
 type ExportTransaction struct {
