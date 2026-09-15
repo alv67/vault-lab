@@ -8,6 +8,7 @@
 
 ### Correzioni
 - L'importazione di un portafoglio esportato da una versione precedente dell'app non fallisce più: le informazioni mancanti vengono completate con valori predefiniti sensati
+- I portafogli con sole posizioni chiuse non mostrano più un guadagno/perdita fuorviante del -100%: le posizioni chiuse non entrano nei valori attivi e gli importi non hanno più residui di arrotondamento
 
 ## v0.4.0 — 13 Set 2026
 

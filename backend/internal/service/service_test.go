@@ -2442,6 +2442,109 @@ func TestGetDashboard_ActiveClosedBreakdown(t *testing.T) {
 	}
 }
 
+func TestGetDashboard_ClosedHoldingResidualCostStaysOutOfActive(t *testing.T) {
+	pfUSD := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings: []*model.Holding{
+			// Fully closed position still carrying an AVCO division residue in
+			// its cost basis (2e-16 left across stock splits): with no open
+			// lots the active group must stay at zero, not report -100%.
+			dashboardClosedHolding(pfUSD.String(), uuid.New().String(), "USD",
+				decimal.Zero, decimal.NewFromInt(120), decimal.RequireFromString("0.0000000000000002"),
+				decimal.NewFromInt(1000), decimal.NewFromInt(1200), decimal.NewFromInt(50)),
+		},
+	}
+	fx := &fakeFXRepo{}
+	svc := newDashboardTestService(t, pf, fx, "USD", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := got.Summary
+	if !equalDecimal(s.Active.Invested, decimal.Zero) {
+		t.Fatalf("active.invested = %v, want 0 (a closed position has no open cost basis)", s.Active.Invested)
+	}
+	if !equalDecimal(s.Active.Value, decimal.Zero) || !equalDecimal(s.Active.GainLoss, decimal.Zero) ||
+		!equalDecimal(s.Active.GainLossPct, decimal.Zero) || !equalDecimal(s.Active.Dividends, decimal.Zero) {
+		t.Fatalf("active = %+v, want all zeros", s.Active)
+	}
+	// The residue must not leak anywhere else: the closed group holds only
+	// the sold lots' cost and proceeds (dividends folded into the proceeds).
+	if !equalDecimal(s.Closed.Invested, decimal.NewFromInt(1000)) {
+		t.Fatalf("closed.invested = %v, want 1000", s.Closed.Invested)
+	}
+	if !equalDecimal(s.Closed.Proceeds, decimal.NewFromInt(1250)) {
+		t.Fatalf("closed.proceeds = %v, want 1250", s.Closed.Proceeds)
+	}
+	if !equalDecimal(s.Closed.Realized, decimal.NewFromInt(250)) {
+		t.Fatalf("closed.realized = %v, want 250", s.Closed.Realized)
+	}
+	if s.FXMissingCount != 0 || !equalDecimal(s.FXMissingValue, decimal.Zero) {
+		t.Fatalf("fx missing = (%d, %v), want (0, 0): the skipped cost must not be counted", s.FXMissingCount, s.FXMissingValue)
+	}
+	ps := got.Portfolios[0]
+	if !equalDecimal(ps.Active.Invested, decimal.Zero) || !equalDecimal(ps.Active.GainLoss, decimal.Zero) ||
+		!equalDecimal(ps.Active.GainLossPct, decimal.Zero) {
+		t.Fatalf("portfolio active = %+v, want all zeros", ps.Active)
+	}
+	if !equalDecimal(ps.Closed.Realized, decimal.NewFromInt(250)) {
+		t.Fatalf("portfolio closed.realized = %v, want 250", ps.Closed.Realized)
+	}
+}
+
+func TestGetDashboard_BreakdownAmountsAreRounded(t *testing.T) {
+	pfUSD := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{ID: pfUSD, Currency: "USD"}},
+		holdings: []*model.Holding{
+			// Closed lot whose AVCO cost carries a division residue: the
+			// aggregated figures must come out as clean 2e-8 money.
+			dashboardClosedHolding(pfUSD.String(), uuid.New().String(), "USD",
+				decimal.Zero, decimal.NewFromInt(120), decimal.RequireFromString("0.0000000000000002"),
+				decimal.RequireFromString("21063.5799999999999998"), decimal.RequireFromString("27381.22"), decimal.Zero),
+			// Open position with a residue cost basis and dividends.
+			dashboardClosedHolding(pfUSD.String(), uuid.New().String(), "USD",
+				decimal.NewFromInt(5), decimal.NewFromInt(10), decimal.RequireFromString("1234.5699999999999999"),
+				decimal.Zero, decimal.Zero, decimal.RequireFromString("0.0000000000000005")),
+		},
+	}
+	fx := &fakeFXRepo{}
+	svc := newDashboardTestService(t, pf, fx, "USD", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := got.Summary
+	if !equalDecimal(s.Closed.Invested, decimal.RequireFromString("21063.58")) {
+		t.Fatalf("closed.invested = %v, want 21063.58", s.Closed.Invested)
+	}
+	if !equalDecimal(s.Closed.Proceeds, decimal.RequireFromString("27381.22")) {
+		t.Fatalf("closed.proceeds = %v, want 27381.22", s.Closed.Proceeds)
+	}
+	if !equalDecimal(s.Closed.Realized, decimal.RequireFromString("6317.64")) {
+		t.Fatalf("closed.realized = %v, want 6317.64", s.Closed.Realized)
+	}
+	assertDecimalInDelta(t, s.Closed.RealizedPct, decimal.NewFromInt(30), "0.01", "closed.realized_pct")
+	if !equalDecimal(s.Active.Invested, decimal.RequireFromString("1234.57")) {
+		t.Fatalf("active.invested = %v, want 1234.57", s.Active.Invested)
+	}
+	if !equalDecimal(s.Active.Value, decimal.NewFromInt(50)) || !equalDecimal(s.Active.Dividends, decimal.Zero) {
+		t.Fatalf("active.value/dividends = (%v, %v), want (50, 0)", s.Active.Value, s.Active.Dividends)
+	}
+	if !equalDecimal(s.Active.GainLoss, decimal.RequireFromString("-1184.57")) {
+		t.Fatalf("active.gain_loss = %v, want -1184.57", s.Active.GainLoss)
+	}
+	assertDecimalInDelta(t, s.Active.GainLossPct, decimal.RequireFromString("-95.95"), "0.01", "active.gain_loss_pct")
+	ps := got.Portfolios[0]
+	if !equalDecimal(ps.Active.Invested, decimal.RequireFromString("1234.57")) ||
+		!equalDecimal(ps.Closed.Realized, decimal.RequireFromString("6317.64")) {
+		t.Fatalf("portfolio active.invested/closed.realized = (%v, %v), want (1234.57, 6317.64)", ps.Active.Invested, ps.Closed.Realized)
+	}
+}
+
 func TestGetDashboard_NoPortfoliosReturnsBaseCurrencyWithoutSummary(t *testing.T) {
 	svc := newDashboardTestService(t, &fakePortfolioRepo{}, &fakeFXRepo{}, "EUR", nil)
 

@@ -8,6 +8,7 @@
 
 ### Fixes
 - Importing a portfolio exported by an older version of the app no longer fails: missing information is filled with sensible defaults
+- Portfolios with only closed positions no longer show a misleading -100% gain/loss: closed positions are kept out of the active figures and the amounts no longer carry rounding residues
 
 ## v0.4.0 — 13 Sep 2026
 

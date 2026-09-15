@@ -2377,6 +2377,31 @@ func (s *Service) syncAssetBackground(assetID uuid.UUID) {
 	}()
 }
 
+// roundAmount strips the rounding residues accumulated by AVCO division
+// (shopspring/decimal works at 16 decimal places) from the dashboard amounts.
+func roundAmount(d decimal.Decimal) decimal.Decimal {
+	return d.Round(8)
+}
+
+// finalizeBreakdowns rounds the aggregated active/closed amounts and
+// recomputes the derived fields from the rounded inputs, so residues never
+// surface in the dashboard figures or in their percentages.
+func finalizeBreakdowns(active *model.ActiveBreakdown, closed *model.ClosedBreakdown) {
+	active.Invested = roundAmount(active.Invested)
+	active.Value = roundAmount(active.Value)
+	active.Dividends = roundAmount(active.Dividends)
+	active.GainLoss = roundAmount(active.Value.Sub(active.Invested))
+	if active.Invested.IsPositive() {
+		active.GainLossPct = roundAmount(active.GainLoss.Div(active.Invested).Mul(decimal.NewFromInt(100)))
+	}
+	closed.Invested = roundAmount(closed.Invested)
+	closed.Proceeds = roundAmount(closed.Proceeds)
+	closed.Realized = roundAmount(closed.Proceeds.Sub(closed.Invested))
+	if closed.Invested.IsPositive() {
+		closed.RealizedPct = roundAmount(closed.Realized.Div(closed.Invested).Mul(decimal.NewFromInt(100)))
+	}
+}
+
 // GetDashboard returns the consolidated dashboard for a user: performance
 // grouped by currency, per-portfolio summaries, assets grouped per portfolio
 // and per-portfolio historical series.
@@ -2462,13 +2487,15 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 					summary.FXMissingValue = summary.FXMissingValue.Add(amt)
 				}
 			}
-			addPF(&summary.Active.Invested, h.Cost)
 			addPF(&summary.Closed.Invested, h.ClosedCost)
 			addPF(&summary.Closed.Proceeds, h.Proceeds)
-			// A position still open (even partially sold) keeps its dividends
-			// in the active group; a fully closed one folds them into the
-			// closed proceeds. Sell proceeds always stay in Closed.Proceeds.
+			// Only open lots feed the active group: a fully closed position can
+			// still carry a negligible cost basis left by AVCO division
+			// rounding, which must not inflate active.invested. Dividends
+			// follow the position: still-open ones (even partially sold) stay
+			// in the active group, fully closed ones fold into the proceeds.
 			if h.Qty.IsPositive() {
+				addPF(&summary.Active.Invested, h.Cost)
 				addPF(&summary.Active.Dividends, h.Dividends)
 			} else {
 				addPF(&summary.Closed.Proceeds, h.Dividends)
@@ -2483,14 +2510,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				}
 			}
 		}
-		summary.Active.GainLoss = summary.Active.Value.Sub(summary.Active.Invested)
-		if summary.Active.Invested.IsPositive() {
-			summary.Active.GainLossPct = summary.Active.GainLoss.Div(summary.Active.Invested).Mul(decimal.NewFromInt(100))
-		}
-		summary.Closed.Realized = summary.Closed.Proceeds.Sub(summary.Closed.Invested)
-		if summary.Closed.Invested.IsPositive() {
-			summary.Closed.RealizedPct = summary.Closed.Realized.Div(summary.Closed.Invested).Mul(decimal.NewFromInt(100))
-		}
+		finalizeBreakdowns(&summary.Active, &summary.Closed)
 		dash.Summary = summary
 		for _, cp := range byCurrency {
 			cp.GainLoss = cp.Value.Sub(cp.Invested)
@@ -2560,12 +2580,15 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				AssetCount:    len(assetsByPF[p.ID]),
 			}
 			for _, h := range holdingsByPF[p.ID] {
-				ps.Active.Invested = ps.Active.Invested.Add(h.Cost)
 				ps.Closed.Invested = ps.Closed.Invested.Add(h.ClosedCost)
 				ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Proceeds)
-				// Dividends follow the position: still-open ones stay in the
-				// active group, fully closed ones fold into the proceeds.
+				// Same guard as the vault summary: only open lots feed the
+				// active invested, so the AVCO rounding residue of a closed
+				// position (qty == 0) never inflates it. Dividends follow the
+				// position: still-open ones stay in the active group, fully
+				// closed ones fold into the proceeds.
 				if h.Qty.IsPositive() {
+					ps.Active.Invested = ps.Active.Invested.Add(h.Cost)
 					ps.Active.Dividends = ps.Active.Dividends.Add(h.Dividends)
 				} else {
 					ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Dividends)
@@ -2579,14 +2602,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 					}
 				}
 			}
-			ps.Active.GainLoss = ps.Active.Value.Sub(ps.Active.Invested)
-			if ps.Active.Invested.IsPositive() {
-				ps.Active.GainLossPct = ps.Active.GainLoss.Div(ps.Active.Invested).Mul(decimal.NewFromInt(100))
-			}
-			ps.Closed.Realized = ps.Closed.Proceeds.Sub(ps.Closed.Invested)
-			if ps.Closed.Invested.IsPositive() {
-				ps.Closed.RealizedPct = ps.Closed.Realized.Div(ps.Closed.Invested).Mul(decimal.NewFromInt(100))
-			}
+			finalizeBreakdowns(&ps.Active, &ps.Closed)
 			dash.Portfolios = append(dash.Portfolios, *ps)
 			dash.Assets = append(dash.Assets, model.PortfolioAssets{
 				PortfolioID:   p.ID.String(),
