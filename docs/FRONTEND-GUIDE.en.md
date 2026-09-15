@@ -317,9 +317,9 @@ inline with Svelte 5 **`$derived`** runes. The main ones:
 
 - **Dashboard** (`routes/+page.svelte`): `chartData` merges the per-portfolio
   historical series into a single date-keyed table for `PortfolioLineChart`;
-  `hasMultipleCurrencies` decides whether the per-currency breakdown rows are
-  shown (they are hidden when the base-currency `summary` is present and all
-  portfolios share one currency — EPIC I.1); `glClass` picks the green/red
+  `hasMultipleCurrencies` drives the "Allocation by portfolio" donut (raw
+  values are hidden and a mixed-currency note is shown when portfolios use
+  different currencies — EPIC I.1); `glClass` picks the green/red
   text class for a gain/loss.
 - **Portfolio detail** (`routes/portfolios/[id]/+page.svelte`):
   `classAllocRows` maps the backend class keys to the Italian labels for the
@@ -616,11 +616,6 @@ Called endpoints: `portfolioApi.dashboard()`, then the session
   metadata and show a note when non-equity holdings are excluded.
 - **Allocation by portfolio** donut (`AllocationDonut`), labelled in the base
   currency when available.
-- **Per-currency rows**: one grid of four KPI `StatCard`s per currency in
-  `by_currency`, each group headed by its currency code. Secondary to the
-  Investments card since EPIC I.1: shown only when more than one currency is
-  used (`hasMultipleCurrencies`), or unchanged as the sole KPI block when the
-  backend does not return `summary`.
 - **Portfolios** cards (name, currency, active value + gain/loss colored with
   `pnlColorClass`, asset count) from `portfolios[].active`; since EPIC I.2 a
   compact secondary line adds the per-portfolio closed breakdown ("Closed:

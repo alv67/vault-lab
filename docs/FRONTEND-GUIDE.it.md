@@ -330,10 +330,10 @@ valori derivati inline con le rune **`$derived`** di Svelte 5. I principali:
 
 - **Dashboard** (`routes/+page.svelte`): `chartData` unisce le serie storiche
   dei portafogli in un'unica tabella per data per `PortfolioLineChart`;
-  `hasMultipleCurrencies` decide se mostrare le righe di dettaglio per
-  singola valuta (native quando il `summary` in valuta base è presente e
-  tutti i portafogli condividono la stessa valuta — EPIC I.1); `glClass`
-  sceglie la classe testo verde/rosso per un guadagno o una perdita.
+  `hasMultipleCurrencies` pilota il donut "Allocation by portfolio" (valori
+  grezzi nascosti e nota "valute miste" quando i portafogli usano valute
+  diverse — EPIC I.1); `glClass` sceglie la classe testo verde/rosso per un
+  guadagno o una perdita.
 - **Dettaglio portafoglio** (`routes/portfolios/[id]/+page.svelte`):
   `classAllocRows` mappa le chiavi delle classi del backend sulle etichette
   italiane per il donut; `gainLossClass` / `realizedClass` / `pnlClass`
@@ -638,11 +638,6 @@ sessione + una dashboard fresca.
   mostrano una nota quando ci sono holding non azionarie escluse.
 - Donut **Allocation by portfolio** (`AllocationDonut`), etichettata nella
   valuta base quando disponibile.
-- **Righe per singola valuta**: una griglia con quattro `StatCard` KPI per
-  ogni valuta in `by_currency`, ogni gruppo preceduto dal codice valuta.
-  Secondarie rispetto alla card Investments da EPIC I.1: si mostrano solo
-  quando si usano più valute (`hasMultipleCurrencies`), o — invariate — come
-  unico blocco KPI quando il backend non restituisce `summary`.
 - Card **Portfolios** (nome, valuta, valore attivo + gain/loss colorato con
   `pnlColorClass`, numero di asset) da `portfolios[].active`; da EPIC I.2 una
   seconda riga compatta aggiunge il breakdown closed del singolo portafoglio

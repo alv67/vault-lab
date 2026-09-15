@@ -22,7 +22,6 @@
   import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import Card from '$lib/components/ui/Card.svelte'
   import Button from '$lib/components/ui/Button.svelte'
-  import StatCard from '$lib/components/ui/StatCard.svelte'
   import Table from '$lib/components/ui/Table.svelte'
   import THead from '$lib/components/ui/THead.svelte'
   import TBody from '$lib/components/ui/TBody.svelte'
@@ -142,85 +141,57 @@
     </EmptyState>
   {:else}
     <div class="space-y-6">
-      <div class="space-y-4">
-        {#if dash.summary}
-          <!-- Primary KPIs: consolidated totals in the user's base currency
-               (EPIC I.1), collected into a single "Investments" card with one
-               row per breakdown group (EPIC I.2): Active = lots still held
-               (dividends of open positions kept in their own column), Closed =
-               sold lots (proceeds already fold in the dividends of fully-closed
-               positions, so the Dividends cell is empty). The per-currency loop
-               below stays a secondary breakdown, shown only when portfolios
-               actually differ. -->
-          <Card class="p-4">
-            <h2 class="mb-3 font-semibold">Investments</h2>
-            <div class="overflow-x-auto">
-              <Table aria-label="Investments">
-                <THead>
-                  <Tr>
-                    <Th class="sr-only">Group</Th>
-                    <Th align="right">Invested</Th>
-                    <Th align="right">Value / Proceeds</Th>
-                    <Th align="right">Gain/Loss</Th>
-                    <Th align="right">%</Th>
-                    <Th align="right">Dividends</Th>
-                  </Tr>
-                </THead>
-                <TBody>
-                  <Tr>
-                    <Td class="font-medium">Active</Td>
-                    <Td align="right">{formatCurrency(dash.summary.active.invested, dash.base_currency)}</Td>
-                    <Td align="right">{formatCurrency(dash.summary.active.value, dash.base_currency)}</Td>
-                    <Td align="right" class="font-medium {pnlColorClass(dash.summary.active.gain_loss)}">
-                      {formatCurrency(dash.summary.active.gain_loss, dash.base_currency)}
-                    </Td>
-                    <Td align="right" class={pnlColorClass(dash.summary.active.gain_loss_pct)}>
-                      {formatPercent(dash.summary.active.gain_loss_pct)}
-                    </Td>
-                    <Td align="right">{formatCurrency(dash.summary.active.dividends, dash.base_currency)}</Td>
-                  </Tr>
-                  <Tr>
-                    <Td class="font-medium">Closed</Td>
-                    <Td align="right">{formatCurrency(dash.summary.closed.invested, dash.base_currency)}</Td>
-                    <Td align="right">{formatCurrency(dash.summary.closed.proceeds, dash.base_currency)}</Td>
-                    <Td align="right" class="font-medium {pnlColorClass(dash.summary.closed.realized)}">
-                      {formatCurrency(dash.summary.closed.realized, dash.base_currency)}
-                    </Td>
-                    <Td align="right" class={pnlColorClass(dash.summary.closed.realized_pct)}>
-                      {formatPercent(dash.summary.closed.realized_pct)}
-                    </Td>
-                    <Td align="right" class="text-muted-foreground">—</Td>
-                  </Tr>
-                </TBody>
-              </Table>
-            </div>
-          </Card>
-        {/if}
-        {#if !dash.summary || hasMultipleCurrencies}
-          {#each dash.by_currency as c (c.currency)}
-            <div class="space-y-2">
-              {#if hasMultipleCurrencies}
-                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.currency}</p>
-              {/if}
-              <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <StatCard label="Invested" value={formatCurrency(c.invested, c.currency)} />
-                <StatCard
-                  label="Current Value"
-                  value={formatCurrency(c.value, c.currency)}
-                  valueClass="text-2xl sm:text-3xl"
-                />
-                <StatCard
-                  label="Gain/Loss"
-                  value={formatCurrency(c.gain_loss, c.currency)}
-                  delta={formatPercent(c.gain_loss_pct)}
-                  deltaValue={Number(c.gain_loss_pct)}
-                />
-                <StatCard label="ROI" value={formatPercent(c.gain_loss_pct)} />
-              </div>
-            </div>
-          {/each}
-        {/if}
-      </div>
+      {#if dash.summary}
+        <!-- Primary KPIs: consolidated totals in the user's base currency
+             (EPIC I.1), collected into a single "Investments" card with one
+             row per breakdown group (EPIC I.2): Active = lots still held
+             (dividends of open positions kept in their own column), Closed =
+             sold lots (proceeds already fold in the dividends of fully-closed
+             positions, so the Dividends cell is empty). -->
+        <Card class="p-4">
+          <h2 class="mb-3 font-semibold">Investments</h2>
+          <div class="overflow-x-auto">
+            <Table aria-label="Investments">
+              <THead>
+                <Tr>
+                  <Th class="sr-only">Group</Th>
+                  <Th align="right">Invested</Th>
+                  <Th align="right">Value / Proceeds</Th>
+                  <Th align="right">Gain/Loss</Th>
+                  <Th align="right">%</Th>
+                  <Th align="right">Dividends</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                <Tr>
+                  <Td class="font-medium">Active</Td>
+                  <Td align="right">{formatCurrency(dash.summary.active.invested, dash.base_currency)}</Td>
+                  <Td align="right">{formatCurrency(dash.summary.active.value, dash.base_currency)}</Td>
+                  <Td align="right" class="font-medium {pnlColorClass(dash.summary.active.gain_loss)}">
+                    {formatCurrency(dash.summary.active.gain_loss, dash.base_currency)}
+                  </Td>
+                  <Td align="right" class={pnlColorClass(dash.summary.active.gain_loss_pct)}>
+                    {formatPercent(dash.summary.active.gain_loss_pct)}
+                  </Td>
+                  <Td align="right">{formatCurrency(dash.summary.active.dividends, dash.base_currency)}</Td>
+                </Tr>
+                <Tr>
+                  <Td class="font-medium">Closed</Td>
+                  <Td align="right">{formatCurrency(dash.summary.closed.invested, dash.base_currency)}</Td>
+                  <Td align="right">{formatCurrency(dash.summary.closed.proceeds, dash.base_currency)}</Td>
+                  <Td align="right" class="font-medium {pnlColorClass(dash.summary.closed.realized)}">
+                    {formatCurrency(dash.summary.closed.realized, dash.base_currency)}
+                  </Td>
+                  <Td align="right" class={pnlColorClass(dash.summary.closed.realized_pct)}>
+                    {formatPercent(dash.summary.closed.realized_pct)}
+                  </Td>
+                  <Td align="right" class="text-muted-foreground">—</Td>
+                </Tr>
+              </TBody>
+            </Table>
+          </div>
+        </Card>
+      {/if}
 
       <div class="grid gap-4 lg:grid-cols-2">
         <Card class="p-4">
