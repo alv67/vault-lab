@@ -30,9 +30,9 @@ func (r *userRepo) Create(ctx context.Context, email, name, password string) (*m
 	user := &model.User{}
 	err = r.db.QueryRow(ctx,
 		`INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, role, created_at, updated_at`,
+		 RETURNING id, email, name, role, base_currency, created_at, updated_at`,
 		email, name, string(hash),
-	).Scan(&user.ID, &user.Email, &user.Name, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Name, &user.Role, &user.BaseCurrency, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -42,9 +42,9 @@ func (r *userRepo) Create(ctx context.Context, email, name, password string) (*m
 func (r *userRepo) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, email, name, password_hash, role, created_at, updated_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, password_hash, role, base_currency, created_at, updated_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.Role, &user.BaseCurrency, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -54,9 +54,9 @@ func (r *userRepo) FindByEmail(ctx context.Context, email string) (*model.User, 
 func (r *userRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
 	user := &model.User{}
 	err := r.db.QueryRow(ctx,
-		`SELECT id, email, name, password_hash, role, created_at, updated_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, password_hash, role, base_currency, created_at, updated_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.Role, &user.BaseCurrency, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +65,8 @@ func (r *userRepo) FindByID(ctx context.Context, id uuid.UUID) (*model.User, err
 
 func (r *userRepo) Update(ctx context.Context, user *model.User) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE users SET name = $1, email = $2, updated_at = NOW() WHERE id = $3`,
-		user.Name, user.Email, user.ID,
+		`UPDATE users SET name = $1, email = $2, base_currency = $3, updated_at = NOW() WHERE id = $4`,
+		user.Name, user.Email, user.BaseCurrency, user.ID,
 	)
 	return err
 }

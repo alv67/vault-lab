@@ -37,6 +37,8 @@ export interface User {
   email: string
   name: string
   role: string
+  /** User's base currency for consolidated views (EPIC I.1, default "EUR"). */
+  base_currency: string
   created_at: string
 }
 
@@ -281,15 +283,33 @@ export interface CurrencyPerformance {
   realized: string
 }
 
-export interface PortfolioPerformanceSummary {
-  portfolio_id: string
-  portfolio_name: string
-  currency: string
+/** Roll-up of the open (still held) lot portions (EPIC I.2); `dividends`
+ * are those received on still-open positions. */
+export interface ActiveBreakdown {
   invested: string
   value: string
   gain_loss: string
   gain_loss_pct: string
-  realized_gl: string
+  dividends: string
+}
+
+/** Roll-up of the closed (already sold) lot portions (EPIC I.2): `invested`
+ * is the cost of the sold lots, `proceeds` the net sale proceeds plus the
+ * dividends of fully-closed positions, `realized` = proceeds − invested
+ * (so dividends are already folded into the capital figures). */
+export interface ClosedBreakdown {
+  invested: string
+  proceeds: string
+  realized: string
+  realized_pct: string
+}
+
+export interface PortfolioPerformanceSummary {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
   asset_count: number
   fx_missing: number
 }
@@ -317,11 +337,23 @@ export interface PortfolioAssets {
   assets: AssetPerformance[]
 }
 
-export interface DashboardHistory {
-  portfolio_id: string
-  portfolio_name: string
+/** One month or year bucket of the dashboard performance chart (EPIC I.3):
+ * `period` is "YYYY-MM" (monthly) or "YYYY" (annual), `pnl` the P/L generated
+ * inside the bucket (bars) and `realized` the cumulative realized P/L at the
+ * bucket's last date (line). Buckets come back ascending; empty ones are
+ * omitted. */
+export interface PerformanceBucket {
+  period: string
+  pnl: string
+  realized: string
+}
+
+/** Vault-wide P/L chart across all the user's portfolios, converted to their
+ * base currency and bucketed by month or year. */
+export interface DashboardPerformance {
   currency: string
-  series: PortfolioPerformance[]
+  granularity: 'month' | 'year'
+  buckets: PerformanceBucket[]
 }
 
 export interface PositionPoint {
@@ -381,11 +413,29 @@ export interface PortfolioExportDocument {
   }[]
 }
 
+/** Aggregated dashboard totals converted into the user's base currency
+ * (EPIC I.1), split into the nested `active`/`closed` breakdowns of
+ * EPIC I.2. Decimal fields are JSON strings, like the rest of the API. */
+export interface DashboardSummary {
+  currency: string
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
+  /** Number of holdings whose FX rate was missing in the conversion. */
+  fx_missing_count: number
+  /** Value of those holdings (decimal string), i.e. what the count refers to. */
+  fx_missing_value: string
+}
+
 export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
   assets: PortfolioAssets[]
-  history: DashboardHistory[]
+  /** User's base currency: the consolidated `summary` (and the separate
+   * `/dashboard/performance` endpoint) are expressed in it. The old `history`
+   * series was removed in EPIC I.3, superseded by `dashboardPerformance`. */
+  base_currency: string
+  /** Consolidated totals in `base_currency`; absent on older backends. */
+  summary?: DashboardSummary
 }
 
 export interface FetchIssue {
@@ -535,7 +585,9 @@ export const authApi = {
   register: (email: string, name: string, password: string) =>
     request<User>('/auth/register', { method: 'POST', body: { email, name, password } }),
   me: () => request<User>('/users/me'),
-  updateProfile: (data: { name: string; email: string }) =>
+  // `base_currency` is sent only when provided (JSON.stringify drops the
+  // undefined key): the backend keeps the existing value when omitted.
+  updateProfile: (data: { name: string; email: string; base_currency?: string }) =>
     request<User>('/users/me', { method: 'PATCH', body: data }),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<void>('/users/me/password', { method: 'POST', body: data }),
@@ -558,6 +610,10 @@ export const portfolioApi = {
   sectorAllocation: (id: string) =>
     request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
   dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
+  // EPIC I.3: vault-wide P/L buckets in the user's base currency, monthly or
+  // yearly (`period` = "YYYY-MM" / "YYYY", ascending, empty buckets omitted).
+  dashboardPerformance: (granularity: 'month' | 'year') =>
+    request<DashboardPerformance>('/dashboard/performance', { params: { granularity } }),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),

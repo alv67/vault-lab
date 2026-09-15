@@ -44,6 +44,10 @@ export interface ChartSemanticColors {
   splitMarkLine: string
   /** Grey of the aggregated "Other" slice in the donut charts. */
   other: string
+  /** Positive P/L bars (PerformanceChart); mirrors `--positive`. */
+  positive: string
+  /** Negative P/L bars (PerformanceChart); mirrors `--negative`. */
+  negative: string
 }
 
 export const CHART_SEMANTIC_COLORS: Record<ResolvedTheme, ChartSemanticColors> = {
@@ -53,6 +57,8 @@ export const CHART_SEMANTIC_COLORS: Record<ResolvedTheme, ChartSemanticColors> =
     realized: '#f59e0b',
     splitMarkLine: '#7c3aed',
     other: CHART_MUTED.light,
+    positive: '#16a34a',
+    negative: '#dc2626',
   },
   dark: {
     costBasis: '#94a3b8',
@@ -60,6 +66,8 @@ export const CHART_SEMANTIC_COLORS: Record<ResolvedTheme, ChartSemanticColors> =
     realized: '#fbbf24',
     splitMarkLine: '#a78bfa',
     other: CHART_MUTED.dark,
+    positive: '#4ade80',
+    negative: '#f87171',
   },
 }
 

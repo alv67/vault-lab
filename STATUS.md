@@ -474,6 +474,61 @@ Branch unico `feat/D-design-system`, 5 commit:
 - E.2 (#19) — Dettaglio portafoglio: `AssetCombobox`, `TransactionTable`, `AddTransactionModal` (form + validazione inline + totale live + delete con ConfirmDialog). KPI con `StatCard`, posizioni con `PositionTable` condiviso (con colonna Price), azioni in header sticky; refetch post-mutation (E.9) preservato.
 - E.4 (#21) — Settings divisa in tab via subroute (`/settings` Profile, `/settings/password`, `/settings/currencies`, `/settings/health`) con `SettingsTabs`; cambio password con validazione inline e mappatura errori `401`/`400` sui campi. Sweep a11y/numerico: `ui/Th` con `scope="col"`, tabelle assets/health/valute con primitive `ui/Table`, `aria-label` sui bottoni icona, `tabular-nums`/allineamento a destra sui numeri.
 
+### I.1 — Valuta base utente + aggregazione FX (branch `feat/I.1-base-currency`)
+Enabler di EPIC I (sblocca I.2–I.5). La dashboard e le sue viste aggregate esprimono i
+totali nella **valuta base dell'utente** (default `EUR`).
+- **Backend**:
+  - Migrazione `000018_users_base_currency`: colonna `users.base_currency` (default `EUR`).
+  - `model.User`/`repository/user.go`: `base_currency` in SELECT/RETURNING/Update.
+  - `UpdateProfile` accetta `base_currency` (opzionale, validata contro la whitelist
+    `supported_currencies` enabled via `EnabledByCodes`; vuota = mantiene il valore).
+  - `PATCH /users/me` accetta il campo `base_currency` (400 se non è una valuta abilitata).
+  - `GET /dashboard` risponde ora `base_currency` + `summary` aggregato in valuta base
+    (`invested`/`value`/`gain_loss`/`gain_loss_pct`/`realized`/`fx_missing_count`/
+    `fx_missing_value`); le serie `history` sono convertite per-data in valuta base
+    (`series.LoadDateRates` + `dateRates.Factor`, punti senza FX scartati). `by_currency`,
+    `portfolios`, `assets` restano invariati (serviranno a I.2/I.5).
+  - `GET /dashboard/allocation` ora esprime geo/settori nella valuta base (prima USD).
+  - `series.LoadRates` esteso (variadic `extra ...string`) per includere le valute dei
+    portafogli oltre a quelle degli asset + base + USD.
+  - FX mancante gestito esplicitamente (escluso dai totali + conteggiato), coerente con
+    `GetPortfolioSummary` (EPIC A).
+- **Frontend**:
+  - `api.ts`: `User.base_currency`, `Dashboard.base_currency`/`summary` (`DashboardSummary`),
+    `authApi.updateProfile` con `base_currency?`.
+  - `auth.svelte.ts`: `updateProfile(name, email, baseCurrency?)`.
+  - Settings → Profile: `CurrencySelect` "Base currency" (popolata da
+    `settingsApi.listCurrencies()`), salvata con `PATCH /users/me`.
+  - Dashboard: KPI primari in valuta base (`summary`), ripartizione per-valuta mostrata
+    solo quando ci sono più valute; donut "Allocation by portfolio" in valuta base.
+- **Verifica**: Go build/vet/test green (7 nuovi test service: `UpdateProfile` base currency,
+  `GetDashboard` summary multi-valuta + FX mancante + conversione history, `GetDashboardAllocation`
+  in valuta base); `svelte-check`/eslint clean.
+
+### I.2 — Dashboard attivo vs chiuso (branch `feat/I.1-base-currency`)
+Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investimento
+**attive** da quelle **chiuse**, in valuta base a livello vault.
+- **Backend**:
+  - `position.State`: aggiunti i cumulati dei lotti chiusi `ClosedCost`/`ClosedCostCCY`
+    (costo AVCO dei venduto), `Proceeds`/`ProceedsCCY` (incasso netto) e
+    `Dividends`/`DividendsCCY`; `TxSell` e `TxDividend` li accumulano senza toccare la
+    logica `Realized` esistente.
+  - `model.Holding`: propagati i sei campi da `HoldingsDetailed`.
+  - `model`: nuovi `ActiveBreakdown` (`invested`/`value`/`gain_loss`/`gain_loss_pct`) e
+    `ClosedBreakdown` (`invested`/`proceeds`/`realized` = proceeds − invested, `dividends`
+    separate dal capitale). `DashboardSummary` e `PortfolioPerformanceSummary` sostituiscono
+    i campi flat I.1 con gli oggetti annidati `active`/`closed` (breaking per la UI, frontend
+    da adeguare); `by_currency` e `assets` invariati.
+  - `GetDashboard`: granularità per porzione di lotto (quantità vendute → chiuso, quantità
+    residue → attivo); conversione per-importo con gli stessi criteri FX-missing di I.1
+    (importo non convertibile escluso dai totali e contato in `fx_missing_count`/
+    `fx_missing_value`, solo importi nonnulli).
+- **Verifica**: Go build/vet/test green; nuovo `position_test.go` (venduto totale/parziale,
+  dividendi separati, `Walk`) + test service `TestGetDashboard_ActiveClosedBreakdown` e
+  `TestGetDashboard_SummaryInBaseCurrency` aggiornati alla forma annidata.
+- **Documentazione**: `docs/BACKEND-GUIDE.en/it.md` (cap. 7/8, paragrafo valuta base) e
+  `docs/RELEASE-NOTES.en/it.md`.
+
 ## Fase 3 — Pianificata
 
 - Multi-tenancy familiare (portfolio_shares)

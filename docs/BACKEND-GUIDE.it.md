@@ -199,12 +199,12 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000016`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000018`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
-| `users` | gli utenti | email, nome, hash della password, ruolo |
+| `users` | gli utenti | email, nome, hash della password, ruolo, valuta base (`base_currency`, default EUR) |
 | `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, fonte prezzi, valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
@@ -236,8 +236,7 @@ Due idee fondamentali del database:
 ## 7. Una richiesta tipica: la dashboard
 
 Prendiamo `GET /api/v1/dashboard`, l'endpoint più ricco: serve alla pagina
-principale per mostrare tutti i portafogli, i titoli, i guadagni e la serie
-storica.
+principale per mostrare tutti i portafogli, i titoli e i guadagni.
 
 Cosa succede, passo passo:
 
@@ -247,13 +246,59 @@ Cosa succede, passo passo:
    i dati dell'utente vengono messi "nel contesto" della richiesta.
 3. **Handler**: estrae i dati dell'utente, chiama il service, e invia la
    risposta JSON.
-4. **Service `GetDashboard`**: orchestrazione — carica i portafogli
-   dell'utente, le posizioni dettagliate (con il prezzo medio di carico,
-   capitolo 8), i tassi di cambio per le valute coinvolte, e le serie
-   giornaliere salvate nel database.
+4. **Service `GetDashboard`**: orchestrazione — carica l'utente (e la sua
+   **valuta base**, vedi capitolo 10), i portafogli dell'utente, le posizioni
+   dettagliate (con il prezzo medio di carico, capitolo 8) e i tassi di cambio
+   per le valute coinvolte. La risposta espone `base_currency` e un
+   riepilogo `summary` convertito nella valuta base; `by_currency`,
+   `portfolios` e `assets` restano espressi nella propria valuta. Il
+   `summary` e ogni voce di `portfolios` dividono i numeri negli oggetti
+   annidati `active` e `closed` (EPIC I.2, vedi capitolo 8): `active` riporta
+   `invested`, `value`, `gain_loss` e `gain_loss_pct` dei lotti ancora in
+   possesso più i `dividends` delle posizioni ancora aperte (anche se
+   parzialmente vendute); le posizioni aperte di asset che non hanno alcun
+   prezzo sono escluse da `invested` e `value` (il loro costo non ha un
+   valore di mercato con cui confrontarlo, e contarlo simulerebbe una
+    perdita del -100%), mentre i loro dividendi contano comunque. `closed`
+    riporta `invested` (costo AVCO dei lotti venduti), `proceeds` (incasso
+    netto di vendita più i dividendi
+    conferiti dalle posizioni completamente chiuse), `realized` (proceeds −
+    invested) e `realized_pct` (realized / invested × 100).
 5. **Repository**: esegue le query SQL, per esempio la query che carica i
    portafogli con un `LEFT JOIN` sulla tabella di condivisione (in modo da
    essere già pronta per un futuro supporto alla condivisione).
+
+### Il grafico aggregato del P/L (`GET /dashboard/performance`, EPIC I.3)
+
+`GET /api/v1/dashboard/performance?granularity=month|year` restituisce un
+unico grafico per l'intero vault (tutti i portafogli aggregati, convertiti
+nella valuta base dell'utente) invece di una serie per portafoglio.
+`granularity` è `month` di default; qualunque altro valore viene rifiutato
+con 400. La risposta è `{currency, granularity, buckets[]}`, dove ogni bucket
+ha `period` (`YYYY-MM` per i mesi, `YYYY` per gli anni), `pnl` e `realized`:
+
+- la **barra** (`pnl`) è il P/L *generato all'interno del bucket*: il P/L
+  totale all'ultima data del bucket meno il P/L totale all'ultima data del
+  bucket precedente (base 0 per il primo bucket), dove il P/L totale di una
+  data è `market_value − cost_basis + realized`;
+- la **linea** (`realized`) è il P/L realizzato cumulativo all'ultima data
+  del bucket.
+
+I punti giornalieri arrivano dalle serie materializzate per singolo asset,
+`asset_series` (via `Series.FindPortfolio`), nella valuta del portafoglio, e
+vengono convertiti nella valuta base per data attraverso lo storico FX con
+pivot USD: finché il tasso per un asset manca, i suoi ultimi valori
+convertiti vengono ripetuti in avanti (zero prima della prima conversione
+riuscita). Le posizioni di asset senza alcuna riga di prezzo (per esempio un
+ETF obbligazionario con `price_source = none`) vengono riconosciute tramite
+il flag prezzo delle posizioni e non contribuiscono mai con market value né
+cost basis ai totali giornalieri — altrimenti una posizione senza prezzo
+simulerebbe una perdita totale nel mese in cui è acquistata — mentre il loro
+realized (dividendi e incassi di vendita) conta sempre. Le componenti
+vengono poi aggregate tra portafogli e asset per data, le date si ordinano
+in senso crescente, si prende l'ultima data di ogni mese/anno e si emettono
+i bucket in ordine crescente — i bucket senza dati vengono semplicemente
+omessi.
 
 Nel codice Go il pattern tipico per leggere più righe è:
 
@@ -291,14 +336,23 @@ type State struct {
     Avg      decimal.Decimal  // prezzo medio di carico
     Cost     decimal.Decimal  // totale investito
     Realized decimal.Decimal  // plus/minusvalenza già realizzata
+
+    ClosedCost decimal.Decimal // costo AVCO dei lotti venduti
+    Proceeds   decimal.Decimal // incasso netto di vendita
+    Dividends  decimal.Decimal // dividendi incassati
 }
 ```
 
 > Cos'è `struct`? In Go una `struct` è un contenitore che raggruppa più valori
 > con un nome: è come una "scheda" con più caselle. Qui la scheda "stato della
-> posizione" ha quattro caselle: quantità, prezzo medio, costo totale e
-> guadagno/perdita realizzata. `decimal.Decimal` è il tipo dei numeri (numeri
-> con virgola precisi, adatti al denaro, senza errori di arrotondamento).
+> posizione" ha le caselle dei lotti aperti (quantità, prezzo medio, costo
+> totale, guadagno/perdita realizzata) più le metriche cumulative dei lotti
+> chiusi e delle distribuzioni (costo dei venduti, incasso netto, dividendi)
+> che alimentano il riepilogo attivo/chiuso della dashboard (EPIC I.2). Ogni
+> campo cumulativo ha
+> anche un gemello `*CCY` espresso nella valuta del titolo. `decimal.Decimal`
+> è il tipo dei numeri (numeri con virgola precisi, adatti al denaro, senza
+> errori di arrotondamento).
 
 L'idea è semplice: le operazioni non modificano i dati alla rinfusa, ma
 aggiornano la scheda in modo ordinato, operazione dopo operazione.
@@ -309,12 +363,19 @@ aggiornano la scheda in modo ordinato, operazione dopo operazione.
   poi ricalcoli il prezzo medio: `Avg = Cost / nuovaQuantità`.
 - **Sell (venduto)**: il costo della parte venduta è `Avg × quantità`. Lo
   sottrai dal costo totale; la differenza tra quello e l'incasso diventa
-  `Realized` (guadagno o perdita già "incassato").
+  `Realized` (guadagno o perdita già "incassato"). Il costo dei lotti venduti
+  e l'incasso netto si accumulano anche in `ClosedCost` e `Proceeds`, così
+  una posizione parzialmente venduta tiene separata la parte chiusa dai lotti
+  ancora aperti.
 - **Split**: la quantità viene moltiplicata per il rapporto (es. 1 diventa 4),
   ma il prezzo medio viene **diviso** per lo stesso rapporto: il costo totale
   non cambia.
 - **Fee (commissione)**: si somma al costo.
-- **Dividend (dividendo)**: si somma a `Realized`.
+- **Dividend (dividendo)**: si somma a `Realized` e, separatamente, a
+  `Dividends` (la dashboard poi classifica i dividendi secondo lo stato della
+  posizione: quelli di una posizione ancora aperta, anche se parzialmente
+  venduta, entrano nel gruppo `active`, quelli di una posizione completamente
+  chiusa si sommano ai `proceeds` del gruppo `closed`).
 
 ### `Walk`
 
@@ -383,6 +444,27 @@ confrontare i valori serve convertire.
 
 Se un tasso manca, la conversione non è disponibile e l'applicazione lo segnala
 (nel modello compare il campo `fx_missing`).
+
+**La valuta base (EPIC I.1).** Ogni utente ha una valuta preferita salvata in
+`users.base_currency` (default EUR) e modificabile via `PATCH /users/me` con
+il campo `base_currency` (un valore omesso/vuoto mantiene quello salvato; un
+valore non vuoto deve essere una valuta abilitata della whitelist, capitolo
+11, altrimenti la richiesta è rifiutata con 400). Tutte le aggregazioni a
+livello di vault della dashboard sono convertite in essa: `GET /dashboard`
+restituisce `base_currency`, un riepilogo `summary` nella valuta base — gli
+oggetti annidati `active` (investito, valore, guadagno/perdita dei lotti
+ancora detenuti, più i dividendi delle posizioni aperte; le posizioni aperte
+senza prezzo restano fuori da investito/valore, vedi capitolo 7) e `closed`
+(invested = costo AVCO dei lotti venduti, proceeds = incasso di vendita +
+dividendi delle posizioni completamente chiuse, realized = proceeds −
+invested, realized_pct) — dove gli importi senza
+tasso disponibile sono esclusi dai totali e riportati da
+`fx_missing_count`/`fx_missing_value` (solo gli importi nonnulli vengono
+segnalati); `GET /dashboard/performance` aggrega lo stesso P/L del vault per
+bucket mensili o annuali nella valuta base (capitolo 7); anche
+`GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
+USD). Le sezioni per-valuta (`by_currency`) e per-portafoglio (`portfolios`,
+`assets`) della dashboard mantengono la propria valuta.
 
 ---
 
@@ -728,6 +810,24 @@ Un esempio di uso: l'importazione di un portafoglio in modalità "sostituisci"
 cancella e ricrea il portafoglio **atomicamente** — se un passaggio fallisce,
 il vecchio portafoglio resta intatto.
 
+### Export/import del portafoglio: versionamento e compatibilità
+
+`GET /portfolios/{id}/export` produce un documento JSON con un campo
+`version` (la versione del formato, attualmente `1`); `POST /portfolios/import`
+lo consuma. Il formato è deliberatamente **additivo**: i campi aggiunti in
+seguito — come i `price_source` e `asset_class` per asset che ora l'export
+scrive — sono opzionali (`omitempty`), quindi i documenti prodotti da versioni
+precedenti dell'app restano validi e recuperabili.
+
+Quando l'importer crea un asset il cui ticker non esiste ancora, ogni
+informazione mancante viene riempita con un default che soddisfa i vincoli del
+database: il nome ripiega sul ticker, il tipo su `stock`, la valuta su `USD`,
+`asset_class` sulla classe di default per il tipo e `price_source` su `yahoo`.
+Un `price_source` sconosciuto nel documento non fa fallire l'importazione:
+anche in questo caso si ripiega su `yahoo`. Un documento con `version` più
+recente di quella supportata dall'importer viene rifiutato con un 400 chiaro
+(`unsupported export version N`) invece di un errore generico.
+
 ---
 
 ## 16. Il ciclo dei dati completo
@@ -746,7 +846,13 @@ L'amministratore aggiunge una valuta ──► POST /settings/currencies
                             → verifica conversione su Yahoo → whitelist
 
 L'utente apre la dashboard ──► GET /dashboard:
-    posizioni (AVCO) + tassi di cambio + serie dal database → JSON al frontend
+    posizioni (AVCO) + tassi di cambio
+    → summary convertito nella valuta base dell'utente → JSON al frontend
+
+L'utente guarda il grafico del P/L ──► GET /dashboard/performance?granularity=month|year:
+    punti giornalieri per asset dalle serie materializzate + FX per data
+    (gli asset senza prezzo contribuiscono solo con il realized)
+    → bucket di P/L mensili/annuali nella valuta base → JSON al frontend
 
 L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     range di quota + storico prezzi dal database → JSON al frontend
@@ -791,7 +897,7 @@ backend/
 │   ├── repository/         # query SQL (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # serie giornaliere materializzate (Recompute, LoadRates, FxFactor)
 │   └── service/            # logica di business (service.go)
-├── migrations/             # SQL versionato (000001..000016)
+├── migrations/             # SQL versionato (000001..000018)
 └── go.mod
 ```
 

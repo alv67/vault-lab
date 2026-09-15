@@ -211,6 +211,12 @@ func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uui
 			h.CostCCY = st.CostCCY
 			h.Realized = st.Realized
 			h.RealizedCCY = st.RealizedCCY
+			h.ClosedCost = st.ClosedCost
+			h.ClosedCostCCY = st.ClosedCostCCY
+			h.Proceeds = st.Proceeds
+			h.ProceedsCCY = st.ProceedsCCY
+			h.Dividends = st.Dividends
+			h.DividendsCCY = st.DividendsCCY
 			h.AvgCost = st.Avg
 		}
 	}

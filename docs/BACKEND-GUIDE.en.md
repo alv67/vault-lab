@@ -207,11 +207,11 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 ## 6. The database
 
 The migrations (`backend/migrations/`, files numbered from `000001` to
-`000016`) build the schema. The main tables:
+`000018`) build the schema. The main tables:
 
 | Table | Contains | Explanation |
 |---|---|---|
-| `users` | the users | email, name, password hash, role |
+| `users` | the users | email, name, password hash, role, base currency (`base_currency`, default EUR) |
 | `assets` | the securities | ticker, name, type (stock, ETF, crypto...), investment class, price source, currency, exchange, sector, industry |
 | `portfolios` | the portfolios | a portfolio belongs to a user and has a currency |
 | `portfolio_shares` | the sharing | who else can see a portfolio (and with what role) |
@@ -242,7 +242,7 @@ Two fundamental ideas about the database:
 ## 7. A typical request: the dashboard
 
 Let's take `GET /api/v1/dashboard`, the richest endpoint: it serves the main
-page by showing all portfolios, securities, gains and the historical series.
+page by showing all portfolios, securities and gains.
 
 What happens, step by step:
 
@@ -252,13 +252,57 @@ What happens, step by step:
    user's data is placed "in the context" of the request.
 3. **Handler**: extracts the user's data, calls the service, and sends the
    JSON response.
-4. **Service `GetDashboard`**: orchestration — it loads the user's portfolios,
-   the detailed holdings (with the average cost, chapter 8), the exchange
-   rates for the currencies involved, and the daily series saved in the
-   database.
+4. **Service `GetDashboard`**: orchestration — it loads the user (and their
+   **base currency**, see chapter 10), the user's portfolios, the detailed
+   holdings (with the average cost, chapter 8) and the exchange rates for the
+   currencies involved. The response carries `base_currency` and a `summary`
+   roll-up converted into the base currency; `by_currency`, `portfolios` and
+   `assets` stay expressed in their own currency. The `summary` and each
+   `portfolios` entry split the numbers into nested `active` and `closed`
+     objects (EPIC I.2, see chapter 8): `active` reports `invested`, `value`,
+     `gain_loss` and `gain_loss_pct` of the lots still held plus the
+     `dividends` of the positions that are still open (even if partially
+     sold); open positions of assets that have no price at all are excluded
+     from `invested` and `value` (their cost has no market value to be
+     compared with, and counting it would fake a -100% loss), while their
+     dividends still count. `closed` reports `invested` (AVCO cost of the
+     sold lots),
+    `proceeds` (net sale proceeds plus the dividends folded in by the fully
+    closed positions), `realized` (proceeds − invested) and `realized_pct`
+    (realized / invested × 100).
 5. **Repository**: runs the SQL queries, for example the query that loads the
    portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
    for future sharing support).
+
+### The aggregate P/L chart (`GET /dashboard/performance`, EPIC I.3)
+
+`GET /api/v1/dashboard/performance?granularity=month|year` returns one chart
+for the whole vault (all portfolios aggregated, converted to the user's base
+currency) instead of one series per portfolio. `granularity` defaults to
+`month`; any other value is rejected with 400. The response is
+`{currency, granularity, buckets[]}`, where each bucket carries `period`
+(`YYYY-MM` for months, `YYYY` for years), `pnl` and `realized`:
+
+- the **bar** (`pnl`) is the P/L *generated inside the bucket*: the total P/L
+  at the bucket's last date minus the total P/L at the previous bucket's last
+  date (baseline 0 for the first bucket), where the total P/L of a date is
+  `market_value − cost_basis + realized`;
+- the **line** (`realized`) is the cumulative realized P/L at the bucket's
+  last date.
+
+The daily points come from the materialized per-asset series `asset_series`
+(via `Series.FindPortfolio`) in the portfolio currency and are converted to
+the base currency per date through the USD-pivoted FX history: while an
+asset's rate is missing, its last converted values are forward-filled (zero
+before the first successful conversion). Positions of assets without any
+price row (e.g. a bond ETF with `price_source = none`) are recognized
+through the holdings' price flag and never contribute market value or cost
+basis to the daily totals — an unpriced position would otherwise fake a
+total loss in the month it is bought — while their realized (dividends and
+sale proceeds) always counts. The components are then aggregated across
+portfolios and assets per date, the dates are sorted ascending, the last
+date of each month/year is taken and the buckets are emitted in
+ascending order — buckets with no data are simply omitted.
 
 The typical Go pattern for reading multiple rows is:
 
@@ -296,14 +340,23 @@ type State struct {
     Avg      decimal.Decimal  // average cost
     Cost     decimal.Decimal  // total invested
     Realized decimal.Decimal  // realized gain/loss
+
+    ClosedCost decimal.Decimal // AVCO cost of the sold lots
+    Proceeds   decimal.Decimal // net sale proceeds
+    Dividends  decimal.Decimal // dividends received
 }
 ```
 
 > What is a `struct`? In Go a `struct` is a container that groups several
 > named values together: it is like a "card" with several fields. Here the
-> "position state" card has four fields: quantity, average cost, total cost
-> and realized gain/loss. `decimal.Decimal` is the type of the numbers
-> (precise decimal numbers, suitable for money, with no rounding errors).
+> "position state" card has the open-lot fields (quantity, average cost,
+> total cost, realized gain/loss) plus the cumulative metrics of the sold
+> lots and of the distributions (cost of sold lots, net proceeds, dividends)
+> that feed the active/closed dashboard breakdown (EPIC I.2). Each cumulative
+> field also has a
+> `*CCY` twin expressed in the asset currency. `decimal.Decimal` is the type
+> of the numbers (precise decimal numbers, suitable for money, with no
+> rounding errors).
 
 The idea is simple: operations don't modify data randomly, they update the
 card in an orderly way, operation after operation.
@@ -314,12 +367,18 @@ card in an orderly way, operation after operation.
   average cost: `Avg = Cost / newQuantity`.
 - **Sell**: the cost of the sold part is `Avg × quantity`. You subtract it
   from the total cost; the difference between that and the proceeds becomes
-  `Realized` (the gain or loss already "banked").
+  `Realized` (the gain or loss already "banked"). The sold-lot cost and the
+  net proceeds are also accumulated into `ClosedCost` and `Proceeds`, so a
+  partially sold position keeps the closed portion separate from the still
+  open lots.
 - **Split**: the quantity is multiplied by the ratio (e.g. 1 becomes 4), but
   the average cost is **divided** by the same ratio: the total cost does not
   change.
 - **Fee**: added to the cost.
-- **Dividend**: added to `Realized`.
+- **Dividend**: added to `Realized` and, separately, to `Dividends` (the
+  dashboard then classifies them by the position state: dividends of a still
+  open position — even partially sold — join the `active` group, while those
+  of a fully closed one are folded into the `closed` proceeds).
 
 ### `Walk`
 
@@ -387,6 +446,26 @@ values, you need to convert.
 
 If a rate is missing, the conversion is not available and the application
 signals it (the model shows the `fx_missing` field).
+
+**The base currency (EPIC I.1).** Every user has a preferred currency stored
+in `users.base_currency` (default EUR) and editable via `PATCH /users/me`
+with the `base_currency` field (an omitted/empty value keeps the stored one;
+a non-empty value must be an enabled currency from the whitelist, chapter 11,
+otherwise the request is rejected with 400). All vault-wide dashboard
+aggregations are converted into it: `GET /dashboard` returns `base_currency`,
+a `summary` roll-up in the base currency — nested `active` (invested, value,
+gain/loss of the lots still held, plus the dividends of the open positions;
+unpriced open positions stay out of invested/value, see chapter 7) and
+`closed` (invested = AVCO cost of the sold lots, proceeds = sale proceeds
++ dividends of the fully closed positions, realized = proceeds − invested,
+realized_pct) — where
+amounts whose rate is missing are excluded from the totals and reported by
+`fx_missing_count`/`fx_missing_value` (only non-zero amounts are flagged);
+`GET /dashboard/performance` buckets the same vault-wide P/L by month or year
+in the base currency (chapter 7);
+`GET /dashboard/allocation` is expressed in the base currency too (it used to
+be fixed USD). The per-currency (`by_currency`) and per-portfolio
+(`portfolios`, `assets`) sections of the dashboard keep their own currency.
 
 ---
 
@@ -730,6 +809,24 @@ An example use: importing a portfolio in "replace" mode deletes and recreates
 the portfolio **atomically** — if a step fails, the old portfolio remains
 intact.
 
+### Portfolio export/import: versioning and backward compatibility
+
+`GET /portfolios/{id}/export` produces a JSON document with a `version` field
+(the format version, currently `1`); `POST /portfolios/import` consumes it.
+The format is deliberately **additive**: fields added later on — such as the
+per-asset `price_source` and `asset_class` that the export now writes — are
+optional (`omitempty`), so documents produced by older app versions remain
+valid and recoverable.
+
+When the importer creates an asset whose ticker does not exist yet, every
+missing piece is filled with a default that satisfies the database
+constraints: name falls back to the ticker, type to `stock`, currency to
+`USD`, `asset_class` to the default class for the type, and `price_source` to
+`yahoo`. An unknown `price_source` in the document does not fail the import:
+it also falls back to `yahoo`. A document whose `version` is newer than what
+the importer understands is rejected with a clear 400
+(`unsupported export version N`) instead of a generic failure.
+
 ---
 
 ## 16. The complete data flow
@@ -748,7 +845,13 @@ The administrator adds a currency ──► POST /settings/currencies
                                 → verifies conversion on Yahoo → whitelist
 
 The user opens the dashboard ──► GET /dashboard:
-    holdings (AVCO) + exchange rates + series from the database → JSON to the frontend
+    holdings (AVCO) + exchange rates
+    → summary converted into the user's base currency → JSON to the frontend
+
+The user views the P/L chart ──► GET /dashboard/performance?granularity=month|year:
+    daily per-asset points from the materialized series + per-date FX
+    (assets with no price contribute only their realized)
+    → monthly/yearly P/L buckets in the base currency → JSON to the frontend
 
 The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     quote ranges + price history from the database → JSON to the frontend
@@ -793,7 +896,7 @@ backend/
 │   ├── repository/         # SQL queries (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # materialized daily series (Recompute, LoadRates, FxFactor)
 │   └── service/            # business logic (service.go)
-├── migrations/             # versioned SQL (000001..000016)
+├── migrations/             # versioned SQL (000001..000018)
 └── go.mod
 ```
 

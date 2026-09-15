@@ -1,5 +1,16 @@
 # Release Notes
 
+## Unreleased
+
+### Nuove funzionalità
+- Scegli la tua valuta base in Impostazioni → Profilo: la dashboard ora consolida totali e allocazioni in quella valuta
+- La dashboard ora separa investimenti attivi e chiusi, a livello di vault e per singolo portafoglio: per la parte chiusa vedi il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata sul capitale; le righe dei dividendi compaiono insieme agli investimenti attivi e, una volta chiusa completamente una posizione, confluiscono nell'incasso
+- Nuovo grafico del P/L aggregato nella dashboard: un unico grafico per tutti i tuoi portafogli, nella tua valuta base, con barre del P/L generato in ogni mese o anno e una linea del P/L realizzato cumulativo, con selettore mensile/annuale. Gli asset senza prezzo di mercato non compaiono mai come falsa perdita: contano solo i loro redditi realizzati (dividendi e incassi di vendita)
+
+### Correzioni
+- L'importazione di un portafoglio esportato da una versione precedente dell'app non fallisce più: le informazioni mancanti vengono completate con valori predefiniti sensati
+- I portafogli con sole posizioni chiuse non mostrano più un guadagno/perdita fuorviante del -100%: le posizioni chiuse non entrano nei valori attivi e gli importi non hanno più residui di arrotondamento
+
 ## v0.4.0 — 13 Set 2026
 
 ### Nuove funzionalità

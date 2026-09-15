@@ -11,17 +11,25 @@
     pricesApi,
     type Dashboard,
     type DashboardAllocation,
+    type DashboardPerformance,
     type PortfolioAssets,
+    type PortfolioPerformanceSummary,
   } from '$lib/services/api'
   import { toast } from '$lib/stores/toast.svelte'
-  import PortfolioLineChart from '$lib/components/PortfolioLineChart.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
+  import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
   import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import Card from '$lib/components/ui/Card.svelte'
   import Button from '$lib/components/ui/Button.svelte'
-  import StatCard from '$lib/components/ui/StatCard.svelte'
+  import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
+  import Table from '$lib/components/ui/Table.svelte'
+  import THead from '$lib/components/ui/THead.svelte'
+  import TBody from '$lib/components/ui/TBody.svelte'
+  import Tr from '$lib/components/ui/Tr.svelte'
+  import Th from '$lib/components/ui/Th.svelte'
+  import Td from '$lib/components/ui/Td.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
   import { formatCurrency, formatPercent } from '$lib/format'
@@ -34,6 +42,47 @@
   let lastUpdate = $state('')
   let expanded = new SvelteSet<string>()
   let initialized = false
+
+  // Performance card (EPIC I.3): vault-wide P/L buckets in the base currency,
+  // monthly by default, switchable to annual. Isolated like the allocation
+  // card: a failed fetch just renders the chart's empty state.
+  let perf = $state<DashboardPerformance | null>(null)
+  let perfLoading = $state(true)
+  let granularity = $state<'month' | 'year'>('month')
+  const perfItems = [
+    { value: 'month', label: 'Monthly' },
+    { value: 'year', label: 'Annual' },
+  ]
+
+  // SegmentedControl binds a plain string; the accessors keep the union type.
+  function getGranularity(): string {
+    return granularity
+  }
+  function setGranularity(value: string): void {
+    if (value === 'month' || value === 'year') granularity = value
+  }
+
+  // Monotonic request id: when the toggle is flipped quickly, only the last
+  // issued request may write the state.
+  let perfReq = 0
+  async function loadPerformance(g: 'month' | 'year'): Promise<void> {
+    const req = ++perfReq
+    perfLoading = true
+    try {
+      const res = await portfolioApi.dashboardPerformance(g)
+      if (req === perfReq) perf = res
+    } catch {
+      if (req === perfReq) perf = null
+    } finally {
+      if (req === perfReq) perfLoading = false
+    }
+  }
+
+  // Runs once on mount with the default granularity and refetches whenever
+  // the Monthly/Annual toggle changes.
+  $effect(() => {
+    void loadPerformance(granularity)
+  })
 
   onMount(async () => {
     try {
@@ -64,7 +113,12 @@
           }
           return portfolioApi.dashboard()
         })
-        .then((fresh) => { dash = fresh })
+        .then((fresh) => {
+          dash = fresh
+          // The POST above cleared the GET cache and new prices can move the
+          // P/L buckets: refresh the Performance card too.
+          void loadPerformance(granularity)
+        })
         .catch(() => { /* keep current data, omit the "Prices updated" line */ })
     }
 
@@ -86,8 +140,15 @@
   const hasMultipleCurrencies = $derived((dash?.by_currency?.length ?? 0) > 1)
   const pricesUpdatedLabel = $derived(lastUpdate ? new Date(lastUpdate).toLocaleString() : '')
   const portfolioSlices = $derived(
-    (dash?.portfolios ?? []).map((p) => ({ name: p.portfolio_name, value: Number(p.value) })),
+    (dash?.portfolios ?? []).map((p) => ({ name: p.portfolio_name, value: Number(p.active.value) })),
   )
+
+  // The compact per-card closed line is dropped when the portfolio never sold
+  // a lot. Closed dividends are now folded into `proceeds` by the backend, so
+  // they no longer drive the visibility on their own.
+  function hasClosedActivity(p: PortfolioPerformanceSummary): boolean {
+    return Number(p.closed.invested) !== 0
+  }
 
   // value/realized come from the *_pf fields, consolidated in the portfolio
   // currency, so the table stays currency-consistent across FX assets.
@@ -128,38 +189,78 @@
     </EmptyState>
   {:else}
     <div class="space-y-6">
-      <div class="space-y-4">
-        {#each dash.by_currency as c (c.currency)}
-          <div class="space-y-2">
-            {#if hasMultipleCurrencies}
-              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.currency}</p>
-            {/if}
-            <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <StatCard label="Invested" value={formatCurrency(c.invested, c.currency)} />
-              <StatCard
-                label="Current Value"
-                value={formatCurrency(c.value, c.currency)}
-                valueClass="text-2xl sm:text-3xl"
-              />
-              <StatCard
-                label="Gain/Loss"
-                value={formatCurrency(c.gain_loss, c.currency)}
-                delta={formatPercent(c.gain_loss_pct)}
-                deltaValue={Number(c.gain_loss_pct)}
-              />
-              <StatCard label="ROI" value={formatPercent(c.gain_loss_pct)} />
-            </div>
+      {#if dash.summary}
+        <!-- Primary KPIs: consolidated totals in the user's base currency
+             (EPIC I.1), collected into a single "Investments" card with one
+             row per breakdown group (EPIC I.2): Active = lots still held
+             (dividends of open positions kept in their own column), Closed =
+             sold lots (proceeds already fold in the dividends of fully-closed
+             positions, so the Dividends cell is empty). -->
+        <Card class="p-4">
+          <h2 class="mb-3 font-semibold">Investments</h2>
+          <div class="overflow-x-auto">
+            <Table aria-label="Investments">
+              <THead>
+                <Tr>
+                  <Th class="sr-only">Group</Th>
+                  <Th align="right">Invested</Th>
+                  <Th align="right">Value / Proceeds</Th>
+                  <Th align="right">Gain/Loss</Th>
+                  <Th align="right">%</Th>
+                  <Th align="right">Dividends</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                <Tr>
+                  <Td class="font-medium">Active</Td>
+                  <Td align="right">{formatCurrency(dash.summary.active.invested, dash.base_currency)}</Td>
+                  <Td align="right">{formatCurrency(dash.summary.active.value, dash.base_currency)}</Td>
+                  <Td align="right" class="font-medium {pnlColorClass(dash.summary.active.gain_loss)}">
+                    {formatCurrency(dash.summary.active.gain_loss, dash.base_currency)}
+                  </Td>
+                  <Td align="right" class={pnlColorClass(dash.summary.active.gain_loss_pct)}>
+                    {formatPercent(dash.summary.active.gain_loss_pct)}
+                  </Td>
+                  <Td align="right">{formatCurrency(dash.summary.active.dividends, dash.base_currency)}</Td>
+                </Tr>
+                <Tr>
+                  <Td class="font-medium">Closed</Td>
+                  <Td align="right">{formatCurrency(dash.summary.closed.invested, dash.base_currency)}</Td>
+                  <Td align="right">{formatCurrency(dash.summary.closed.proceeds, dash.base_currency)}</Td>
+                  <Td align="right" class="font-medium {pnlColorClass(dash.summary.closed.realized)}">
+                    {formatCurrency(dash.summary.closed.realized, dash.base_currency)}
+                  </Td>
+                  <Td align="right" class={pnlColorClass(dash.summary.closed.realized_pct)}>
+                    {formatPercent(dash.summary.closed.realized_pct)}
+                  </Td>
+                  <Td align="right" class="text-muted-foreground">—</Td>
+                </Tr>
+              </TBody>
+            </Table>
           </div>
-        {/each}
-      </div>
+        </Card>
+      {/if}
 
       <div class="grid gap-4 lg:grid-cols-2">
         <Card class="p-4">
-          <h2 class="mb-4 font-semibold">Portfolio History</h2>
-          {#if dash.history?.some((h) => h.series?.length)}
-            <PortfolioLineChart histories={dash.history} />
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 class="font-semibold">Performance</h2>
+            <SegmentedControl
+              items={perfItems}
+              bind:value={getGranularity, setGranularity}
+              ariaLabel="Performance granularity"
+            />
+          </div>
+          {#if perfLoading}
+            <div class="flex h-[340px] items-center justify-center text-muted-foreground">
+              <Spinner />
+            </div>
           {:else}
-            <p class="text-sm text-muted-foreground">No price history yet</p>
+            <PerformanceChart
+              buckets={perf?.buckets ?? []}
+              currency={perf?.currency || dash.base_currency || 'USD'}
+              granularity={granularity}
+            />
           {/if}
         </Card>
 
@@ -168,7 +269,7 @@
           <AllocationDonut
             data={portfolioSlices}
             title="Allocation by portfolio"
-            currency={dash.by_currency[0]?.currency ?? 'USD'}
+            currency={dash.base_currency || dash.by_currency[0]?.currency || 'USD'}
             showValue={!hasMultipleCurrencies}
           />
           {#if hasMultipleCurrencies}
@@ -189,15 +290,24 @@
                   <span class="truncate font-semibold">{p.portfolio_name}</span>
                   <span class="shrink-0 text-xs text-muted-foreground">{p.currency}</span>
                 </div>
-                <p class="mt-2 text-lg font-bold tabular-nums">{formatCurrency(p.value, p.currency)}</p>
+                <p class="mt-2 text-lg font-bold tabular-nums">{formatCurrency(p.active.value, p.currency)}</p>
                 <div class="mt-1 flex items-center justify-between text-sm">
-                  <span class="font-medium tabular-nums {pnlColorClass(p.gain_loss)}">
-                    {formatCurrency(p.gain_loss, p.currency)}
+                  <span class="font-medium tabular-nums {pnlColorClass(p.active.gain_loss)}">
+                    {formatCurrency(p.active.gain_loss, p.currency)}
                   </span>
-                  <span class="font-medium tabular-nums {pnlColorClass(p.gain_loss_pct)}">
-                    {formatPercent(p.gain_loss_pct)}
+                  <span class="font-medium tabular-nums {pnlColorClass(p.active.gain_loss_pct)}">
+                    {formatPercent(p.active.gain_loss_pct)}
                   </span>
                 </div>
+                {#if hasClosedActivity(p)}
+                  <p class="mt-2 text-xs tabular-nums text-muted-foreground">
+                    Closed: {formatCurrency(p.closed.invested, p.currency)} ·
+                    {formatCurrency(p.closed.proceeds, p.currency)} ·
+                    <span class="font-medium {pnlColorClass(p.closed.realized)}">
+                      {formatCurrency(p.closed.realized, p.currency)}
+                    </span>
+                  </p>
+                {/if}
                 <p class="mt-2 text-xs text-muted-foreground">{p.asset_count} assets</p>
               </a>
             </Card>
@@ -229,7 +339,7 @@
             <span class="ml-1 text-xs text-muted-foreground">({pa.currency})</span>
             <span class="ml-auto text-sm text-muted-foreground tabular-nums">
               {formatCurrency(
-                dash.portfolios.find((p) => p.portfolio_id === pa.portfolio_id)?.value ?? 0,
+                dash.portfolios.find((p) => p.portfolio_id === pa.portfolio_id)?.active.value ?? 0,
                 pa.currency,
               )}
             </span>
