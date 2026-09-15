@@ -283,15 +283,33 @@ export interface CurrencyPerformance {
   realized: string
 }
 
-export interface PortfolioPerformanceSummary {
-  portfolio_id: string
-  portfolio_name: string
-  currency: string
+/** Roll-up of the open (still held) lot portions (EPIC I.2); `dividends`
+ * are those received on still-open positions. */
+export interface ActiveBreakdown {
   invested: string
   value: string
   gain_loss: string
   gain_loss_pct: string
-  realized_gl: string
+  dividends: string
+}
+
+/** Roll-up of the closed (already sold) lot portions (EPIC I.2): `invested`
+ * is the cost of the sold lots, `proceeds` the net sale proceeds plus the
+ * dividends of fully-closed positions, `realized` = proceeds − invested
+ * (so dividends are already folded into the capital figures). */
+export interface ClosedBreakdown {
+  invested: string
+  proceeds: string
+  realized: string
+  realized_pct: string
+}
+
+export interface PortfolioPerformanceSummary {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
   asset_count: number
   fx_missing: number
 }
@@ -384,14 +402,12 @@ export interface PortfolioExportDocument {
 }
 
 /** Aggregated dashboard totals converted into the user's base currency
- * (EPIC I.1). Decimal fields are JSON strings, like the rest of the API. */
+ * (EPIC I.1), split into the nested `active`/`closed` breakdowns of
+ * EPIC I.2. Decimal fields are JSON strings, like the rest of the API. */
 export interface DashboardSummary {
   currency: string
-  invested: string
-  value: string
-  gain_loss: string
-  gain_loss_pct: string
-  realized: string
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
   /** Number of holdings whose FX rate was missing in the conversion. */
   fx_missing_count: number
   /** Value of those holdings (decimal string), i.e. what the count refers to. */

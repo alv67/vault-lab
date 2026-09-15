@@ -505,6 +505,30 @@ totali nella **valuta base dell'utente** (default `EUR`).
   `GetDashboard` summary multi-valuta + FX mancante + conversione history, `GetDashboardAllocation`
   in valuta base); `svelte-check`/eslint clean.
 
+### I.2 — Dashboard attivo vs chiuso (branch `feat/I.1-base-currency`)
+Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investimento
+**attive** da quelle **chiuse**, in valuta base a livello vault.
+- **Backend**:
+  - `position.State`: aggiunti i cumulati dei lotti chiusi `ClosedCost`/`ClosedCostCCY`
+    (costo AVCO dei venduto), `Proceeds`/`ProceedsCCY` (incasso netto) e
+    `Dividends`/`DividendsCCY`; `TxSell` e `TxDividend` li accumulano senza toccare la
+    logica `Realized` esistente.
+  - `model.Holding`: propagati i sei campi da `HoldingsDetailed`.
+  - `model`: nuovi `ActiveBreakdown` (`invested`/`value`/`gain_loss`/`gain_loss_pct`) e
+    `ClosedBreakdown` (`invested`/`proceeds`/`realized` = proceeds − invested, `dividends`
+    separate dal capitale). `DashboardSummary` e `PortfolioPerformanceSummary` sostituiscono
+    i campi flat I.1 con gli oggetti annidati `active`/`closed` (breaking per la UI, frontend
+    da adeguare); `by_currency` e `assets` invariati.
+  - `GetDashboard`: granularità per porzione di lotto (quantità vendute → chiuso, quantità
+    residue → attivo); conversione per-importo con gli stessi criteri FX-missing di I.1
+    (importo non convertibile escluso dai totali e contato in `fx_missing_count`/
+    `fx_missing_value`, solo importi nonnulli).
+- **Verifica**: Go build/vet/test green; nuovo `position_test.go` (venduto totale/parziale,
+  dividendi separati, `Walk`) + test service `TestGetDashboard_ActiveClosedBreakdown` e
+  `TestGetDashboard_SummaryInBaseCurrency` aggiornati alla forma annidata.
+- **Documentazione**: `docs/BACKEND-GUIDE.en/it.md` (cap. 7/8, paragrafo valuta base) e
+  `docs/RELEASE-NOTES.en/it.md`.
+
 ## Fase 3 — Pianificata
 
 - Multi-tenancy familiare (portfolio_shares)

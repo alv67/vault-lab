@@ -251,10 +251,18 @@ Cosa succede, passo passo:
    **valuta base**, vedi capitolo 10), i portafogli dell'utente, le posizioni
    dettagliate (con il prezzo medio di carico, capitolo 8), i tassi di cambio
    per le valute coinvolte, e le serie giornaliere salvate nel database. La
-   risposta espone `base_currency`, un riepilogo `summary` convertito nella
-   valuta base e la serie `history` convertita giorno per giorno (i punti
-   senza tasso disponibile vengono scartati); `by_currency`, `portfolios` e
-   `assets` restano espressi nella propria valuta.
+    risposta espone `base_currency`, un riepilogo `summary` convertito nella
+    valuta base e la serie `history` convertita giorno per giorno (i punti
+    senza tasso disponibile vengono scartati); `by_currency`, `portfolios` e
+    `assets` restano espressi nella propria valuta. Il `summary` e ogni voce
+    di `portfolios` dividono i numeri negli oggetti annidati `active` e
+    `closed` (EPIC I.2, vedi capitolo 8): `active` riporta `invested`,
+    `value`, `gain_loss` e `gain_loss_pct` dei lotti ancora in possesso più i
+    `dividends` delle posizioni ancora aperte (anche se parzialmente vendute),
+    mentre `closed` riporta `invested` (costo AVCO dei lotti venduti),
+    `proceeds` (incasso netto di vendita più i dividendi conferiti dalle
+    posizioni completamente chiuse), `realized` (proceeds − invested) e
+    `realized_pct` (realized / invested × 100).
 5. **Repository**: esegue le query SQL, per esempio la query che carica i
    portafogli con un `LEFT JOIN` sulla tabella di condivisione (in modo da
    essere già pronta per un futuro supporto alla condivisione).
@@ -295,14 +303,23 @@ type State struct {
     Avg      decimal.Decimal  // prezzo medio di carico
     Cost     decimal.Decimal  // totale investito
     Realized decimal.Decimal  // plus/minusvalenza già realizzata
+
+    ClosedCost decimal.Decimal // costo AVCO dei lotti venduti
+    Proceeds   decimal.Decimal // incasso netto di vendita
+    Dividends  decimal.Decimal // dividendi incassati
 }
 ```
 
 > Cos'è `struct`? In Go una `struct` è un contenitore che raggruppa più valori
 > con un nome: è come una "scheda" con più caselle. Qui la scheda "stato della
-> posizione" ha quattro caselle: quantità, prezzo medio, costo totale e
-> guadagno/perdita realizzata. `decimal.Decimal` è il tipo dei numeri (numeri
-> con virgola precisi, adatti al denaro, senza errori di arrotondamento).
+> posizione" ha le caselle dei lotti aperti (quantità, prezzo medio, costo
+> totale, guadagno/perdita realizzata) più le metriche cumulative dei lotti
+> chiusi e delle distribuzioni (costo dei venduti, incasso netto, dividendi)
+> che alimentano il riepilogo attivo/chiuso della dashboard (EPIC I.2). Ogni
+> campo cumulativo ha
+> anche un gemello `*CCY` espresso nella valuta del titolo. `decimal.Decimal`
+> è il tipo dei numeri (numeri con virgola precisi, adatti al denaro, senza
+> errori di arrotondamento).
 
 L'idea è semplice: le operazioni non modificano i dati alla rinfusa, ma
 aggiornano la scheda in modo ordinato, operazione dopo operazione.
@@ -313,12 +330,19 @@ aggiornano la scheda in modo ordinato, operazione dopo operazione.
   poi ricalcoli il prezzo medio: `Avg = Cost / nuovaQuantità`.
 - **Sell (venduto)**: il costo della parte venduta è `Avg × quantità`. Lo
   sottrai dal costo totale; la differenza tra quello e l'incasso diventa
-  `Realized` (guadagno o perdita già "incassato").
+  `Realized` (guadagno o perdita già "incassato"). Il costo dei lotti venduti
+  e l'incasso netto si accumulano anche in `ClosedCost` e `Proceeds`, così
+  una posizione parzialmente venduta tiene separata la parte chiusa dai lotti
+  ancora aperti.
 - **Split**: la quantità viene moltiplicata per il rapporto (es. 1 diventa 4),
   ma il prezzo medio viene **diviso** per lo stesso rapporto: il costo totale
   non cambia.
 - **Fee (commissione)**: si somma al costo.
-- **Dividend (dividendo)**: si somma a `Realized`.
+- **Dividend (dividendo)**: si somma a `Realized` e, separatamente, a
+  `Dividends` (la dashboard poi classifica i dividendi secondo lo stato della
+  posizione: quelli di una posizione ancora aperta, anche se parzialmente
+  venduta, entrano nel gruppo `active`, quelli di una posizione completamente
+  chiusa si sommano ai `proceeds` del gruppo `closed`).
 
 ### `Walk`
 
@@ -394,11 +418,16 @@ il campo `base_currency` (un valore omesso/vuoto mantiene quello salvato; un
 valore non vuoto deve essere una valuta abilitata della whitelist, capitolo
 11, altrimenti la richiesta è rifiutata con 400). Tutte le aggregazioni a
 livello di vault della dashboard sono convertite in essa: `GET /dashboard`
-restituisce `base_currency`, un riepilogo `summary` (investito, valore,
-realizzato, guadagno/perdita nella valuta base — gli importi senza tasso
-disponibile sono esclusi dai totali e riportati da
-`fx_missing_count`/`fx_missing_value`) e le serie `history` convertite giorno
-per giorno (i punti senza tasso disponibile vengono scartati); anche
+restituisce `base_currency`, un riepilogo `summary` nella valuta base — gli
+oggetti annidati `active` (investito, valore, guadagno/perdita dei lotti
+ancora detenuti, più i dividendi delle posizioni aperte) e `closed`
+(invested = costo AVCO dei lotti venduti, proceeds = incasso di vendita +
+dividendi delle posizioni completamente chiuse, realized = proceeds −
+invested, realized_pct) — dove gli importi senza
+tasso disponibile sono esclusi dai totali e riportati da
+`fx_missing_count`/`fx_missing_value` (solo gli importi nonnulli vengono
+segnalati) — e le serie `history` convertite giorno per
+giorno (i punti senza tasso disponibile vengono scartati); anche
 `GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
 USD). Le sezioni per-valuta (`by_currency`) e per-portafoglio (`portfolios`,
 `assets`) della dashboard mantengono la propria valuta.

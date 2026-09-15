@@ -270,14 +270,20 @@ verified against the backend routes (`backend/cmd/server/main.go`).
 
 The types exported alongside (`User`, `Portfolio`, `Asset`, `Transaction`,
 `PortfolioSummary`, `AssetHolding`, `Dashboard`, `DashboardSummary`,
-`RefreshReport`, `AssetQuote`,
+`ActiveBreakdown`, `ClosedBreakdown`, `RefreshReport`, `AssetQuote`,
 `AssetExposure`, `PortfolioHistory`, `AssetPositionSeries`,
 `PortfolioExportDocument`, ...) mirror the backend models. Note that monetary
 values arrive as **strings** (e.g. `"1234.56"`) to avoid floating-point
 rounding errors; the pages convert them with `Number()` where needed. Since
 EPIC I.1 `User` carries the `base_currency` preference (`"EUR"` by default)
 and `Dashboard` gains `base_currency` plus the optional `summary`
-(`DashboardSummary`) with the consolidated totals in that currency.
+(`DashboardSummary`) with the consolidated totals in that currency. Since
+EPIC I.2 the summary and each `portfolios` entry (`PortfolioPerformanceSummary`)
+split those totals into the nested `active` (`ActiveBreakdown`: invested,
+value, gain/loss, gain/loss % and dividends of the lots still held) and
+`closed` (`ClosedBreakdown`: invested = cost of the sold lots, proceeds = net
+sale proceeds + dividends of fully-closed positions, realized = proceeds −
+invested, realized %) objects — the flat fields are gone.
 
 > **Note**: `portfolioApi` exposes the geography and sector allocation methods
 > (`geographyAllocation(id)`, `sectorAllocation(id)` — served by the backend
@@ -585,11 +591,20 @@ through the dashboard.
 Called endpoints: `portfolioApi.dashboard()`, then the session
 `pricesApi.refresh()` + a fresh dashboard.
 
-- **Summary KPI cards** (EPIC I.1): when the response carries `summary`, the
-  four hero cards at the top (Invested / Current Value / Gain/Loss with the
-  percentage delta / ROI) show the consolidated totals converted into the
-  user's **base currency** (`base_currency` from the payload, formatted with
-  `formatCurrency`).
+- **Investments card** (EPIC I.1, active/closed split since EPIC I.2): when
+  the response carries `summary`, the top block shows the consolidated totals
+  converted into the user's **base currency** (`base_currency` from the
+  payload) as a single `Card` titled **Investments** containing one table with
+  a shared header and one row per breakdown group: **Active** (Invested /
+  Value / Gain/Loss + % / Dividends, from `summary.active` — the dividends of
+  still-open positions) and **Closed** (Invested / Proceeds / Realized + %,
+  from `summary.closed` — the dividends of fully-closed positions are already
+  folded into `proceeds` by the backend, so the Dividends cell shows an
+  em-dash). Amounts go through `formatCurrency`, percentages through
+  `formatPercent`; every signed P/L cell (gain/loss, realized and the two %
+  columns) is colored with `pnlColorClass`. The table reuses the
+  `Table`/`Th`/`Td` primitives with right-aligned, `tabular-nums` numeric
+  columns.
 - **Portfolio History** card: `PortfolioLineChart` (one line per portfolio,
   every series expressed in the base currency since EPIC I.1).
 - **Allocazione complessiva** card: `GeographyChart` + `SectorChart` side by
@@ -601,13 +616,18 @@ Called endpoints: `portfolioApi.dashboard()`, then the session
   metadata and show a note when non-equity holdings are excluded.
 - **Allocation by portfolio** donut (`AllocationDonut`), labelled in the base
   currency when available.
-- **Per-currency rows**: one grid of the same four KPI cards per currency in
+- **Per-currency rows**: one grid of four KPI `StatCard`s per currency in
   `by_currency`, each group headed by its currency code. Secondary to the
-  summary since EPIC I.1: shown only when more than one currency is used
-  (`hasMultipleCurrencies`), or unchanged as the sole KPI block when the
+  Investments card since EPIC I.1: shown only when more than one currency is
+  used (`hasMultipleCurrencies`), or unchanged as the sole KPI block when the
   backend does not return `summary`.
-- **Portfolios** table (name, currency, assets, invested, value, realized,
-  gain/loss, return).
+- **Portfolios** cards (name, currency, active value + gain/loss colored with
+  `pnlColorClass`, asset count) from `portfolios[].active`; since EPIC I.2 a
+  compact secondary line adds the per-portfolio closed breakdown ("Closed:
+  invested · proceeds · realized", the proceeds already including the
+  dividends of fully-closed positions), rendered only when the portfolio
+  actually sold lots (`hasClosedActivity`, i.e. `closed.invested ≠ 0`) and
+  muted with the realized value colored via `pnlColorClass`.
 - Expandable per-portfolio sections with the asset table (ticker link to
   `/assets/{id}`, quantity, invested, value, gain/loss, realized, ROI — with
   a "cambio mancante" badge when the FX rate is missing).

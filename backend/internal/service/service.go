@@ -2427,28 +2427,45 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			// FX-missing semantics of GetPortfolioSummary: an amount whose
 			// rate is missing is skipped from the totals, counted in
 			// FXMissingCount and added raw to FXMissingValue (currencies of
-			// skipped amounts may differ, so the flag count is what matters).
+			// skipped amounts may differ, so the flag count is what matters;
+			// zero amounts are not counted).
 			pfFactor, pfOK := series.FxFactor(rates, p.Currency, baseCurrency)
-			if pfOK {
-				summary.Invested = summary.Invested.Add(h.Cost.Mul(pfFactor))
-				summary.Realized = summary.Realized.Add(h.Realized.Mul(pfFactor))
+			addPF := func(dst *decimal.Decimal, amt decimal.Decimal) {
+				if pfOK {
+					*dst = dst.Add(amt.Mul(pfFactor))
+				} else if !amt.IsZero() {
+					summary.FXMissingCount++
+					summary.FXMissingValue = summary.FXMissingValue.Add(amt)
+				}
+			}
+			addPF(&summary.Active.Invested, h.Cost)
+			addPF(&summary.Closed.Invested, h.ClosedCost)
+			addPF(&summary.Closed.Proceeds, h.Proceeds)
+			// A position still open (even partially sold) keeps its dividends
+			// in the active group; a fully closed one folds them into the
+			// closed proceeds. Sell proceeds always stay in Closed.Proceeds.
+			if h.Qty.IsPositive() {
+				addPF(&summary.Active.Dividends, h.Dividends)
 			} else {
-				summary.FXMissingCount += 2
-				summary.FXMissingValue = summary.FXMissingValue.Add(h.Cost).Add(h.Realized)
+				addPF(&summary.Closed.Proceeds, h.Dividends)
 			}
 			if h.HasPrice && h.Qty.IsPositive() {
 				value := h.Qty.Mul(h.LastClose)
 				if factor, ok := series.FxFactor(rates, h.Currency, baseCurrency); ok {
-					summary.Value = summary.Value.Add(value.Mul(factor))
+					summary.Active.Value = summary.Active.Value.Add(value.Mul(factor))
 				} else {
 					summary.FXMissingCount++
 					summary.FXMissingValue = summary.FXMissingValue.Add(value)
 				}
 			}
 		}
-		summary.GainLoss = summary.Value.Sub(summary.Invested)
-		if summary.Invested.IsPositive() {
-			summary.GainLossPct = summary.GainLoss.Div(summary.Invested).Mul(decimal.NewFromInt(100))
+		summary.Active.GainLoss = summary.Active.Value.Sub(summary.Active.Invested)
+		if summary.Active.Invested.IsPositive() {
+			summary.Active.GainLossPct = summary.Active.GainLoss.Div(summary.Active.Invested).Mul(decimal.NewFromInt(100))
+		}
+		summary.Closed.Realized = summary.Closed.Proceeds.Sub(summary.Closed.Invested)
+		if summary.Closed.Invested.IsPositive() {
+			summary.Closed.RealizedPct = summary.Closed.Realized.Div(summary.Closed.Invested).Mul(decimal.NewFromInt(100))
 		}
 		dash.Summary = summary
 		for _, cp := range byCurrency {
@@ -2460,9 +2477,11 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		}
 
 		assetsByPF := map[uuid.UUID][]model.AssetPerformance{}
+		holdingsByPF := map[uuid.UUID][]*model.Holding{}
 		for _, h := range holdings {
 			pfID := mustUUID(h.PortfolioID)
 			p := byID[pfID]
+			holdingsByPF[pfID] = append(holdingsByPF[pfID], h)
 			ap := model.AssetPerformance{
 				AssetID:    h.AssetID,
 				Ticker:     h.Ticker,
@@ -2516,17 +2535,33 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				Currency:      p.Currency,
 				AssetCount:    len(assetsByPF[p.ID]),
 			}
-			for _, ap := range assetsByPF[p.ID] {
-				ps.Invested = ps.Invested.Add(ap.Invested)
-				ps.Value = ps.Value.Add(ap.ValuePF)
-				ps.RealizedGL = ps.RealizedGL.Add(ap.RealizedPF)
-				if ap.FXMissing {
-					ps.FXMissing++
+			for _, h := range holdingsByPF[p.ID] {
+				ps.Active.Invested = ps.Active.Invested.Add(h.Cost)
+				ps.Closed.Invested = ps.Closed.Invested.Add(h.ClosedCost)
+				ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Proceeds)
+				// Dividends follow the position: still-open ones stay in the
+				// active group, fully closed ones fold into the proceeds.
+				if h.Qty.IsPositive() {
+					ps.Active.Dividends = ps.Active.Dividends.Add(h.Dividends)
+				} else {
+					ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Dividends)
+				}
+				if h.HasPrice && h.Qty.IsPositive() {
+					value := h.Qty.Mul(h.LastClose)
+					if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+						ps.Active.Value = ps.Active.Value.Add(value.Mul(factor))
+					} else {
+						ps.FXMissing++
+					}
 				}
 			}
-			ps.GainLoss = ps.Value.Sub(ps.Invested)
-			if ps.Invested.IsPositive() {
-				ps.GainLossPct = ps.GainLoss.Div(ps.Invested).Mul(decimal.NewFromInt(100))
+			ps.Active.GainLoss = ps.Active.Value.Sub(ps.Active.Invested)
+			if ps.Active.Invested.IsPositive() {
+				ps.Active.GainLossPct = ps.Active.GainLoss.Div(ps.Active.Invested).Mul(decimal.NewFromInt(100))
+			}
+			ps.Closed.Realized = ps.Closed.Proceeds.Sub(ps.Closed.Invested)
+			if ps.Closed.Invested.IsPositive() {
+				ps.Closed.RealizedPct = ps.Closed.Realized.Div(ps.Closed.Invested).Mul(decimal.NewFromInt(100))
 			}
 			dash.Portfolios = append(dash.Portfolios, *ps)
 			dash.Assets = append(dash.Assets, model.PortfolioAssets{

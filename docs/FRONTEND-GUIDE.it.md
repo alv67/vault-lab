@@ -282,14 +282,21 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 
 I tipi esportati accanto (`User`, `Portfolio`, `Asset`, `Transaction`,
 `PortfolioSummary`, `AssetHolding`, `Dashboard`, `DashboardSummary`,
-`RefreshReport`, `AssetQuote`,
+`ActiveBreakdown`, `ClosedBreakdown`, `RefreshReport`, `AssetQuote`,
 `AssetExposure`, `PortfolioHistory`, `AssetPositionSeries`,
 `PortfolioExportDocument`, ...) rispecchiano i modelli del backend. Nota: i
 valori monetari arrivano come **stringhe** (es. `"1234.56"`) per evitare errori
 di arrotondamento in virgola mobile; le pagine li convertono con `Number()`
 dove serve. Da EPIC I.1 `User` porta la preferenza `base_currency` (default
 `"EUR"`) e `Dashboard` aggiunge `base_currency` più l'eventuale `summary`
-(`DashboardSummary`) con i totali consolidati in quella valuta.
+(`DashboardSummary`) con i totali consolidati in quella valuta. Da EPIC I.2
+il summary e ogni voce di `portfolios` (`PortfolioPerformanceSummary`)
+scompongono i totali nei due oggetti annidati `active` (`ActiveBreakdown`:
+investito, valore, gain/loss, gain/loss % e dividendi dei soli lotti ancora
+detenuti) e `closed` (`ClosedBreakdown`: investito = costo dei lotti venduti,
+ricavi = ricavi netti di vendita + dividendi delle posizioni completamente
+chiuse, realizzato = ricavi − investito, realizzato %) — i campi piatti sono
+spariti.
 
 > **Nota**: `portfolioApi` espone i metodi di allocazione geografica e
 > settoriale (`geographyAllocation(id)`, `sectorAllocation(id)` — serviti dal
@@ -606,11 +613,20 @@ passare dalla dashboard.
 Endpoint chiamati: `portfolioApi.dashboard()`, poi il `pricesApi.refresh()` di
 sessione + una dashboard fresca.
 
-- **Card KPI di riepilogo** (EPIC I.1): quando la risposta porta `summary`, le
-  quattro card in cima (Investito / Valore attuale / Gain/Loss con delta
-  percentuale / ROI) mostrano i totali consolidati convertiti nella **valuta
-  base** dell'utente (`base_currency` del payload, formattata con
-  `formatCurrency`).
+- **Card Investments** (EPIC I.1, split active/closed da EPIC I.2): quando la
+  risposta porta `summary`, il blocco in cima mostra i totali consolidati
+  convertiti nella **valuta base** dell'utente (`base_currency` del payload)
+  in un'unica `Card` intitolata **Investments** che contiene una tabella con
+  header condiviso e una riga per gruppo di breakdown: **Active** (Investito /
+  Valore / Gain/Loss + % / Dividendi, da `summary.active` — i dividendi delle
+  posizioni ancora aperte) e **Closed** (Investito / Ricavi / Realizzato + %,
+  da `summary.closed` — i dividendi delle posizioni completamente chiuse sono
+  già ricompresi nei `proceeds` dal backend, quindi la cella Dividendi mostra
+  un trattino lungo). Gli importi passano da `formatCurrency`, le percentuali
+  da `formatPercent`; ogni cella P/L firmata (gain/loss, realizzato e le due
+  colonne %) è colorata con `pnlColorClass`. La tabella riusa le primitive
+  `Table`/`Th`/`Td` con colonne numeriche allineate a destra in
+  `tabular-nums`.
 - Card **Portfolio History**: `PortfolioLineChart` (una linea per portafoglio,
   tutte espresse nella valuta base dall'EPIC I.1).
 - Card **Allocazione complessiva**: `GeographyChart` + `SectorChart` affiancati
@@ -622,13 +638,19 @@ sessione + una dashboard fresca.
   mostrano una nota quando ci sono holding non azionarie escluse.
 - Donut **Allocation by portfolio** (`AllocationDonut`), etichettata nella
   valuta base quando disponibile.
-- **Righe per singola valuta**: una griglia con le stesse quattro card KPI per
+- **Righe per singola valuta**: una griglia con quattro `StatCard` KPI per
   ogni valuta in `by_currency`, ogni gruppo preceduto dal codice valuta.
-  Secondarie rispetto al riepilogo da EPIC I.1: si mostrano solo quando si
-  usano più valute (`hasMultipleCurrencies`), o — invariate — come unico
-  blocco KPI quando il backend non restituisce `summary`.
-- Tabella **Portfolios** (nome, valuta, asset, investito, valore, realizzato,
-  gain/loss, rendimento).
+  Secondarie rispetto alla card Investments da EPIC I.1: si mostrano solo
+  quando si usano più valute (`hasMultipleCurrencies`), o — invariate — come
+  unico blocco KPI quando il backend non restituisce `summary`.
+- Card **Portfolios** (nome, valuta, valore attivo + gain/loss colorato con
+  `pnlColorClass`, numero di asset) da `portfolios[].active`; da EPIC I.2 una
+  seconda riga compatta aggiunge il breakdown closed del singolo portafoglio
+  ("Closed: investito · ricavi · realizzato", con i ricavi che includono già
+  i dividendi delle posizioni completamente chiuse), renderizzata solo se il
+  portafoglio ha effettivamente venduto lotti (`hasClosedActivity`, cioè
+  `closed.invested ≠ 0`), in tono muted e con il realizzato colorato via
+  `pnlColorClass`.
 - Sezioni espandibili per portafoglio con la tabella asset (link del ticker a
   `/assets/{id}`, quantità, investito, valore, gain/loss, realizzato, ROI — con
   badge "cambio mancante" quando il tasso FX non è disponibile).

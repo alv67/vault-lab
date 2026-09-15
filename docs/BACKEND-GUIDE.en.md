@@ -259,7 +259,15 @@ What happens, step by step:
    response carries `base_currency`, a `summary` roll-up converted into the
    base currency, and the `history` series converted day by day (points
    without an available rate are dropped); `by_currency`, `portfolios` and
-   `assets` stay expressed in their own currency.
+   `assets` stay expressed in their own currency. The `summary` and each
+   `portfolios` entry split the numbers into nested `active` and `closed`
+    objects (EPIC I.2, see chapter 8): `active` reports `invested`, `value`,
+    `gain_loss` and `gain_loss_pct` of the lots still held plus the
+    `dividends` of the positions that are still open (even if partially
+    sold), while `closed` reports `invested` (AVCO cost of the sold lots),
+    `proceeds` (net sale proceeds plus the dividends folded in by the fully
+    closed positions), `realized` (proceeds − invested) and `realized_pct`
+    (realized / invested × 100).
 5. **Repository**: runs the SQL queries, for example the query that loads the
    portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
    for future sharing support).
@@ -300,14 +308,23 @@ type State struct {
     Avg      decimal.Decimal  // average cost
     Cost     decimal.Decimal  // total invested
     Realized decimal.Decimal  // realized gain/loss
+
+    ClosedCost decimal.Decimal // AVCO cost of the sold lots
+    Proceeds   decimal.Decimal // net sale proceeds
+    Dividends  decimal.Decimal // dividends received
 }
 ```
 
 > What is a `struct`? In Go a `struct` is a container that groups several
 > named values together: it is like a "card" with several fields. Here the
-> "position state" card has four fields: quantity, average cost, total cost
-> and realized gain/loss. `decimal.Decimal` is the type of the numbers
-> (precise decimal numbers, suitable for money, with no rounding errors).
+> "position state" card has the open-lot fields (quantity, average cost,
+> total cost, realized gain/loss) plus the cumulative metrics of the sold
+> lots and of the distributions (cost of sold lots, net proceeds, dividends)
+> that feed the active/closed dashboard breakdown (EPIC I.2). Each cumulative
+> field also has a
+> `*CCY` twin expressed in the asset currency. `decimal.Decimal` is the type
+> of the numbers (precise decimal numbers, suitable for money, with no
+> rounding errors).
 
 The idea is simple: operations don't modify data randomly, they update the
 card in an orderly way, operation after operation.
@@ -318,12 +335,18 @@ card in an orderly way, operation after operation.
   average cost: `Avg = Cost / newQuantity`.
 - **Sell**: the cost of the sold part is `Avg × quantity`. You subtract it
   from the total cost; the difference between that and the proceeds becomes
-  `Realized` (the gain or loss already "banked").
+  `Realized` (the gain or loss already "banked"). The sold-lot cost and the
+  net proceeds are also accumulated into `ClosedCost` and `Proceeds`, so a
+  partially sold position keeps the closed portion separate from the still
+  open lots.
 - **Split**: the quantity is multiplied by the ratio (e.g. 1 becomes 4), but
   the average cost is **divided** by the same ratio: the total cost does not
   change.
 - **Fee**: added to the cost.
-- **Dividend**: added to `Realized`.
+- **Dividend**: added to `Realized` and, separately, to `Dividends` (the
+  dashboard then classifies them by the position state: dividends of a still
+  open position — even partially sold — join the `active` group, while those
+  of a fully closed one are folded into the `closed` proceeds).
 
 ### `Walk`
 
@@ -398,10 +421,15 @@ with the `base_currency` field (an omitted/empty value keeps the stored one;
 a non-empty value must be an enabled currency from the whitelist, chapter 11,
 otherwise the request is rejected with 400). All vault-wide dashboard
 aggregations are converted into it: `GET /dashboard` returns `base_currency`,
-a `summary` roll-up (invested, value, realized, gain/loss in the base
-currency — amounts whose rate is missing are excluded from the totals and
-reported by `fx_missing_count`/`fx_missing_value`), and `history` series
-converted day by day (points without an available rate are dropped);
+a `summary` roll-up in the base currency — nested `active` (invested, value,
+gain/loss of the lots still held, plus the dividends of the open positions)
+and `closed` (invested = AVCO cost of the sold lots, proceeds = sale proceeds
++ dividends of the fully closed positions, realized = proceeds − invested,
+realized_pct) — where
+amounts whose rate is missing are excluded from the totals and reported by
+`fx_missing_count`/`fx_missing_value` (only non-zero amounts are flagged) —
+and `history` series converted day by day (points without an available rate
+are dropped);
 `GET /dashboard/allocation` is expressed in the base currency too (it used to
 be fixed USD). The per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.

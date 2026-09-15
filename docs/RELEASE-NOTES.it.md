@@ -4,6 +4,7 @@
 
 ### Nuove funzionalità
 - Scegli la tua valuta base in Impostazioni → Profilo: la dashboard ora consolida totali, storico dei portafogli e allocazioni in quella valuta
+- La dashboard ora separa investimenti attivi e chiusi, a livello di vault e per singolo portafoglio: per la parte chiusa vedi il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata sul capitale; le righe dei dividendi compaiono insieme agli investimenti attivi e, una volta chiusa completamente una posizione, confluiscono nell'incasso
 
 ## v0.4.0 — 13 Set 2026
 

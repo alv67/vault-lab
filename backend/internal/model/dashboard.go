@@ -110,14 +110,22 @@ type Holding struct {
 	CostCCY     decimal.Decimal `json:"cost_ccy"` // cost basis in asset currency
 	Realized    decimal.Decimal `json:"realized"` // realized P&L in portfolio currency
 	RealizedCCY decimal.Decimal `json:"realized_ccy"`
-	AvgCost         decimal.Decimal `json:"avg_cost"`
-	LastClose       decimal.Decimal `json:"last_close"` // latest close in asset currency
-	HasPrice        bool            `json:"has_price"`
-	Country         string          `json:"country"`
-	Sector          string          `json:"sector,omitempty"`
-	AssetClass      string          `json:"asset_class,omitempty"`
-	Type            AssetType       `json:"-"`
-	PriceFetchedAt  *time.Time      `json:"price_fetched_at,omitempty"`
+
+	ClosedCost    decimal.Decimal `json:"closed_cost"`     // AVCO cost of sold lots, portfolio currency
+	ClosedCostCCY decimal.Decimal `json:"closed_cost_ccy"` // AVCO cost of sold lots, asset currency
+	Proceeds      decimal.Decimal `json:"proceeds"`        // net sale proceeds, portfolio currency
+	ProceedsCCY   decimal.Decimal `json:"proceeds_ccy"`    // net sale proceeds, asset currency
+	Dividends     decimal.Decimal `json:"dividends"`       // dividends, portfolio currency
+	DividendsCCY  decimal.Decimal `json:"dividends_ccy"`   // dividends, asset currency
+
+	AvgCost        decimal.Decimal `json:"avg_cost"`
+	LastClose      decimal.Decimal `json:"last_close"` // latest close in asset currency
+	HasPrice       bool            `json:"has_price"`
+	Country        string          `json:"country"`
+	Sector         string          `json:"sector,omitempty"`
+	AssetClass     string          `json:"asset_class,omitempty"`
+	Type           AssetType       `json:"-"`
+	PriceFetchedAt *time.Time      `json:"price_fetched_at,omitempty"`
 }
 
 type AssetHolding struct {
@@ -149,15 +157,36 @@ type CurrencyPerformance struct {
 	Realized    decimal.Decimal `json:"realized"`
 }
 
+// ActiveBreakdown is the roll-up of the open (still held) portions of the
+// positions: the cost still carried by lots not sold, the market value of the
+// remaining quantity and the dividends of the positions that are still open
+// (even if partially sold).
+type ActiveBreakdown struct {
+	Invested    decimal.Decimal `json:"invested"`
+	Value       decimal.Decimal `json:"value"`
+	GainLoss    decimal.Decimal `json:"gain_loss"`
+	GainLossPct decimal.Decimal `json:"gain_loss_pct"`
+	Dividends   decimal.Decimal `json:"dividends"`
+}
+
+// ClosedBreakdown is the roll-up of the closed (already sold) lot portions.
+// Invested is the AVCO cost of the sold lots, Proceeds the net sale proceeds
+// plus the dividends of the fully closed positions (a position with no
+// remaining quantity folds its distributions here), Realized the difference
+// (proceeds - invested) and RealizedPct the realized return in percentage.
+type ClosedBreakdown struct {
+	Invested    decimal.Decimal `json:"invested"`     // AVCO cost of closed lots
+	Proceeds    decimal.Decimal `json:"proceeds"`     // net sale proceeds + dividends of fully closed positions
+	Realized    decimal.Decimal `json:"realized"`     // proceeds - invested
+	RealizedPct decimal.Decimal `json:"realized_pct"` // realized / invested * 100
+}
+
 type PortfolioPerformanceSummary struct {
 	PortfolioID   string          `json:"portfolio_id"`
 	PortfolioName string          `json:"portfolio_name"`
 	Currency      string          `json:"currency"`
-	Invested      decimal.Decimal `json:"invested"`
-	Value         decimal.Decimal `json:"value"`
-	GainLoss      decimal.Decimal `json:"gain_loss"`
-	GainLossPct   decimal.Decimal `json:"gain_loss_pct"`
-	RealizedGL    decimal.Decimal `json:"realized_gl"`
+	Active        ActiveBreakdown `json:"active"`
+	Closed        ClosedBreakdown `json:"closed"`
 	AssetCount    int             `json:"asset_count"`
 	FXMissing     int             `json:"fx_missing"`
 }
@@ -224,15 +253,15 @@ type PortfolioHistory struct {
 }
 
 // DashboardSummary is the vault-wide roll-up of every portfolio converted to
-// the user's base currency. Amounts whose FX rate is missing are excluded from
-// the totals and reported through FXMissingCount/FXMissingValue.
+// the user's base currency, split into the active (open lots, plus the
+// dividends of positions still held) and closed (sold lots, whose proceeds
+// fold in the dividends of the fully closed positions) breakdowns. Amounts
+// whose FX rate is missing are excluded from the totals and reported through
+// FXMissingCount/FXMissingValue.
 type DashboardSummary struct {
 	Currency       string          `json:"currency"`
-	Invested       decimal.Decimal `json:"invested"`
-	Value          decimal.Decimal `json:"value"`
-	GainLoss       decimal.Decimal `json:"gain_loss"`
-	GainLossPct    decimal.Decimal `json:"gain_loss_pct"`
-	Realized       decimal.Decimal `json:"realized"`
+	Active         ActiveBreakdown `json:"active"`
+	Closed         ClosedBreakdown `json:"closed"`
 	FXMissingCount int             `json:"fx_missing_count"`
 	FXMissingValue decimal.Decimal `json:"fx_missing_value"`
 }

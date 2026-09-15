@@ -2199,6 +2199,18 @@ func dashboardHolding(portfolioID, assetID, currency string, qty, lastClose, cos
 	return h
 }
 
+// dashboardClosedHolding extends dashboardHolding with the closed-lot figures
+// (AVCO cost of sold lots and net sale proceeds) and the cumulative dividends:
+// the active/closed dashboard breakdown classifies the dividends by the
+// position's remaining quantity.
+func dashboardClosedHolding(portfolioID, assetID, currency string, qty, lastClose, cost, closedCost, proceeds, dividends decimal.Decimal) *model.Holding {
+	h := dashboardHolding(portfolioID, assetID, currency, qty, lastClose, cost, decimal.Zero)
+	h.ClosedCost = closedCost
+	h.Proceeds = proceeds
+	h.Dividends = dividends
+	return h
+}
+
 func TestUpdateProfile_InvalidBaseCurrencyRejected(t *testing.T) {
 	uid := uuid.New()
 	u := &fakeUserRepo{user: &model.User{ID: uid, Email: "a@b.co", Name: "Old", BaseCurrency: "USD"}}
@@ -2267,7 +2279,7 @@ func TestGetDashboard_SummaryInBaseCurrency(t *testing.T) {
 			dashboardHolding(pfEUR.String(), uuid.New().String(), "EUR", decimal.NewFromInt(5), decimal.NewFromInt(10), decimal.NewFromInt(40), decimal.NewFromInt(10)),
 			// EUR portfolio, JPY asset: no JPY rate, the value is flagged raw.
 			dashboardHolding(pfEUR.String(), uuid.New().String(), "JPY", decimal.NewFromInt(1), decimal.NewFromInt(1000), decimal.Zero, decimal.Zero),
-			// CHF portfolio: no CHF rate, cost and realized are flagged raw.
+			// CHF portfolio: no CHF rate, the unconvertible cost is flagged raw.
 			dashboardHolding(pfCHF.String(), uuid.New().String(), "EUR", decimal.NewFromInt(1), decimal.NewFromInt(20), decimal.NewFromInt(15), decimal.NewFromInt(5)),
 		},
 	}
@@ -2288,27 +2300,145 @@ func TestGetDashboard_SummaryInBaseCurrency(t *testing.T) {
 	if s.Currency != "EUR" {
 		t.Fatalf("summary currency = %q, want EUR", s.Currency)
 	}
-	// invested = 800*0.9 + 40; value = 10*100*0.9 + 5*10 + 1*20; realized = 50*0.9 + 10
-	if !equalDecimal(s.Invested, decimal.NewFromInt(760)) {
-		t.Fatalf("invested = %v, want 760", s.Invested)
+	// active invested = 800*0.9 + 40; active value = 10*100*0.9 + 5*10 + 1*20
+	if !equalDecimal(s.Active.Invested, decimal.NewFromInt(760)) {
+		t.Fatalf("active.invested = %v, want 760", s.Active.Invested)
 	}
-	if !equalDecimal(s.Value, decimal.NewFromInt(970)) {
-		t.Fatalf("value = %v, want 970", s.Value)
+	if !equalDecimal(s.Active.Value, decimal.NewFromInt(970)) {
+		t.Fatalf("active.value = %v, want 970", s.Active.Value)
 	}
-	if !equalDecimal(s.Realized, decimal.NewFromInt(55)) {
-		t.Fatalf("realized = %v, want 55", s.Realized)
+	if !equalDecimal(s.Active.GainLoss, decimal.NewFromInt(210)) {
+		t.Fatalf("active.gain_loss = %v, want 210", s.Active.GainLoss)
 	}
-	if !equalDecimal(s.GainLoss, decimal.NewFromInt(210)) {
-		t.Fatalf("gain_loss = %v, want 210", s.GainLoss)
+	assertDecimalInDelta(t, s.Active.GainLossPct, decimal.RequireFromString("27.63"), "0.01", "active.gain_loss_pct")
+	// No sold lots or dividends in this fixture: the closed group stays zero
+	// and the open positions contribute no active dividends.
+	if !equalDecimal(s.Active.Dividends, decimal.Zero) {
+		t.Fatalf("active.dividends = %v, want 0", s.Active.Dividends)
 	}
-	assertDecimalInDelta(t, s.GainLossPct, decimal.RequireFromString("27.63"), "0.01", "gain_loss_pct")
-	// 1 unconvertible JPY value + the CHF portfolio's unconvertible cost and
-	// realized amounts: three skipped conversions, raw totals 1000+15+5.
-	if s.FXMissingCount != 3 {
-		t.Fatalf("fx_missing_count = %d, want 3", s.FXMissingCount)
+	if !equalDecimal(s.Closed.Invested, decimal.Zero) || !equalDecimal(s.Closed.Proceeds, decimal.Zero) ||
+		!equalDecimal(s.Closed.Realized, decimal.Zero) || !equalDecimal(s.Closed.RealizedPct, decimal.Zero) {
+		t.Fatalf("closed = %+v, want all zeros", s.Closed)
 	}
-	if !equalDecimal(s.FXMissingValue, decimal.NewFromInt(1020)) {
-		t.Fatalf("fx_missing_value = %v, want 1020", s.FXMissingValue)
+	// 1 unconvertible JPY value + the CHF portfolio's unconvertible cost: two
+	// skipped conversions, raw totals 1000+15 (zero closed amounts are not
+	// counted as missing).
+	if s.FXMissingCount != 2 {
+		t.Fatalf("fx_missing_count = %d, want 2", s.FXMissingCount)
+	}
+	if !equalDecimal(s.FXMissingValue, decimal.NewFromInt(1015)) {
+		t.Fatalf("fx_missing_value = %v, want 1015", s.FXMissingValue)
+	}
+}
+
+func TestGetDashboard_ActiveClosedBreakdown(t *testing.T) {
+	pfUSD := uuid.New()
+	pfEUR := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{
+			{ID: pfUSD, Currency: "USD"},
+			{ID: pfEUR, Currency: "EUR"},
+		},
+		holdings: []*model.Holding{
+			// USD portfolio, fully closed position: only sold lots and
+			// dividends, the latter folded into the closed proceeds.
+			dashboardClosedHolding(pfUSD.String(), uuid.New().String(), "USD",
+				decimal.Zero, decimal.NewFromInt(120), decimal.Zero,
+				decimal.NewFromInt(100), decimal.NewFromInt(120), decimal.NewFromInt(10)),
+			// USD portfolio, partially sold: open lots (and their dividends)
+			// feed active, sold lots closed.
+			dashboardClosedHolding(pfUSD.String(), uuid.New().String(), "USD",
+				decimal.NewFromInt(5), decimal.NewFromInt(110), decimal.NewFromInt(250),
+				decimal.NewFromInt(250), decimal.NewFromInt(300), decimal.NewFromInt(15)),
+			// EUR portfolio, EUR asset: amounts convert EUR->USD at 2 (USD->EUR 0.5).
+			dashboardClosedHolding(pfEUR.String(), uuid.New().String(), "EUR",
+				decimal.NewFromInt(2), decimal.NewFromInt(50), decimal.NewFromInt(80),
+				decimal.NewFromInt(20), decimal.NewFromInt(110), decimal.NewFromInt(5)),
+			// EUR portfolio, GBP asset: no GBP rate, only the value is unconvertible.
+			dashboardClosedHolding(pfEUR.String(), uuid.New().String(), "GBP",
+				decimal.NewFromInt(1), decimal.NewFromInt(100), decimal.Zero,
+				decimal.Zero, decimal.Zero, decimal.Zero),
+		},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.5")}}
+	svc := newDashboardTestService(t, pf, fx, "USD", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	s := got.Summary
+	if s == nil {
+		t.Fatal("summary = nil, want the base-currency roll-up")
+	}
+	// active invested = 250 + 80*2; active value = 5*110 + 2*50*2 (GBP dropped)
+	if !equalDecimal(s.Active.Invested, decimal.NewFromInt(410)) {
+		t.Fatalf("active.invested = %v, want 410", s.Active.Invested)
+	}
+	if !equalDecimal(s.Active.Value, decimal.NewFromInt(750)) {
+		t.Fatalf("active.value = %v, want 750", s.Active.Value)
+	}
+	if !equalDecimal(s.Active.GainLoss, decimal.NewFromInt(340)) {
+		t.Fatalf("active.gain_loss = %v, want 340", s.Active.GainLoss)
+	}
+	assertDecimalInDelta(t, s.Active.GainLossPct, decimal.RequireFromString("82.93"), "0.01", "active.gain_loss_pct")
+	// active dividends = 15 (partially sold USD, still open) + 5*2 (EUR one)
+	if !equalDecimal(s.Active.Dividends, decimal.NewFromInt(25)) {
+		t.Fatalf("active.dividends = %v, want 25", s.Active.Dividends)
+	}
+	// closed invested = 100 + 250 + 20*2; proceeds = (120+10) + 300 + 110*2
+	// (the fully closed USD position folds its dividends into the proceeds);
+	// realized = proceeds - invested
+	if !equalDecimal(s.Closed.Invested, decimal.NewFromInt(390)) {
+		t.Fatalf("closed.invested = %v, want 390", s.Closed.Invested)
+	}
+	if !equalDecimal(s.Closed.Proceeds, decimal.NewFromInt(650)) {
+		t.Fatalf("closed.proceeds = %v, want 650", s.Closed.Proceeds)
+	}
+	if !equalDecimal(s.Closed.Realized, decimal.NewFromInt(260)) {
+		t.Fatalf("closed.realized = %v, want 260", s.Closed.Realized)
+	}
+	assertDecimalInDelta(t, s.Closed.RealizedPct, decimal.RequireFromString("66.67"), "0.01", "closed.realized_pct")
+	if s.FXMissingCount != 1 || !equalDecimal(s.FXMissingValue, decimal.NewFromInt(100)) {
+		t.Fatalf("fx missing = (%d, %v), want (1, 100) for the GBP value only", s.FXMissingCount, s.FXMissingValue)
+	}
+
+	if len(got.Portfolios) != 2 {
+		t.Fatalf("portfolios len = %d, want 2", len(got.Portfolios))
+	}
+	usd := got.Portfolios[0]
+	if usd.PortfolioID != pfUSD.String() {
+		t.Fatalf("portfolios[0] = %s, want the USD portfolio", usd.PortfolioID)
+	}
+	if !equalDecimal(usd.Active.Invested, decimal.NewFromInt(250)) || !equalDecimal(usd.Active.Value, decimal.NewFromInt(550)) ||
+		!equalDecimal(usd.Active.GainLoss, decimal.NewFromInt(300)) || !equalDecimal(usd.Active.Dividends, decimal.NewFromInt(15)) {
+		t.Fatalf("USD portfolio active = %+v, want invested 250 value 550 gain 300 dividends 15", usd.Active)
+	}
+	assertDecimalInDelta(t, usd.Active.GainLossPct, decimal.NewFromInt(120), "0.01", "USD active.gain_loss_pct")
+	// The fully closed position's 10 dividends join the 120 sale proceeds.
+	if !equalDecimal(usd.Closed.Invested, decimal.NewFromInt(350)) || !equalDecimal(usd.Closed.Proceeds, decimal.NewFromInt(430)) ||
+		!equalDecimal(usd.Closed.Realized, decimal.NewFromInt(80)) {
+		t.Fatalf("USD portfolio closed = %+v, want invested 350 proceeds 430 realized 80", usd.Closed)
+	}
+	assertDecimalInDelta(t, usd.Closed.RealizedPct, decimal.RequireFromString("22.86"), "0.01", "USD closed.realized_pct")
+	if usd.AssetCount != 2 || usd.FXMissing != 0 {
+		t.Fatalf("USD portfolio asset_count/fx_missing = (%d, %d), want (2, 0)", usd.AssetCount, usd.FXMissing)
+	}
+
+	// EUR portfolio amounts stay in the portfolio currency, no FX applied.
+	eur := got.Portfolios[1]
+	if !equalDecimal(eur.Active.Invested, decimal.NewFromInt(80)) || !equalDecimal(eur.Active.Value, decimal.NewFromInt(100)) ||
+		!equalDecimal(eur.Active.GainLoss, decimal.NewFromInt(20)) || !equalDecimal(eur.Active.Dividends, decimal.NewFromInt(5)) {
+		t.Fatalf("EUR portfolio active = %+v, want invested 80 value 100 gain 20 dividends 5", eur.Active)
+	}
+	assertDecimalInDelta(t, eur.Active.GainLossPct, decimal.NewFromInt(25), "0.01", "EUR active.gain_loss_pct")
+	if !equalDecimal(eur.Closed.Invested, decimal.NewFromInt(20)) || !equalDecimal(eur.Closed.Proceeds, decimal.NewFromInt(110)) ||
+		!equalDecimal(eur.Closed.Realized, decimal.NewFromInt(90)) {
+		t.Fatalf("EUR portfolio closed = %+v, want invested 20 proceeds 110 realized 90", eur.Closed)
+	}
+	assertDecimalInDelta(t, eur.Closed.RealizedPct, decimal.NewFromInt(450), "0.01", "EUR closed.realized_pct")
+	if eur.AssetCount != 2 || eur.FXMissing != 1 {
+		t.Fatalf("EUR portfolio asset_count/fx_missing = (%d, %d), want (2, 1)", eur.AssetCount, eur.FXMissing)
 	}
 }
 
