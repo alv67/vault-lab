@@ -20,8 +20,11 @@
   import CapitalChart from '$lib/components/domain/CapitalChart.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
-  import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
-  import SectorChart from '$lib/components/domain/SectorChart.svelte'
+  import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
+  import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
+  import { countryDisplayName } from '$lib/countryNames'
+  import { chartSemanticColors } from '$lib/chartPalette'
+  import { resolved } from '$lib/stores/theme.svelte'
   import Card from '$lib/components/ui/Card.svelte'
   import Button from '$lib/components/ui/Button.svelte'
   import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
@@ -96,8 +99,9 @@
       loading = false
     }
 
-    // L'allocazione complessiva geo/settore è isolata: se l'endpoint non è
-    // disponibile la card viene omessa senza bloccare il resto della dashboard.
+    // L'allocazione complessiva (classi, regioni, settori, paesi) è isolata:
+    // se l'endpoint non è disponibile la card viene omessa senza bloccare il
+    // resto della dashboard.
     try {
       alloc = await portfolioApi.dashboardAllocation()
     } catch {
@@ -146,6 +150,40 @@
   const portfolioSlices = $derived(
     (dash?.portfolios ?? []).map((p) => ({ name: p.portfolio_name, value: Number(p.active.value) })),
   )
+
+  // EPIC I.4 "Allocazione complessiva" card: region, sector and country
+  // payloads are mapped onto the generic ExposureBarRow shape consumed by
+  // ExposureBarChart (countries keep their raw ISO codes as row identity; the
+  // chart maps them to full names via `labelFor`, see the country panel below).
+  const regionBarRows = $derived<ExposureBarRow[]>(
+    (alloc?.regions ?? []).map((r) => ({ name: r.region, value: r.value, weight: r.weight })),
+  )
+  const sectorBarRows = $derived<ExposureBarRow[]>(
+    (alloc?.sectors ?? []).map((s) => ({ name: s.sector, value: s.value, weight: s.weight })),
+  )
+  const countryBarRows = $derived<ExposureBarRow[]>(
+    (alloc?.countries ?? []).map((c) => ({ name: c.country, value: c.value, weight: c.weight })),
+  )
+
+  // Equity-universe coverage note for the bar charts, mirroring the long
+  // covered/excluded note the donut charts render themselves; shown only when
+  // non-equity holdings were actually excluded.
+  const equityUniverseNote = $derived.by(() => {
+    const covered = Number(alloc?.covered_value || 0)
+    const excluded = Number(alloc?.excluded_value || 0)
+    const total = covered + excluded
+    if (total <= 0 || excluded <= 0) return undefined
+    return `Universo azionario: ${((covered / total) * 100).toFixed(1)}% del portafoglio`
+  })
+
+  // Aggregated "Other" buckets are muted grey, like the slice treatment in the
+  // donut charts. Read via chartSemanticColors so it re-evaluates on theme
+  // flips (the {#key} blocks inside the charts re-init them anyway).
+  function otherGrey(name: string): string | undefined {
+    return name === 'Other' || name === 'Other / Not Classified'
+      ? chartSemanticColors(resolved()).other
+      : undefined
+  }
 
   // The compact per-card closed line is dropped when the portfolio never sold
   // a lot. Closed dividends are now folded into `proceeds` by the backend, so
@@ -341,9 +379,45 @@
         {#if alloc == null}
           <p class="text-sm text-muted-foreground">Allocazione non disponibile</p>
         {:else}
-          <div class="grid gap-4 md:grid-cols-2">
-            <GeographyChart data={alloc.regions} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
-            <SectorChart data={alloc.sectors} currency={alloc.currency} covered={alloc.covered_value} excluded={alloc.excluded_value} />
+          <!-- EPIC I.4 layout: asset-class donut over the whole vault plus the
+               equity-only breakdown (sector, region and country bars), in a
+               responsive 2-column grid; regions sit next to countries in the
+               bottom row. The inner panels reuse the card surface styling of
+               GeographyChart (the region donut was replaced by bars here — it
+               stays only on the portfolio detail page). -->
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div class="rounded-card border-border bg-surface p-4 shadow-card">
+              <ClassDonut data={alloc.classes ?? []} currency={alloc.currency} label="Classi di attività" />
+            </div>
+            <div class="rounded-card border-border bg-surface p-4 shadow-card">
+              <ExposureBarChart
+                rows={sectorBarRows}
+                currency={alloc.currency}
+                label="Settori (solo equity)"
+                note={equityUniverseNote}
+                colorFor={otherGrey}
+              />
+            </div>
+            <div class="rounded-card border-border bg-surface p-4 shadow-card">
+              <ExposureBarChart
+                rows={regionBarRows}
+                currency={alloc.currency}
+                label="Regioni (solo equity)"
+                note={equityUniverseNote}
+                colorFor={otherGrey}
+              />
+            </div>
+            <div class="rounded-card border-border bg-surface p-4 shadow-card">
+              <ExposureBarChart
+                rows={countryBarRows}
+                currency={alloc.currency}
+                label="Paesi (solo equity)"
+                note={equityUniverseNote}
+                colorFor={otherGrey}
+                labelFor={countryDisplayName}
+                maxVisibleRows={10}
+              />
+            </div>
           </div>
         {/if}
       </div>

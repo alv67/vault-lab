@@ -490,7 +490,9 @@ amounts whose rate is missing are excluded from the totals and reported by
 return (true TWR with daily geometric linking, with the invested/value
 capital series) by month or year in the base currency (chapter 7);
 `GET /dashboard/allocation` is expressed in the base currency too (it used to
-be fixed USD). The per-currency (`by_currency`) and per-portfolio
+be fixed USD) and aggregates every portfolio into the vault-wide `classes`,
+`regions`, `countries` and `sectors` breakdowns (chapter 19). The
+per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.
 
 ---
@@ -994,6 +996,22 @@ otherwise continue".
   responses (`/allocation/geography`, `/allocation/sector` and
   `/dashboard/allocation`) expose `covered_value`/`excluded_value` (decimal
   strings) with the value of the eligible vs excluded holdings.
+- Since EPIC I.4 `GET /dashboard/allocation` aggregates **all** the user's
+  portfolios in their base currency and, next to the zero-filled `regions`
+  (canonical macro-regions + `Other`) and `sectors` (11 GICS sectors +
+  `Other`), also returns:
+  - `classes`: the vault-wide asset-class allocation — every priced holding
+    with a positive quantity (whatever its type) valued at market in the
+    base currency, grouped by `asset_class` (empty → `other`), sorted by
+    value descending with `weight` percentages summing to 100; holdings
+    whose FX rate to the base currency is missing are skipped (same rules
+    as `GET /portfolios/{id}/allocation/class`, but across all portfolios);
+  - `countries`: the equity-only per-country exposure built from
+    `asset_country_weights` with the same weighted-sum machinery as the
+    regions (stocks without stored exposure fall back to 100% of their own
+    `country`); buckets carry the ISO alpha-2 `country` code and, unlike
+    regions/sectors, only the **non-zero** ones are returned, sorted by
+    value descending with `weight` summing to 100.
 - The `python-service` microservice (B.5) fetches ETF exposure and resolves
   ISINs from tickers via JustETF; since B.14 it also exposes Morningstar
   exposure via `GET /api/v1/etf/{isin}/morningstar-exposure` (custom resolver:

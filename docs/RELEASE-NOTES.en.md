@@ -4,6 +4,7 @@
 
 ### Features
 - Choose your base currency in Settings → Profile: the dashboard now consolidates your totals and allocations into that currency
+- The dashboard allocation now breaks your whole vault down also by asset class (donut data) and by individual country, alongside the existing sector and macro-region views — all aggregated across your portfolios and expressed in your base currency
 - The dashboard now separates active and closed investments at vault and per-portfolio level: for the closed part you see the cost of the sold lots, the proceeds and the realized capital gain/loss; dividend rows are shown with the active investments and, once a position is fully closed, they are included in the proceeds
 - New aggregate performance chart on the dashboard: one chart for all your portfolios, in your base currency, showing the percentage time-weighted return of each month or year (with a cumulative TWR line) next to a capital chart of the money invested versus the current value, switchable between Monthly and Annual views. The return is measured day by day, so deposits, sales, dividends and fees no longer distort it and fully closing or reopening a position never produces absurd spikes; positions without a market price are carried at cost and never show up as a fake loss
 

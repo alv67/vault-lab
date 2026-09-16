@@ -238,6 +238,14 @@ export interface SectorAllocation {
   weight: string
 }
 
+/** One country bucket of the vault-wide country exposure (EPIC I.4).
+ * `country` is an ISO alpha-2 code. */
+export interface CountryAllocation {
+  country: string
+  value: string
+  weight: string
+}
+
 export interface PortfolioGeographyAllocation {
   currency: string
   regions: RegionAllocation[]
@@ -252,9 +260,17 @@ export interface PortfolioSectorAllocation {
   excluded_value?: string
 }
 
+/** Vault-wide allocation across all portfolios, converted to the user's base
+ * currency (EPIC I.4): asset classes over every holding, plus the equity-only
+ * breakdown by macro-region, country (ISO alpha-2, non-zero rows only) and
+ * GICS sector. `classes`/`regions`/`countries`/`sectors` come back sorted by
+ * descending value; `covered_value`/`excluded_value` split the total between
+ * the equity universe and the non-equity holdings excluded from it. */
 export interface DashboardAllocation {
   currency: string
+  classes: AssetClassSlice[]
   regions: RegionAllocation[]
+  countries: CountryAllocation[]
   sectors: SectorAllocation[]
   covered_value?: string
   excluded_value?: string

@@ -65,6 +65,14 @@ type PortfolioGeographyAllocation struct {
 	Excluded decimal.Decimal     `json:"excluded_value"`
 }
 
+// CountryAllocation is one country bucket within the vault's country
+// exposure. Weight is in percentage (sum over the non-zero buckets = 100).
+type CountryAllocation struct {
+	Country string          `json:"country"` // ISO alpha-2 code
+	Value   decimal.Decimal `json:"value"`
+	Weight  decimal.Decimal `json:"weight"`
+}
+
 // SectorAllocation is one GICS sector bucket within a portfolio's sector
 // allocation. Weight is in percentage (sum over all buckets = 100).
 type SectorAllocation struct {
@@ -292,13 +300,15 @@ type DashboardPerformance struct {
 	Buckets     []PerformanceBucket `json:"buckets"`
 }
 
-// DashboardAllocation groups the geographic and sector allocation of a user's
-// whole vault, aggregated across all portfolios and converted to the user's
-// base currency.
+// DashboardAllocation groups the class, geographic, country and sector
+// allocation of a user's whole vault, aggregated across all portfolios and
+// converted to the user's base currency.
 type DashboardAllocation struct {
-	Currency string              `json:"currency"`
-	Regions  []*RegionAllocation `json:"regions"`
-	Sectors  []*SectorAllocation `json:"sectors"`
-	Covered  decimal.Decimal     `json:"covered_value"`
-	Excluded decimal.Decimal     `json:"excluded_value"`
+	Currency  string               `json:"currency"`
+	Classes   []*ClassAllocation   `json:"classes"`
+	Regions   []*RegionAllocation  `json:"regions"`
+	Countries []*CountryAllocation `json:"countries"`
+	Sectors   []*SectorAllocation  `json:"sectors"`
+	Covered   decimal.Decimal      `json:"covered_value"`
+	Excluded  decimal.Decimal      `json:"excluded_value"`
 }

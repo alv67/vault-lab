@@ -2856,9 +2856,9 @@ func performancePeriod(d time.Time, granularity string) string {
 	return d.Format("2006-01")
 }
 
-// GetDashboardAllocation returns the user's whole-vault geographic and sector
-// allocation in their base currency, aggregating holdings across all
-// portfolios.
+// GetDashboardAllocation returns the user's whole-vault class, geographic,
+// country and sector allocation in their base currency, aggregating holdings
+// across all portfolios.
 func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) (*model.DashboardAllocation, error) {
 	return cached(s.cache, ctx, "dash-allocation", userID.String(), cacheTTLStats, false, func() (*model.DashboardAllocation, error) {
 		user, err := s.repos.User.FindByID(ctx, userID)
@@ -2875,11 +2875,13 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 		}
 		if len(portfolios) == 0 {
 			return &model.DashboardAllocation{
-				Currency: baseCurrency,
-				Regions:  []*model.RegionAllocation{},
-				Sectors:  []*model.SectorAllocation{},
-				Covered:  decimal.Zero,
-				Excluded: decimal.Zero,
+				Currency:  baseCurrency,
+				Classes:   []*model.ClassAllocation{},
+				Regions:   []*model.RegionAllocation{},
+				Countries: []*model.CountryAllocation{},
+				Sectors:   []*model.SectorAllocation{},
+				Covered:   decimal.Zero,
+				Excluded:  decimal.Zero,
 			}, nil
 		}
 
@@ -2895,11 +2897,52 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 		if err != nil {
 			return nil, err
 		}
+
+		byClass := map[string]decimal.Decimal{}
+		var classTotal decimal.Decimal
+		for _, h := range holdings {
+			if !h.Qty.IsPositive() || !h.HasPrice {
+				continue
+			}
+			value := h.Qty.Mul(h.LastClose)
+			factor, ok := series.FxFactor(rates, h.Currency, baseCurrency)
+			if !ok {
+				continue
+			}
+			value = value.Mul(factor)
+			if !value.IsPositive() {
+				continue
+			}
+			class := h.AssetClass
+			if class == "" {
+				class = "other"
+			}
+			byClass[class] = byClass[class].Add(value)
+			classTotal = classTotal.Add(value)
+		}
+		classes := make([]*model.ClassAllocation, 0, len(byClass))
+		for class, value := range byClass {
+			classes = append(classes, &model.ClassAllocation{
+				Class: class,
+				Value: value,
+			})
+		}
+		sort.Slice(classes, func(i, j int) bool { return classes[i].Value.GreaterThan(classes[j].Value) })
+		for _, c := range classes {
+			if classTotal.IsPositive() {
+				c.Weight = c.Value.Div(classTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
 		geoExposures, err := s.repos.Exposure.FindRegionsByAssets(ctx, holdingAssetIDs(holdings))
 		if err != nil {
 			return nil, err
 		}
 		secExposures, err := s.repos.Exposure.FindSectorsByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
+		countryExposures, err := s.repos.Exposure.FindCountriesByAssets(ctx, holdingAssetIDs(holdings))
 		if err != nil {
 			return nil, err
 		}
@@ -2934,7 +2977,31 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 			}
 		}
 
-		return &model.DashboardAllocation{Currency: baseCurrency, Regions: regions, Sectors: sectors, Covered: gCov.covered, Excluded: gCov.excluded}, nil
+		cBuckets, cTotal, _ := buildBuckets(holdings, rates, baseCurrency, geo.Countries, countryExposures,
+			func(h *model.Holding) string { return h.Country })
+		countries := make([]*model.CountryAllocation, 0, len(cBuckets))
+		for name, value := range cBuckets {
+			if !value.IsPositive() {
+				continue
+			}
+			countries = append(countries, &model.CountryAllocation{Country: name, Value: value})
+		}
+		sort.Slice(countries, func(i, j int) bool { return countries[i].Value.GreaterThan(countries[j].Value) })
+		for _, c := range countries {
+			if cTotal.IsPositive() {
+				c.Weight = c.Value.Div(cTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
+		return &model.DashboardAllocation{
+			Currency:  baseCurrency,
+			Classes:   classes,
+			Regions:   regions,
+			Countries: countries,
+			Sectors:   sectors,
+			Covered:   gCov.covered,
+			Excluded:  gCov.excluded,
+		}, nil
 	})
 }
 

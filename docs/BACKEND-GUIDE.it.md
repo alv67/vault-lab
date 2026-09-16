@@ -492,8 +492,10 @@ segnalati); `GET /dashboard/performance` mostra lo stesso rendimento
 percentuale time-weighted (TWR) del vault per bucket mensili o annuali nella
 valuta base, con le serie invested/value del capitale (capitolo 7); anche
 `GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
-USD). Le sezioni per-valuta (`by_currency`) e per-portafoglio (`portfolios`,
-`assets`) della dashboard mantengono la propria valuta.
+USD) e aggrega tutti i portafogli nelle ripartizioni vault-wide `classes`,
+`regions`, `countries` e `sectors` (capitolo 19). Le sezioni per-valuta
+(`by_currency`) e per-portafoglio (`portfolios`, `assets`) della dashboard
+mantengono la propria valuta.
 
 ---
 
@@ -1001,6 +1003,24 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   `/allocation/sector` e `/dashboard/allocation`) espongono
   `covered_value`/`excluded_value` (stringhe decimali) con il valore delle
   holding ammissibili vs escluse.
+- Da EPIC I.4 `GET /dashboard/allocation` aggrega **tutti** i portafogli
+  dell'utente nella loro valuta base e, accanto a `regions` (le macro-regioni
+  canoniche + `Other`, zero-filled) e `sectors` (11 settori GICS + `Other`),
+  restituisce anche:
+  - `classes`: l'allocazione per classe d'investimento a livello di vault —
+    ogni holding prezzata con quantità positiva (qualunque sia il tipo)
+    valorizzata a mercato nella valuta base, raggruppata per `asset_class`
+    (vuoto → `other`), ordinata per valore decrescente con `weight`
+    percentuali che sommano a 100; le holding senza tasso FX verso la valuta
+    base sono saltate (stesse regole di `GET /portfolios/{id}/allocation/class`,
+    ma su tutti i portafogli);
+  - `countries`: l'esposizione equity-only per paese costruita da
+    `asset_country_weights` con la stessa macchina a somma pesata delle
+    regioni (le azioni senza esposizione salvata ricadono sul proprio
+    `country` al 100%); i bucket portano il codice ISO alpha-2 `country` e,
+    a differenza di regioni/settori, vengono restituiti solo quelli
+    **nonnulli**, ordinati per valore decrescente con `weight` che somma a
+    100.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; da B.14 espone anche l'esposizione Morningstar
   via `GET /api/v1/etf/{isin}/morningstar-exposure` (resolver custom: bootstrap

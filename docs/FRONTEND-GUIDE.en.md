@@ -415,8 +415,10 @@ in white).
 | `PerformanceChart.svelte` (`lib/components/domain/`) | **percentage bar + line combo** on a **category** x-axis (EPIC I.3): one green/red `return` bar per bucket (per-bucket true TWR return %, colored by sign via semantic `positive`/`negative` per-bar `itemStyle`), a `twr` cumulative time-weighted-return line in the semantic amber, `%`-formatted y-axis and `+3.42%`-style tooltip (`formatSignedPercent` — no currency), period labels formatted per granularity (`Jun 2025` / `2025`), `inside` + `slider` dataZoom, legend `Gain/Loss` / `Cumulative`, "No data" empty state | the **dashboard** "Performance" card, fed by `dashboardPerformance(granularity)` (`GET /dashboard/performance`, monthly/annual toggle via the card's `SegmentedControl`). Bars show the return generated inside each month/year, the line the cumulative TWR — both pure percentages, so the chart no longer needs the base `currency` prop |
 | `CapitalChart.svelte` (`lib/components/domain/`) | **two-line** chart on the **same** category buckets: `invested` (net invested capital, stepped `end` line in the semantic grey `costBasis`) and `value` (market value, smooth line in the semantic green `marketValue`), currency tooltip via `formatCurrency(value, currency)`, `inside` + `slider` dataZoom, legend `Invested` / `Value`, theme-aware re-init (`{#key}`), "No data" empty state | the **dashboard** "Capital invested" card, fed by the **same** `dashboardPerformance(granularity)` fetch and buckets as `PerformanceChart` (amounts in the user's **base currency**, `currency` from the payload) and following the same monthly/annual toggle |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out; `complete={false}` renders the donut **open** when the rows sum to < 100 (a transparent residual slice keeps the angles truthful — no gray "Other" slice) | asset detail page (regions donut with `complete={false}` and the sectors donut), the two exposure modals (`mute` mode: regions in `ExposureGeoModal`, sectors in `ExposureSectorModal`), and the portfolio **class-allocation donut** (B.12). Countries are shown as bar lists (page card and geo modal), never as a pie. Accepts `ExposureRow[]` (`{name, weight}`) |
-| `GeographyChart.svelte` (`lib/components/domain/`) | **donut** (same radius/palette as `ExposurePie`) + full-row table alongside; tooltip shows the value in the portfolio currency and the weight; the `Other` slice is muted in gray | the **portfolio detail** geography card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `RegionAllocation[]` (`{region, value, weight}`); rows with zero weight stay in the table but are not drawn. Optional `covered`/`excluded` props (decimal strings) drive a coverage note ("Copre il X% del portafoglio…") shown when the excluded value is > 0 |
-| `SectorChart.svelte` (`lib/components/domain/`) | identical structure over sectors | the **portfolio detail** sector card and the **dashboard** "Allocazione complessiva" (B.8). Accepts `SectorAllocation[]` (`{sector, value, weight}`), plus the same optional `covered`/`excluded` coverage note as `GeographyChart` |
+| `GeographyChart.svelte` (`lib/components/domain/`) | **donut** (same radius/palette as `ExposurePie`) + full-row table alongside; tooltip shows the value in the portfolio currency and the weight; the `Other` slice is muted in gray | the **portfolio detail** geography card (B.8) only — the dashboard "Allocazione complessiva" region panel replaced this donut with `ExposureBarChart` in EPIC I.4 (#81) for readability at card size. Accepts `RegionAllocation[]` (`{region, value, weight}`); rows with zero weight stay in the table but are not drawn. Optional `covered`/`excluded` props (decimal strings) drive a coverage note ("Copre il X% del portafoglio…") shown when the excluded value is > 0 |
+| `SectorChart.svelte` (`lib/components/domain/`) | identical structure over sectors | the **portfolio detail** sector card (the dashboard moved sectors to `ExposureBarChart` in EPIC I.4). Accepts `SectorAllocation[]` (`{sector, value, weight}`), plus the same optional `covered`/`excluded` coverage note as `GeographyChart` |
+| `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the vault's asset classes (EPIC I.4, same radius/palette/label style as `GeographyChart`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `ASSET_CLASS_LABELS` for friendly slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole vault, base currency) |
+| `ExposureBarChart.svelte` (`lib/components/domain/`) | reusable **horizontal bar chart** (EPIC I.4) over generic `{name, value, weight}[]` rows (`ExposureBarRow`): bars sorted **descending by value** (defensively re-sorted and non-positive rows dropped in the component; the category axis is `inverse`d so the biggest bar sits on top), weight % printed at the bar end, tooltip with amount (`formatCurrency(value, currency)`) and weight (`formatPercent`), hidden value axis (the bars only need to be comparable), canvas height grows with the row count, `colorFor?: (name) => string` per-row colour override (else the resolved `resolvePalette` palette by index), `labelFor?: (name) => string` axis-label mapping (the axis shows the friendly name — e.g. ISO code → full country name via `countryDisplayName` — and the tooltip appends the raw name in parentheses when it differs, "United States (US)"; the axis label column also widens to 140px for mapped labels), `maxVisibleRows?: number` caps the visible area to that many rows with an `overflow-y-auto` viewport while the canvas keeps its full height (all rows scrollable), optional `label` heading and muted `note` caption, "No data" empty state, theme-aware re-init (`{#key}`) | the **dashboard** "Allocazione complessiva" region, sector and country panels, fed by `dashboardAllocation().regions` / `.sectors` / `.countries` (callers map `RegionAllocation`/`SectorAllocation`/`CountryAllocation` onto `ExposureBarRow`; countries carry ISO alpha-2 codes rendered with `labelFor={countryDisplayName}` and `maxVisibleRows={10}` — the ~10 biggest bars are visible, the rest scroll vertically; the region and sector panels pass neither, so their labels stay verbatim and all rows stay visible — the ~10 macro-regions never need the cap) |
 | `PositionTable.svelte` (`lib/components/domain/`) | generic positions table over the `PositionRow` type (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` toggle the optional columns, `showPrice` adds a Price column (before Qty, formatted with `priceCurrency`, shown even for closed rows), `linkAssets` links the ticker to the asset page; closed rows dash out every cell except realized | the **dashboard** positions accordion (E.1) and the **portfolio detail** Positions table (E.2) |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | theme-aware donut of `{name, value}[]` shares (weights recomputed on the positive total); `showValue={false}` hides the value in the tooltip (mixed-currency donut) | the **dashboard** "Allocation by portfolio" (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
@@ -439,17 +441,27 @@ Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
 - **Portfolio detail (B.12)** — `ExposurePie` for the "Allocazione per classi"
   donut. The class rows are the `AssetClassSlice[]` returned by
   `portfolioApi.classAllocation`, mapped through `ASSET_CLASS_LABELS`.
-- **Portfolio detail and dashboard (B.8)** — `GeographyChart` + `SectorChart`
-  for the geo/sector allocation (per-portfolio endpoints and the
-  `GET /dashboard/allocation` aggregate). Allocations are computed over the
-  **equity-only universe** (stocks always, ETFs/mutual funds only when
-  `asset_class` is `equity` or `real_estate`); bonds, crypto, commodities and
-  unclassified funds are excluded and reported as `covered_value` /
-  `excluded_value`, which the charts turn into a coverage note.
+- **Portfolio detail (B.8)** — `GeographyChart` + `SectorChart` for the
+  per-portfolio geo/sector allocation (`geographyAllocation(id)` /
+  `sectorAllocation(id)`).
+- **Dashboard "Allocazione complessiva" (B.8, reworked in EPIC I.4)** — fed by
+  `GET /dashboard/allocation`, which now ships four dimensions: `classes`
+  (`ClassDonut`), `regions`, `sectors` and `countries` (all three
+  `ExposureBarChart` — the region donut `GeographyChart` was replaced by
+  descending horizontal bars in #81, it remains only on the portfolio detail
+  page), arranged in a `lg:grid-cols-2` grid
+  inside the card. Class shares cover the whole vault; regions, sectors and
+  countries are computed over the **equity-only universe** (stocks always,
+  ETFs/mutual funds only when `asset_class` is `equity` or `real_estate`);
+  bonds, crypto, commodities and unclassified funds are excluded and reported
+  as `covered_value` / `excluded_value`, which the dashboard bar charts turn
+  into a muted "Universo azionario: X% del
+  portafoglio" caption (`note` prop, shown only when something was excluded).
 - **Dashboard** — `PerformanceChart` (percentage return: bars + cumulative
   TWR line) and `CapitalChart` (invested vs value) both fed by a **single**
   `dashboardPerformance(granularity)` fetch (EPIC I.3, monthly/annual toggle),
-  plus the B.8 "Allocazione complessiva" widgets.
+  plus the I.4 "Allocazione complessiva" widgets (class donut, region/sector/
+  country bars).
 
 ---
 
@@ -639,13 +651,31 @@ fetch feeding both the Performance and Capital invested cards).
   shows the same loading `Spinner`. The two cards (Performance + Capital
   invested) fill the 2-column grid; the "Allocation by portfolio" donut now
   drops to its own full-width row underneath.
-- **Allocazione complessiva** card: `GeographyChart` + `SectorChart` side by
-  side from `dashboardAllocation()` (`GET /dashboard/allocation`, aggregated
-  in the user's base currency across all portfolios — was USD before
-  EPIC I.1); when the endpoint fails the card shows
+- **Allocazione complessiva** card (EPIC I.4 layout): a `lg:grid-cols-2` grid
+  of four panels fed by `dashboardAllocation()`
+  (`GET /dashboard/allocation`, aggregated in the user's base currency across
+  all portfolios — was USD before EPIC I.1): **Classi di attività**
+  (`ClassDonut` over `classes`, whole vault) and the equity-only **Regioni**,
+  **Settori** and **Paesi** horizontal bars (`ExposureBarChart`
+  over `regions` / `sectors` / `countries` — since #81 the regions are bars
+  too, the `GeographyChart` donut+table stays only on the portfolio detail
+  page; region rows carry the macro-region name verbatim;
+  country rows carry ISO alpha-2 codes but are
+  labelled with the **full country name** via `labelFor={countryDisplayName}`
+  — unknown codes fall back to the raw code — and the tooltip adds the code
+  in parentheses, e.g. "United States (US)"; the country panel also passes
+  `maxVisibleRows={10}`, so only the ~10 biggest bars are visible and the
+  rest scroll vertically, while the region and sector panels stay uncapped
+  with verbatim names — the ~10 macro-regions and the GICS sectors always
+  fit). The region,
+  sector and country panels pass a `colorFor` that mutes the aggregated `Other`
+  bucket grey, like the donut slices. All three equity bar panels
+  receive the `covered_value`/`excluded_value` coverage metadata through the
+  shared "Universo azionario: X% del
+  portafoglio" caption (`note` prop, only when non-equity holdings are
+  excluded); when the endpoint fails the card shows
   "Allocazione non disponibile" (the call is isolated, it does not block the
-  page). Both charts receive the `covered_value`/`excluded_value` coverage
-  metadata and show a note when non-equity holdings are excluded.
+  page).
 - **Allocation by portfolio** donut (`AllocationDonut`), labelled in the base
   currency when available.
 - **Portfolios** cards (name, currency, active value + gain/loss colored with
@@ -935,17 +965,20 @@ and a range label), with a "Refresh Now" button.
 
 ## 11. Notes and open points
 
-- **B.8 is implemented (issue #14)** — the geography and sector allocation
-  widgets ship in this release:
+- **B.8 is implemented (issue #14), extended by EPIC I.4 (issue #81)** — the
+  allocation widgets ship in this release:
   - `portfolioApi` exposes `geographyAllocation(id)` /
     `sectorAllocation(id)` (`GET /portfolios/{id}/allocation/geography` and
     `/allocation/sector`: weighted sums, zero-filled, over the 10
     macro-regions (Morningstar-aligned since B.14) and the 11 GICS sectors, both + `Other`) and
     `dashboardAllocation()` (`GET /dashboard/allocation`, the same rows
     aggregated across all portfolios in the user's base currency since
-    EPIC I.1, USD before). The response interfaces live
+    EPIC I.1, USD before). Since I.4 the dashboard aggregate additionally
+    returns `classes` (asset-class buckets over **all** holdings, sorted by
+    descending value) and `countries` (non-zero ISO alpha-2 country buckets,
+    same sort). The response interfaces live
     next to `PortfolioClassAllocation` in `api.ts`
-    (`RegionAllocation`, `SectorAllocation`,
+    (`RegionAllocation`, `SectorAllocation`, `CountryAllocation`,
     `PortfolioGeographyAllocation`, `PortfolioSectorAllocation`,
     `DashboardAllocation`);
   - `GeographyChart` / `SectorChart` (`lib/components/domain/`) render a
@@ -953,9 +986,21 @@ and a range label), with a "Refresh Now" button.
     with the full-row table alongside (zero-weight rows stay in the table but
     are not drawn); the tooltip shows the value formatted in the portfolio
     currency and the weight, and the `Other` slice is muted in gray;
+  - `ClassDonut` and `ExposureBarChart` (I.4, same folder) render the two new
+    dimensions — the class donut reuses the `GeographyChart` pie style with
+    `ASSET_CLASS_LABELS` friendly names and a grey `Other`; the horizontal bar
+    chart is generic (`ExposureBarRow[]`) and re-sorted defensively by value.
+    Country bars show the **full country name** (`labelFor={countryDisplayName}`
+    over the ISO codes, raw-code fallback; tooltip adds the code,
+    "United States (US)") and are capped to ~10 visible rows with vertical
+    scrolling (`maxVisibleRows={10}`); region and sector bars stay verbatim
+    and uncapped (the dashboard regions moved from `GeographyChart` to these
+    bars in #81, the donut remains on the portfolio detail only);
   - the portfolio detail page shows the two donuts side by side below
     "Allocazione per classi" (`md:flex-row`, one card each), and the dashboard
-    adds an "Allocazione complessiva" card (a `md:grid-cols-2` grid) fed by
+    "Allocazione complessiva" card is an I.4 `lg:grid-cols-2` grid (class
+    donut, region bars, sector bars, country bars — the regions donut became
+    `ExposureBarChart` bars in #81) fed by
     `GET /dashboard/allocation`;
 - **B.13/B.14 exposure countries + Morningstar (issues #58/#59)** — the
   `AssetExposure` type now has **three dimensions**: `countries`, `regions` and
@@ -986,8 +1031,10 @@ and a range label), with a "Refresh Now" button.
   unclassified funds are excluded and surfaced as `covered_value` /
   `excluded_value` on the geography, sector and dashboard responses; the charts
   show a "Copre il X% del portafoglio…" note when the excluded value is
-  positive, and the asset detail page renders the distribution cards only for
-  actionable equity assets (hint banner otherwise);
+  positive (the I.4 dashboard bar charts use the shorter "Universo azionario:
+  X% del portafoglio" caption for the same info), and the asset detail page
+  renders the distribution cards only for actionable equity assets (hint
+  banner otherwise);
 - **No separate `/register` page**: registration is a toggle inside `/login`.
 - **No manual price entry in the UI**: prices only come from Yahoo (the
   session refresh, the worker, or the "Backfill storico completo" action).

@@ -4,6 +4,7 @@
 
 ### Nuove funzionalità
 - Scegli la tua valuta base in Impostazioni → Profilo: la dashboard ora consolida totali e allocazioni in quella valuta
+- L'allocazione della dashboard ora mostra anche la ripartizione per classe di investimento e per singolo paese, accanto a quelle già disponibili per settore e macro-regione: i valori sono aggregati su tutti i tuoi portafogli ed espressi nella tua valuta base
 - La dashboard ora separa investimenti attivi e chiusi, a livello di vault e per singolo portafoglio: per la parte chiusa vedi il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata sul capitale; le righe dei dividendi compaiono insieme agli investimenti attivi e, una volta chiusa completamente una posizione, confluiscono nell'incasso
 - Nuovo grafico delle performance aggregato nella dashboard: un unico grafico per tutti i tuoi portafogli, nella tua valuta base, che mostra il rendimento percentuale time-weighted di ogni mese o anno (con una linea del TWR cumulativo) accanto a un grafico del capitale che confronta il denaro investito con il valore attuale, con selettore mensile/annuale. Il rendimento è misurato giorno per giorno, quindi versamenti, vendite, dividendi e commissioni non lo distorcono più e chiudere o riaprire completamente una posizione non produce più picchi assurdi; le posizioni senza prezzo di mercato sono mantenute al costo e non compaiono mai come falsa perdita
 

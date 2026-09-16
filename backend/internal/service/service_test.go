@@ -777,6 +777,17 @@ func TestGetDashboardAllocation_AggregatesAcrossPortfolios(t *testing.T) {
 		t.Fatalf("Financials value = %v, want positive", fin.Value)
 	}
 
+	// Both holdings are priced equities across the two portfolios: the class
+	// allocation merges them into a single 100% bucket in the base currency.
+	if len(got.Classes) != 1 {
+		t.Fatalf("classes = %+v, want a single merged equity bucket", got.Classes)
+	}
+	if got.Classes[0].Class != "equity" {
+		t.Fatalf("classes[0].class = %q, want equity", got.Classes[0].Class)
+	}
+	assertDecimalInDelta(t, got.Classes[0].Value, decimal.RequireFromString("211.11"), "0.01", "equity class value")
+	assertDecimalInDelta(t, got.Classes[0].Weight, decimal.NewFromInt(100), "0.01", "equity class weight")
+
 	// Both holdings (ETF equity + stock) are eligible: fully covered, nothing excluded.
 	assertDecimalInDelta(t, got.Covered, decimal.RequireFromString("211.11"), "0.01", "covered value")
 	if !got.Excluded.IsZero() {
@@ -799,6 +810,12 @@ func TestGetDashboardAllocation_EmptyUser(t *testing.T) {
 	}
 	if got.Sectors == nil || len(got.Sectors) != 0 {
 		t.Fatalf("sectors = %v, want empty non-nil slice", got.Sectors)
+	}
+	if got.Classes == nil || len(got.Classes) != 0 {
+		t.Fatalf("classes = %v, want empty non-nil slice", got.Classes)
+	}
+	if got.Countries == nil || len(got.Countries) != 0 {
+		t.Fatalf("countries = %v, want empty non-nil slice", got.Countries)
 	}
 	if !got.Covered.IsZero() {
 		t.Fatalf("covered = %v, want zero", got.Covered)
@@ -890,6 +907,127 @@ func TestGetDashboardAllocation_ExcludesNonEquity(t *testing.T) {
 	}
 	if !equalDecimal(sectorWeightSum, decimal.NewFromInt(100)) {
 		t.Fatalf("sectors weight sum = %v, want 100", sectorWeightSum)
+	}
+}
+
+func TestGetDashboardAllocation_ClassAllocation(t *testing.T) {
+	eqID := uuid.New()
+	bondID := uuid.New()
+	ocID := uuid.New()
+	noPriceID := uuid.New()
+	equity := holding(eqID.String(), "USD", "", "", model.AssetTypeStock, decimal.NewFromInt(5), decimal.NewFromInt(100))
+	bond := holding(bondID.String(), "EUR", "", "", model.AssetTypeBond, decimal.NewFromInt(1), decimal.NewFromInt(100))
+	bond.AssetClass = "bond"
+	unclassified := holding(ocID.String(), "EUR", "", "", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(50))
+	unclassified.AssetClass = ""
+	noPrice := holding(noPriceID.String(), "USD", "", "", model.AssetTypeStock, decimal.NewFromInt(10), decimal.NewFromInt(100))
+	noPrice.HasPrice = false
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{
+			{Currency: "USD"},
+			{Currency: "EUR"},
+		},
+		holdings: []*model.Holding{equity, bond, unclassified, noPrice},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.5")}}
+	svc := newTestService(t, pf, &fakeExposureRepo{}, fx)
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// EUR amounts are converted to the USD base (×2); the unpriced holding is
+	// skipped and the empty class folds into "other": equity 500, bond 200,
+	// other 100 of 800, sorted descending.
+	if len(got.Classes) != 3 {
+		t.Fatalf("classes = %+v, want 3 buckets", got.Classes)
+	}
+	if got.Classes[0].Class != "equity" || !equalDecimal(got.Classes[0].Value, decimal.NewFromInt(500)) {
+		t.Fatalf("classes[0] = %+v, want equity 500", got.Classes[0])
+	}
+	assertDecimalInDelta(t, got.Classes[0].Weight, decimal.RequireFromString("62.5"), "0.01", "equity weight")
+	if got.Classes[1].Class != "bond" || !equalDecimal(got.Classes[1].Value, decimal.NewFromInt(200)) {
+		t.Fatalf("classes[1] = %+v, want bond 200", got.Classes[1])
+	}
+	assertDecimalInDelta(t, got.Classes[1].Weight, decimal.NewFromInt(25), "0.01", "bond weight")
+	if got.Classes[2].Class != "other" || !equalDecimal(got.Classes[2].Value, decimal.NewFromInt(100)) {
+		t.Fatalf("classes[2] = %+v, want other 100", got.Classes[2])
+	}
+	assertDecimalInDelta(t, got.Classes[2].Weight, decimal.RequireFromString("12.5"), "0.01", "other weight")
+}
+
+func TestGetDashboardAllocation_ClassAllocationSkipsMissingFX(t *testing.T) {
+	eqID := uuid.New()
+	jpyID := uuid.New()
+	equity := holding(eqID.String(), "USD", "", "", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100))
+	bond := holding(jpyID.String(), "JPY", "", "", model.AssetTypeBond, decimal.NewFromInt(1), decimal.NewFromInt(100))
+	bond.AssetClass = "bond"
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{Currency: "USD"}},
+		holdings:   []*model.Holding{equity, bond},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.NewFromInt(1)}}
+	svc := newTestService(t, pf, &fakeExposureRepo{}, fx)
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got.Classes) != 1 || got.Classes[0].Class != "equity" {
+		t.Fatalf("classes = %+v, want only the convertible equity bucket (the JPY holding has no FX rate)", got.Classes)
+	}
+	assertDecimalInDelta(t, got.Classes[0].Weight, decimal.NewFromInt(100), "0.01", "equity weight")
+}
+
+func TestGetDashboardAllocation_CountryExposure(t *testing.T) {
+	stockID := uuid.New()
+	etfID := uuid.New()
+	bondID := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{{Currency: "USD"}},
+		holdings: []*model.Holding{
+			holding(stockID.String(), "USD", "US", "Technology", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+			holding(etfID.String(), "USD", "", "", model.AssetTypeETF, decimal.NewFromInt(1), decimal.NewFromInt(400)),
+			holding(bondID.String(), "USD", "DE", "", model.AssetTypeBond, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+		},
+	}
+	ex := &fakeExposureRepo{
+		countries: map[string][]model.ExposureRow{
+			etfID.String(): {
+				{Name: "US", Weight: decimal.NewFromInt(25)},
+				{Name: "JP", Weight: decimal.NewFromInt(75)},
+			},
+		},
+	}
+	svc := newTestService(t, pf, ex, &fakeFXRepo{})
+
+	got, err := svc.GetDashboardAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Equity-only universe: the stock falls back to its own country (US 100)
+	// and the ETF splits 25/75 over US/JP (100/300). The DE bond is excluded
+	// by nature, so DE must never appear; zero countries are dropped entirely.
+	if len(got.Countries) != 2 {
+		t.Fatalf("countries = %+v, want only the non-zero JP and US buckets", got.Countries)
+	}
+	if got.Countries[0].Country != "JP" || !equalDecimal(got.Countries[0].Value, decimal.NewFromInt(300)) {
+		t.Fatalf("countries[0] = %+v, want JP 300 (descending)", got.Countries[0])
+	}
+	assertDecimalInDelta(t, got.Countries[0].Weight, decimal.NewFromInt(60), "0.01", "JP weight")
+	if got.Countries[1].Country != "US" || !equalDecimal(got.Countries[1].Value, decimal.NewFromInt(200)) {
+		t.Fatalf("countries[1] = %+v, want US 200", got.Countries[1])
+	}
+	assertDecimalInDelta(t, got.Countries[1].Weight, decimal.NewFromInt(40), "0.01", "US weight")
+	countryWeightSum := decimal.Zero
+	for _, c := range got.Countries {
+		if !c.Value.IsPositive() {
+			t.Fatalf("zero-value country bucket leaked: %+v", c)
+		}
+		countryWeightSum = countryWeightSum.Add(c.Weight)
+	}
+	if !equalDecimal(countryWeightSum, decimal.NewFromInt(100)) {
+		t.Fatalf("countries weight sum = %v, want 100", countryWeightSum)
 	}
 }
 
