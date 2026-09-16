@@ -571,6 +571,9 @@ func TestGetPortfolioGeographyAllocation_EmptyPortfolio(t *testing.T) {
 	if len(geoAlloc.Regions) != len(geo.Regions) {
 		t.Fatalf("regions len = %d, want %d", len(geoAlloc.Regions), len(geo.Regions))
 	}
+	if geoAlloc.Countries == nil || len(geoAlloc.Countries) != 0 {
+		t.Fatalf("countries = %v, want empty non-nil slice", geoAlloc.Countries)
+	}
 	for i, r := range geoAlloc.Regions {
 		if r.Region != geo.Regions[i] {
 			t.Fatalf("region[%d] = %q, want %q", i, r.Region, geo.Regions[i])
@@ -697,6 +700,86 @@ func TestGetPortfolioGeographyAllocation_OtherBucket(t *testing.T) {
 	}
 	if !secAlloc.Excluded.IsZero() {
 		t.Fatalf("excluded = %v, want zero", secAlloc.Excluded)
+	}
+}
+
+func TestGetPortfolioGeographyAllocation_CountryExposure(t *testing.T) {
+	stockID := uuid.New()
+	etfID := uuid.New()
+	bondID := uuid.New()
+	fxID := uuid.New()
+	pf := &fakePortfolioRepo{
+		portfolio: &model.Portfolio{Currency: "EUR"},
+		holdings: []*model.Holding{
+			holding(stockID.String(), "EUR", "US", "Technology", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+			holding(etfID.String(), "EUR", "", "", model.AssetTypeETF, decimal.NewFromInt(1), decimal.NewFromInt(400)),
+			holding(bondID.String(), "EUR", "DE", "", model.AssetTypeBond, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+			holding(fxID.String(), "USD", "GB", "Financials", model.AssetTypeStock, decimal.NewFromInt(1), decimal.NewFromInt(100)),
+		},
+	}
+	ex := &fakeExposureRepo{
+		countries: map[string][]model.ExposureRow{
+			etfID.String(): {
+				{Name: "US", Weight: decimal.NewFromInt(25)},
+				{Name: "JP", Weight: decimal.NewFromInt(75)},
+			},
+		},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"USD": decimal.NewFromInt(1), "EUR": decimal.RequireFromString("1.1")}}
+	svc := newTestService(t, pf, ex, fx)
+
+	got, err := svc.GetPortfolioGeographyAllocation(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "EUR" {
+		t.Fatalf("currency = %q, want EUR", got.Currency)
+	}
+
+	// Equity-only universe with FX conversion (portfolio EUR, USD holding at
+	// 1.1): the US stock falls back to its own country (100), the equity ETF
+	// splits 25/75 over US/JP (100/300), the USD GB stock converts to 110 and
+	// the DE bond is excluded by nature. Only non-zero buckets are returned,
+	// sorted by value descending (JP 300, US 200, GB 110) over a 610 total.
+	if len(got.Countries) != 3 {
+		t.Fatalf("countries = %+v, want the non-zero JP, US and GB buckets only", got.Countries)
+	}
+	if got.Countries[0].Country != "JP" || !equalDecimal(got.Countries[0].Value, decimal.NewFromInt(300)) {
+		t.Fatalf("countries[0] = %+v, want JP 300 (descending)", got.Countries[0])
+	}
+	assertDecimalInDelta(t, got.Countries[0].Weight, decimal.RequireFromString("49.18"), "0.01", "JP weight")
+	if got.Countries[1].Country != "US" || !equalDecimal(got.Countries[1].Value, decimal.NewFromInt(200)) {
+		t.Fatalf("countries[1] = %+v, want US 200", got.Countries[1])
+	}
+	assertDecimalInDelta(t, got.Countries[1].Weight, decimal.RequireFromString("32.79"), "0.01", "US weight")
+	if got.Countries[2].Country != "GB" || !equalDecimal(got.Countries[2].Value, decimal.NewFromInt(110)) {
+		t.Fatalf("countries[2] = %+v, want GB 110 (USD converted at 1.1)", got.Countries[2])
+	}
+	assertDecimalInDelta(t, got.Countries[2].Weight, decimal.RequireFromString("18.03"), "0.01", "GB weight")
+	countryWeightSum := decimal.Zero
+	for _, c := range got.Countries {
+		if !c.Value.IsPositive() {
+			t.Fatalf("zero-value country bucket leaked: %+v", c)
+		}
+		if c.Country == "DE" {
+			t.Fatalf("excluded bond country DE present: %+v", c)
+		}
+		countryWeightSum = countryWeightSum.Add(c.Weight)
+	}
+	if !equalDecimal(countryWeightSum, decimal.NewFromInt(100)) {
+		t.Fatalf("countries weight sum = %v, want 100", countryWeightSum)
+	}
+
+	// Countries share the region pipeline's FX conversion: the same converted
+	// GB stock lands 110 in the United Kingdom region too.
+	if uk := regionByName(t, got.Regions, "United Kingdom"); !equalDecimal(uk.Value, decimal.NewFromInt(110)) {
+		t.Fatalf("United Kingdom region value = %v, want 110", uk.Value)
+	}
+	if !equalDecimal(got.Covered, decimal.NewFromInt(610)) {
+		t.Fatalf("covered = %v, want 610", got.Covered)
+	}
+	if !equalDecimal(got.Excluded, decimal.NewFromInt(100)) {
+		t.Fatalf("excluded = %v, want 100", got.Excluded)
 	}
 }
 

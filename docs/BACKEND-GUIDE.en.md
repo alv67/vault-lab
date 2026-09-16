@@ -1046,6 +1046,14 @@ otherwise continue".
     `country`); buckets carry the ISO alpha-2 `country` code and, unlike
     regions/sectors, only the **non-zero** ones are returned, sorted by
     value descending with `weight` summing to 100.
+- Since EPIC I.7 `GET /portfolios/{id}/allocation/geography` also returns a
+  `countries` array next to `regions`, with the same semantics as the
+  dashboard's `countries` but scoped to the single portfolio and expressed in
+  its currency: equity-only per-country exposure from `asset_country_weights`
+  (stocks without stored exposure fall back to 100% of their own `country`,
+  same FX conversion as the regions), only the **non-zero** buckets, sorted
+  by value descending with `weight` summing to 100; empty (non-nil) when
+  there is no country exposure.
 - The `python-service` microservice (B.5) fetches ETF exposure and resolves
   ISINs from tickers via JustETF; since B.14 it also exposes Morningstar
   exposure via `GET /api/v1/etf/{isin}/morningstar-exposure` (custom resolver:

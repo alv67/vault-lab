@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- La sezione allocazione del dettaglio portafoglio ora replica la card "Allocazione complessiva" della dashboard: una ciambella per classe di attività e barre decrescenti per regioni, settori e paesi, tutto nella valuta del portafoglio (solo azioni, ordinate per valore)
 - Anche nel dettaglio del portafoglio compare lo stesso riepilogo degli investimenti attivi e chiusi della dashboard, nella valuta del portafoglio: le posizioni aperte con investito, valore attuale, guadagno/perdita e dividendi, e la parte chiusa con il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata
 - La dashboard mostra ora un'unica tabella degli asset investiti: una riga per ciascun asset, aggregata su tutti i tuoi portafogli ed espressa nella tua valuta base, con importo investito, valore attuale e P/L %, ordinata per valore
 - Scegli la tua valuta base in Impostazioni → Profilo: la dashboard ora consolida totali e allocazioni in quella valuta

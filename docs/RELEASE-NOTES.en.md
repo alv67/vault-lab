@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- The portfolio detail allocation section now mirrors the dashboard's "Allocazione complessiva" card: an asset-class donut plus descending region, sector and country bars, all in the portfolio's currency (equity-only, ordered by value)
 - The portfolio detail page now shows the same active vs closed investments breakdown as the dashboard, in the portfolio's own currency: open positions with invested, current value, gain/loss and dividends, and the closed part with the cost of the sold lots, the proceeds and the realized gain/loss
 - The dashboard now shows a single invested-assets table: one row per asset aggregated across all your portfolios, in your base currency, with invested amount, current value and P/L %, ordered by value
 - Choose your base currency in Settings → Profile: the dashboard now consolidates your totals and allocations into that currency

@@ -1056,6 +1056,14 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
     a differenza di regioni/settori, vengono restituiti solo quelli
     **nonnulli**, ordinati per valore decrescente con `weight` che somma a
     100.
+- Da EPIC I.7 anche `GET /portfolios/{id}/allocation/geography` restituisce
+  un array `countries` accanto a `regions`, con la stessa semantica dei
+  `countries` della dashboard ma limitato al singolo portafoglio ed espresso
+  nella sua valuta: esposizione equity-only per paese da
+  `asset_country_weights` (le azioni senza esposizione salvata ricadono sul
+  proprio `country` al 100%, con la stessa conversione FX delle regioni),
+  solo i bucket **nonnulli**, ordinati per valore decrescente con `weight`
+  che somma a 100; vuoto (non nil) quando non c'è esposizione per paese.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; da B.14 espone anche l'esposizione Morningstar
   via `GET /api/v1/etf/{isin}/morningstar-exposure` (resolver custom: bootstrap

@@ -1699,6 +1699,10 @@ func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolio
 		if err != nil {
 			return nil, err
 		}
+		countryExposures, err := s.repos.Exposure.FindCountriesByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
 		buckets, total, cov := buildBuckets(holdings, rates, p.Currency, geo.Regions, exposures,
 			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
 		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
@@ -1713,7 +1717,22 @@ func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolio
 				e.Weight = e.Value.Div(total).Mul(decimal.NewFromInt(100))
 			}
 		}
-		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions, Covered: cov.covered, Excluded: cov.excluded}, nil
+		cBuckets, cTotal, _ := buildBuckets(holdings, rates, p.Currency, geo.Countries, countryExposures,
+			func(h *model.Holding) string { return h.Country })
+		countries := make([]*model.CountryAllocation, 0, len(cBuckets))
+		for name, value := range cBuckets {
+			if !value.IsPositive() {
+				continue
+			}
+			countries = append(countries, &model.CountryAllocation{Country: name, Value: value})
+		}
+		sort.Slice(countries, func(i, j int) bool { return countries[i].Value.GreaterThan(countries[j].Value) })
+		for _, c := range countries {
+			if cTotal.IsPositive() {
+				c.Weight = c.Value.Div(cTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions, Countries: countries, Covered: cov.covered, Excluded: cov.excluded}, nil
 	})
 }
 

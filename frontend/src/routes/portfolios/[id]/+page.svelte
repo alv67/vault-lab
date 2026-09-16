@@ -17,21 +17,21 @@
     type Transaction,
     type Asset,
   } from '$lib/services/api'
-  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
   import PositionChart from '$lib/components/PositionChart.svelte'
-  import ExposurePie from '$lib/components/ExposurePie.svelte'
-  import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
+  import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
+  import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
   import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
-  import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import TransactionTable from '$lib/components/domain/TransactionTable.svelte'
   import AddTransactionModal from '$lib/components/domain/AddTransactionModal.svelte'
   import {
-    type ExposureRow,
     type PortfolioClassAllocation,
     type PortfolioGeographyAllocation,
     type PortfolioSectorAllocation,
   } from '$lib/services/api'
+  import { countryDisplayName } from '$lib/countryNames'
+  import { chartSemanticColors } from '$lib/chartPalette'
+  import { resolved } from '$lib/stores/theme.svelte'
   import { Plus, Download } from 'lucide-svelte'
   import Button from '$lib/components/ui/Button.svelte'
 
@@ -53,12 +53,49 @@
   let editingTx = $state<Transaction | null>(null)
 
   const currency = $derived(portfolio?.currency || 'USD')
-  const classAllocRows = $derived<ExposureRow[]>(
-    (classAlloc?.classes ?? []).map((c) => ({
-      name: ASSET_CLASS_LABELS[c.class] ?? c.class,
-      weight: c.weight,
-    })),
+
+  // EPIC I.7 (#86): the allocation section mirrors the dashboard's
+  // "Allocazione complessiva" card. The region/sector/country payloads are
+  // mapped onto the generic ExposureBarRow shape consumed by
+  // ExposureBarChart (countries keep their raw ISO codes as row identity;
+  // the chart maps them to full names via `labelFor`, see the panel below).
+  const regionBarRows = $derived<ExposureBarRow[]>(
+    (geoAlloc?.regions ?? []).map((r) => ({ name: r.region, value: r.value, weight: r.weight })),
   )
+  const sectorBarRows = $derived<ExposureBarRow[]>(
+    (sectorAlloc?.sectors ?? []).map((s) => ({ name: s.sector, value: s.value, weight: s.weight })),
+  )
+  const countryBarRows = $derived<ExposureBarRow[]>(
+    (geoAlloc?.countries ?? []).map((c) => ({ name: c.country, value: c.value, weight: c.weight })),
+  )
+
+  // Equity-universe coverage note for the bar panels, like the dashboard:
+  // shown only when non-equity holdings were actually excluded. Geography
+  // (regions + countries) and sectors come from two isolated endpoints, so
+  // each payload carries its own covered/excluded note.
+  function equityUniverseNote(covered?: string, excluded?: string): string | undefined {
+    const coveredNum = Number(covered || 0)
+    const excludedNum = Number(excluded || 0)
+    const total = coveredNum + excludedNum
+    if (total <= 0 || excludedNum <= 0) return undefined
+    return `Universo azionario: ${((coveredNum / total) * 100).toFixed(1)}% del portafoglio`
+  }
+  const geoUniverseNote = $derived(
+    equityUniverseNote(geoAlloc?.covered_value, geoAlloc?.excluded_value),
+  )
+  const sectorUniverseNote = $derived(
+    equityUniverseNote(sectorAlloc?.covered_value, sectorAlloc?.excluded_value),
+  )
+
+  // Aggregated "Other" buckets are muted grey, like the slice treatment in
+  // the donut charts (same helper as the dashboard card). Read via
+  // chartSemanticColors so it re-evaluates on theme flips (the {#key} blocks
+  // inside the charts re-init them anyway).
+  function otherGrey(name: string): string | undefined {
+    return name === 'Other' || name === 'Other / Not Classified'
+      ? chartSemanticColors(resolved()).other
+      : undefined
+  }
   const positionRows = $derived<PositionRow[]>(
     (summary?.holdings ?? []).map((h) => ({
       assetId: h.asset_id,
@@ -270,64 +307,69 @@
   </div>
 
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
-    <h2 class="mb-4 font-semibold">Allocazione per classi</h2>
-    {#if classAllocError}
-      <p class="text-sm text-muted-foreground">Allocazione per classi non disponibile</p>
-    {:else if classAlloc && classAllocRows.length > 0}
-      <div class="flex flex-col gap-4 md:flex-row">
-        <div class="w-full md:w-1/2 lg:w-1/3">
-          <ExposurePie data={classAllocRows} title="Allocazione per classi" />
-        </div>
-        <div class="flex-1 overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="border-b border-border text-muted-foreground">
-                <th class="pb-2">Classe</th>
-                <th class="pb-2 text-right">Valore</th>
-                <th class="pb-2 text-right">Peso %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each classAlloc.classes as c (c.class)}
-                <tr class="border-b border-border last:border-0">
-                  <td class="py-2 font-medium">{ASSET_CLASS_LABELS[c.class] ?? c.class}</td>
-                  <td class="py-2 text-right tabular-nums">
-                    {formatCurrency(c.value, classAlloc.currency)}
-                  </td>
-                  <td class="py-2 text-right font-medium tabular-nums">
-                    {formatPercent(c.weight)}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+    <h2 class="mb-4 font-semibold">Allocazione</h2>
+    <!-- EPIC I.7 (#86): mirrors the dashboard "Allocazione complessiva" card —
+         the asset-class donut plus the equity-only region, sector and country
+         bars, all in the portfolio currency. Each panel keeps the endpoint's
+         isolated error state: a failed allocation call shows its own
+         "non disponibile" panel without blocking the section or the page. -->
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="rounded-card border-border bg-surface p-4 shadow-card">
+        {#if classAllocError}
+          <h3 class="mb-3 font-semibold">Classi di attività</h3>
+          <p class="text-sm text-muted-foreground">Allocazione per classi non disponibile</p>
+        {:else}
+          <ClassDonut
+            data={classAlloc?.classes ?? []}
+            currency={classAlloc?.currency || currency}
+            label="Classi di attività"
+          />
+        {/if}
       </div>
-    {:else}
-      <p class="text-sm text-muted-foreground">Nessuna allocazione per classi</p>
-    {/if}
-  </div>
-
-  <div class="mb-6 flex flex-col gap-4 md:flex-row">
-    <div class="w-full md:w-1/2">
-      {#if geoAllocError}
-        <div class="rounded-card border-border bg-surface p-4 shadow-card">
-          <h2 class="mb-4 font-semibold">Allocazione geografica</h2>
-          <p class="text-sm text-muted-foreground">Allocazione geografica non disponibile</p>
-        </div>
-      {:else}
-        <GeographyChart data={geoAlloc?.regions ?? []} {currency} covered={geoAlloc?.covered_value} excluded={geoAlloc?.excluded_value} />
-      {/if}
-    </div>
-    <div class="w-full md:w-1/2">
-      {#if sectorAllocError}
-        <div class="rounded-card border-border bg-surface p-4 shadow-card">
-          <h2 class="mb-4 font-semibold">Allocazione settoriale</h2>
+      <div class="rounded-card border-border bg-surface p-4 shadow-card">
+        {#if sectorAllocError}
+          <h3 class="mb-1 font-semibold">Settori (solo equity)</h3>
           <p class="text-sm text-muted-foreground">Allocazione settoriale non disponibile</p>
-        </div>
-      {:else}
-        <SectorChart data={sectorAlloc?.sectors ?? []} {currency} covered={sectorAlloc?.covered_value} excluded={sectorAlloc?.excluded_value} />
-      {/if}
+        {:else}
+          <ExposureBarChart
+            rows={sectorBarRows}
+            currency={sectorAlloc?.currency || currency}
+            label="Settori (solo equity)"
+            note={sectorUniverseNote}
+            colorFor={otherGrey}
+          />
+        {/if}
+      </div>
+      <div class="rounded-card border-border bg-surface p-4 shadow-card">
+        {#if geoAllocError}
+          <h3 class="mb-1 font-semibold">Regioni (solo equity)</h3>
+          <p class="text-sm text-muted-foreground">Allocazione geografica non disponibile</p>
+        {:else}
+          <ExposureBarChart
+            rows={regionBarRows}
+            currency={geoAlloc?.currency || currency}
+            label="Regioni (solo equity)"
+            note={geoUniverseNote}
+            colorFor={otherGrey}
+          />
+        {/if}
+      </div>
+      <div class="rounded-card border-border bg-surface p-4 shadow-card">
+        {#if geoAllocError}
+          <h3 class="mb-1 font-semibold">Paesi (solo equity)</h3>
+          <p class="text-sm text-muted-foreground">Allocazione geografica non disponibile</p>
+        {:else}
+          <ExposureBarChart
+            rows={countryBarRows}
+            currency={geoAlloc?.currency || currency}
+            label="Paesi (solo equity)"
+            note={geoUniverseNote}
+            colorFor={otherGrey}
+            labelFor={countryDisplayName}
+            maxVisibleRows={10}
+          />
+        {/if}
+      </div>
     </div>
   </div>
 

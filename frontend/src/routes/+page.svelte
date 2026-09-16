@@ -319,9 +319,9 @@
           <!-- EPIC I.4 layout: asset-class donut over the whole vault plus the
                equity-only breakdown (sector, region and country bars), in a
                responsive 2-column grid; regions sit next to countries in the
-               bottom row. The inner panels reuse the card surface styling of
-               GeographyChart (the region donut was replaced by bars here — it
-               stays only on the portfolio detail page). -->
+               bottom row. The inner panels reuse the shared card surface
+               styling; the portfolio detail "Allocazione" section mirrors this
+               exact layout in EPIC I.7 (#86). -->
           <div class="grid gap-4 lg:grid-cols-2">
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
               <ClassDonut data={alloc.classes ?? []} currency={alloc.currency} label="Classi di attività" />

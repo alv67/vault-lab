@@ -61,12 +61,15 @@ type RegionAllocation struct {
 }
 
 // PortfolioGeographyAllocation groups the geographic allocation of a portfolio
-// in its reference currency.
+// in its reference currency. Countries carries the equity-only per-country
+// exposure with the same semantics as the dashboard's countries: only the
+// non-zero buckets, sorted by value descending, weights summing to 100.
 type PortfolioGeographyAllocation struct {
-	Currency string              `json:"currency"`
-	Regions  []*RegionAllocation `json:"regions"`
-	Covered  decimal.Decimal     `json:"covered_value"`
-	Excluded decimal.Decimal     `json:"excluded_value"`
+	Currency  string               `json:"currency"`
+	Regions   []*RegionAllocation  `json:"regions"`
+	Countries []*CountryAllocation `json:"countries"`
+	Covered   decimal.Decimal      `json:"covered_value"`
+	Excluded  decimal.Decimal      `json:"excluded_value"`
 }
 
 // CountryAllocation is one country bucket within the vault's country

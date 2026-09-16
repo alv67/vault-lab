@@ -254,6 +254,11 @@ export interface CountryAllocation {
 export interface PortfolioGeographyAllocation {
   currency: string
   regions: RegionAllocation[]
+  /** Equity-only per-country exposure of this portfolio (EPIC I.7, #86),
+   * with the same semantics as the dashboard's `countries`: ISO alpha-2
+   * codes, non-zero buckets only, sorted by descending value. Values in the
+   * portfolio currency. */
+  countries: CountryAllocation[]
   covered_value?: string
   excluded_value?: string
 }
