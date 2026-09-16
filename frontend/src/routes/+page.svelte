@@ -16,6 +16,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
   import CapitalChart from '$lib/components/domain/CapitalChart.svelte'
+  import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
   import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
@@ -206,54 +207,17 @@
     <div class="space-y-6">
       {#if dash.summary}
         <!-- Primary KPIs: consolidated totals in the user's base currency
-             (EPIC I.1), collected into a single "Investments" card with one
-             row per breakdown group (EPIC I.2): Active = lots still held
-             (dividends of open positions kept in their own column), Closed =
-             sold lots (proceeds already fold in the dividends of fully-closed
-             positions, so the Dividends cell is empty). -->
-        <Card class="p-4">
-          <h2 class="mb-3 font-semibold">Investments</h2>
-          <div class="overflow-x-auto">
-            <Table aria-label="Investments">
-              <THead>
-                <Tr>
-                  <Th class="sr-only">Group</Th>
-                  <Th align="right">Invested</Th>
-                  <Th align="right">Value / Proceeds</Th>
-                  <Th align="right">Gain/Loss</Th>
-                  <Th align="right">%</Th>
-                  <Th align="right">Dividends</Th>
-                </Tr>
-              </THead>
-              <TBody>
-                <Tr>
-                  <Td class="font-medium">Active</Td>
-                  <Td align="right">{formatCurrency(dash.summary.active.invested, dash.base_currency)}</Td>
-                  <Td align="right">{formatCurrency(dash.summary.active.value, dash.base_currency)}</Td>
-                  <Td align="right" class="font-medium {pnlColorClass(dash.summary.active.gain_loss)}">
-                    {formatCurrency(dash.summary.active.gain_loss, dash.base_currency)}
-                  </Td>
-                  <Td align="right" class={pnlColorClass(dash.summary.active.gain_loss_pct)}>
-                    {formatPercent(dash.summary.active.gain_loss_pct)}
-                  </Td>
-                  <Td align="right">{formatCurrency(dash.summary.active.dividends, dash.base_currency)}</Td>
-                </Tr>
-                <Tr>
-                  <Td class="font-medium">Closed</Td>
-                  <Td align="right">{formatCurrency(dash.summary.closed.invested, dash.base_currency)}</Td>
-                  <Td align="right">{formatCurrency(dash.summary.closed.proceeds, dash.base_currency)}</Td>
-                  <Td align="right" class="font-medium {pnlColorClass(dash.summary.closed.realized)}">
-                    {formatCurrency(dash.summary.closed.realized, dash.base_currency)}
-                  </Td>
-                  <Td align="right" class={pnlColorClass(dash.summary.closed.realized_pct)}>
-                    {formatPercent(dash.summary.closed.realized_pct)}
-                  </Td>
-                  <Td align="right" class="text-muted-foreground">—</Td>
-                </Tr>
-              </TBody>
-            </Table>
-          </div>
-        </Card>
+             (EPIC I.1), rendered by the shared "Investments" card (EPIC I.2
+             active/closed split) also used by the portfolio detail (EPIC I.6,
+             #85): Active = lots still held (dividends of open positions kept
+             in their own column), Closed = sold lots (proceeds already fold
+             in the dividends of fully-closed positions, so the Dividends
+             cell is empty). -->
+        <InvestmentsTable
+          active={dash.summary.active}
+          closed={dash.summary.closed}
+          currency={dash.base_currency}
+        />
       {/if}
 
       <div class="grid gap-4 lg:grid-cols-2">

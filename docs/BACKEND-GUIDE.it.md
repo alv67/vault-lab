@@ -338,6 +338,29 @@ vengono emessi in ordine crescente — i bucket senza dati vengono
 semplicemente omessi. `return` e `twr` si arrotondano a 4 decimali,
 `invested` e `value` a 8.
 
+### Il riepilogo del portafoglio (`GET /portfolios/{id}/summary`, EPIC I.6)
+
+La pagina di dettaglio del portafoglio mostra la stessa card "Investimenti"
+della dashboard: accanto ai campi piatti storici, lasciati invariati per
+compatibilità (`total_cost`, `total_value`, `gain_loss`, `gain_loss_pct`,
+`realized_gl`, `unrealized_gl`), la risposta porta gli oggetti annidati
+`active` e `closed` con esattamente le stesse regole delle voci per-portfolio
+della dashboard (vedi sopra): `active` somma costo e valore di mercato dei
+lotti ancora aperti (`invested`, `value`, `gain_loss`, `gain_loss_pct`) più i
+`dividends` delle posizioni ancora aperte (anche parzialmente vendute); le
+posizioni aperte di asset senza prezzo restano fuori da
+`invested`/`value` (il loro costo non ha un valore di mercato comparabile)
+ma contano comunque i dividendi; `closed` riporta `invested` (costo AVCO dei
+lotti venduti), `proceeds` (ricavi netti di vendita più i dividendi confluati
+nelle posizioni completamente chiuse), `realized` e `realized_pct`. Tutto
+è espresso nella **valuta del portafoglio**: non si applica nessuna
+conversione nella valuta base e solo il valore di mercato passa dal fattore
+FX asset→portafoglio, quindi un valore senza tasso disponibile viene omesso e
+continua a essere segnalato dai campi di qualità dati `fx_missing_count` /
+`fx_missing_value` già esistenti. I numeri sono arrotondati dallo stesso
+helper `finalizeBreakdowns` della dashboard e la lista `holdings` resta
+invariata.
+
 Nel codice Go il pattern tipico per leggere più righe è:
 
 ```go

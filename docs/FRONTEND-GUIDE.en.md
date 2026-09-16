@@ -423,6 +423,7 @@ in white).
 | `SectorChart.svelte` (`lib/components/domain/`) | identical structure over sectors | the **portfolio detail** sector card (the dashboard moved sectors to `ExposureBarChart` in EPIC I.4). Accepts `SectorAllocation[]` (`{sector, value, weight}`), plus the same optional `covered`/`excluded` coverage note as `GeographyChart` |
 | `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the vault's asset classes (EPIC I.4, same radius/palette/label style as `GeographyChart`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `ASSET_CLASS_LABELS` for friendly slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole vault, base currency) |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | reusable **horizontal bar chart** (EPIC I.4) over generic `{name, value, weight}[]` rows (`ExposureBarRow`): bars sorted **descending by value** (defensively re-sorted and non-positive rows dropped in the component; the category axis is `inverse`d so the biggest bar sits on top), weight % printed at the bar end, tooltip with amount (`formatCurrency(value, currency)`) and weight (`formatPercent`), hidden value axis (the bars only need to be comparable), canvas height grows with the row count, `colorFor?: (name) => string` per-row colour override (else the resolved `resolvePalette` palette by index), `labelFor?: (name) => string` axis-label mapping (the axis shows the friendly name — e.g. ISO code → full country name via `countryDisplayName` — and the tooltip appends the raw name in parentheses when it differs, "United States (US)"; the axis label column also widens to 140px for mapped labels), `maxVisibleRows?: number` caps the visible area to that many rows with an `overflow-y-auto` viewport while the canvas keeps its full height (all rows scrollable), optional `label` heading and muted `note` caption, "No data" empty state, theme-aware re-init (`{#key}`) | the **dashboard** "Allocazione complessiva" region, sector and country panels, fed by `dashboardAllocation().regions` / `.sectors` / `.countries` (callers map `RegionAllocation`/`SectorAllocation`/`CountryAllocation` onto `ExposureBarRow`; countries carry ISO alpha-2 codes rendered with `labelFor={countryDisplayName}` and `maxVisibleRows={10}` — the ~10 biggest bars are visible, the rest scroll vertically; the region and sector panels pass neither, so their labels stay verbatim and all rows stay visible — the ~10 macro-regions never need the cap) |
+| `InvestmentsTable.svelte` (`lib/components/domain/`) | shared **active/closed** table (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, optional `title`): columns Invested / Value-Proceeds / Gain-Loss / % / Dividends, rows Active and Closed, signed P/L colored with `pnlColorClass`, amounts via `formatCurrency` | the **dashboard** "Investments" card (base currency, EPIC I.2) and the **portfolio detail** KPI card (portfolio currency, EPIC I.6 #85) |
 | `PositionTable.svelte` (`lib/components/domain/`) | generic positions table over the `PositionRow` type (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` toggle the optional columns, `showPrice` adds a Price column (before Qty, formatted with `priceCurrency`, shown even for closed rows), `linkAssets` links the ticker to the asset page; closed rows dash out every cell except realized | the **portfolio detail** Positions table (E.2) — the dashboard positions accordion (E.1) was replaced by the consolidated "Invested assets" table in EPIC I.5 (#82) and no longer uses this component |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | theme-aware donut of `{name, value}[]` shares (weights recomputed on the positive total); `showValue={false}` hides the value in the tooltip (mixed-currency donut) | the **dashboard** "Allocation by portfolio" (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
@@ -628,7 +629,9 @@ fetch feeding both the Performance and Capital invested cards).
 - **Investments card** (EPIC I.1, active/closed split since EPIC I.2): when
   the response carries `summary`, the top block shows the consolidated totals
   converted into the user's **base currency** (`base_currency` from the
-  payload) as a single `Card` titled **Investments** containing one table with
+  payload) through the shared `InvestmentsTable` component (also reused by the
+  portfolio detail, EPIC I.6 #85): a single `Card` titled **Investments**
+  containing one table with
   a shared header and one row per breakdown group: **Active** (Invested /
   Value / Gain/Loss + % / Dividends, from `summary.active` — the dividends of
   still-open positions) and **Closed** (Invested / Proceeds / Realized + %,
@@ -733,7 +736,10 @@ Called endpoints: `portfolioApi.get`, `.summary`, `.history`,
 `transactionApi.list`, `assetApi.list`, then the session
 `pricesApi.refresh(id)` + fresh summary.
 
-- KPI cards: Value, Realized, Gain/Loss (open, with %), Assets.
+- KPI: the shared `InvestmentsTable` card (Active/Closed roll-ups from
+  `summary.active` / `summary.closed`, in the portfolio currency) plus a muted
+  asset-count line (EPIC I.6 #85; replaced the old Value/Realized/Open G-L/Assets
+  `StatCard`s).
 - **Positions** table (`summary.holdings`, ticker linking to `/assets/{id}`,
   closed positions shown with a "Closed" badge and `-`).
 - **Performance history**: `PositionChart` with a dropdown to switch between

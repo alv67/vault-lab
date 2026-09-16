@@ -1539,6 +1539,32 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				}
 			}
 			summary.Holdings = append(summary.Holdings, ah)
+			// The active/closed breakdown mirrors the per-portfolio rules of
+			// GetDashboard, without any conversion to a base currency: cost,
+			// dividends, closed cost and proceeds are already expressed in
+			// the portfolio currency and only the market value needs the
+			// asset->portfolio factor. Only open lots of priced assets feed
+			// the active invested, so neither the AVCO rounding residue of a
+			// closed position nor the uncomparable cost of an unpriced one
+			// inflates it. Dividends follow the position: still-open ones
+			// (even partially sold or unpriced) stay in the active group,
+			// fully closed ones fold into the proceeds. An unconvertible
+			// value is skipped here and already reported by the FX-missing
+			// bookkeeping of the flat fields above.
+			summary.Closed.Invested = summary.Closed.Invested.Add(h.ClosedCost)
+			summary.Closed.Proceeds = summary.Closed.Proceeds.Add(h.Proceeds)
+			if h.HasPrice && h.Qty.IsPositive() {
+				summary.Active.Invested = summary.Active.Invested.Add(h.Cost)
+				value := h.Qty.Mul(h.LastClose)
+				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+					summary.Active.Value = summary.Active.Value.Add(value.Mul(factor))
+				}
+			}
+			if h.Qty.IsPositive() {
+				summary.Active.Dividends = summary.Active.Dividends.Add(h.Dividends)
+			} else {
+				summary.Closed.Proceeds = summary.Closed.Proceeds.Add(h.Dividends)
+			}
 		}
 		summary.TotalCost = totalCost
 		summary.TotalValue = totalValue
@@ -1548,6 +1574,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 		if totalCost.IsPositive() {
 			summary.GainLossPct = summary.GainLoss.Div(totalCost).Mul(decimal.NewFromInt(100))
 		}
+		finalizeBreakdowns(&summary.Active, &summary.Closed)
 		return summary, nil
 	})
 }

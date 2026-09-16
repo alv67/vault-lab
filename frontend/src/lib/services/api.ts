@@ -197,6 +197,11 @@ export interface AssetHolding {
 export interface PortfolioSummary {
   portfolio_id: string
   portfolio_name: string
+  /** Active/closed roll-ups in the PORTFOLIO currency (EPIC I.6, #85): the
+   * same nested shape the dashboard summary exposes, so both pages can share
+   * the `InvestmentsTable` component. */
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
   total_value: string
   total_cost: string
   gain_loss: string

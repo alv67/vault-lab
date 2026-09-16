@@ -18,10 +18,10 @@
     type Asset,
   } from '$lib/services/api'
   import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
-  import { pnlColorClass } from '$lib/ui-colors'
   import PositionChart from '$lib/components/PositionChart.svelte'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
+  import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
   import SectorChart from '$lib/components/domain/SectorChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import TransactionTable from '$lib/components/domain/TransactionTable.svelte'
@@ -34,7 +34,6 @@
   } from '$lib/services/api'
   import { Plus, Download } from 'lucide-svelte'
   import Button from '$lib/components/ui/Button.svelte'
-  import StatCard from '$lib/components/ui/StatCard.svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -216,22 +215,17 @@
     </div>
   </header>
 
-  <div class="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-    <StatCard label="Value" value={formatCurrency(summary?.total_value ?? 0, currency)} />
-    <StatCard
-      label="Realized"
-      value={formatCurrency(summary?.realized_gl ?? 0, currency)}
-      valueClass={pnlColorClass(summary?.realized_gl)}
-    />
-    <StatCard
-      label="Open G/L"
-      value={formatCurrency(summary?.gain_loss ?? 0, currency)}
-      delta={formatPercent(summary?.gain_loss_pct ?? 0)}
-      deltaValue={Number(summary?.gain_loss_pct ?? 0)}
-      valueClass={pnlColorClass(summary?.gain_loss)}
-    />
-    <StatCard label="Assets" value={String(summary?.asset_count ?? 0)} />
-  </div>
+  {#if summary}
+    <!-- Same "Investments" card the dashboard shows (EPIC I.6, #85), fed by
+         the portfolio-currency active/closed roll-ups of
+         `GET /portfolios/{id}/summary`; the old flat KPI row (Value /
+         Realized / Open G/L / Assets) is gone, only the asset count stays as
+         a muted secondary line under the card. -->
+    <div class="mb-6">
+      <InvestmentsTable active={summary.active} closed={summary.closed} {currency} />
+      <p class="mt-2 text-xs text-muted-foreground">{summary.asset_count} assets</p>
+    </div>
+  {/if}
 
   {#if positionRows.length > 0}
     <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">

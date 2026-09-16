@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- The portfolio detail page now shows the same active vs closed investments breakdown as the dashboard, in the portfolio's own currency: open positions with invested, current value, gain/loss and dividends, and the closed part with the cost of the sold lots, the proceeds and the realized gain/loss
 - The dashboard now shows a single invested-assets table: one row per asset aggregated across all your portfolios, in your base currency, with invested amount, current value and P/L %, ordered by value
 - Choose your base currency in Settings → Profile: the dashboard now consolidates your totals and allocations into that currency
 - The dashboard allocation now breaks your whole vault down also by asset class (donut data) and by individual country, alongside the existing sector and macro-region views — all aggregated across your portfolios and expressed in your base currency

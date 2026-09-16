@@ -7,8 +7,12 @@ import (
 )
 
 type PortfolioSummary struct {
-	PortfolioID    string          `json:"portfolio_id"`
-	PortfolioName  string          `json:"portfolio_name"`
+	PortfolioID   string `json:"portfolio_id"`
+	PortfolioName string `json:"portfolio_name"`
+	// Active/Closed are the same roll-ups the dashboard exposes per portfolio
+	// (see PortfolioPerformanceSummary), in the portfolio currency.
+	Active         ActiveBreakdown `json:"active"`
+	Closed         ClosedBreakdown `json:"closed"`
 	TotalValue     decimal.Decimal `json:"total_value"`
 	TotalCost      decimal.Decimal `json:"total_cost"`
 	GainLoss       decimal.Decimal `json:"gain_loss"`

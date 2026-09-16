@@ -338,6 +338,28 @@ dates, so the last date of each month/year seals its bucket and the buckets
 are emitted in ascending order — buckets with no data are simply omitted.
 `return` and `twr` are rounded to 4 decimals, `invested` and `value` to 8.
 
+### The portfolio summary (`GET /portfolios/{id}/summary`, EPIC I.6)
+
+The portfolio detail page shows the same "Investments" card the dashboard
+uses: alongside the legacy flat fields, kept unchanged for backward
+compatibility (`total_cost`, `total_value`, `gain_loss`, `gain_loss_pct`,
+`realized_gl`, `unrealized_gl`), the response carries the nested `active` and
+`closed` objects with exactly the same rules as the per-portfolio entries of
+the dashboard (see above): `active` sums the cost and market value of the
+open lots (`invested`, `value`, `gain_loss`, `gain_loss_pct`) plus the
+`dividends` of the positions that are still open (even partially sold), while
+open positions of unpriced assets stay out of `invested`/`value` (their cost
+has no market value to compare with) but keep counting their dividends;
+`closed` reports `invested` (AVCO cost of the sold lots), `proceeds` (net
+sale proceeds plus the dividends folded in by the fully closed positions),
+`realized` and `realized_pct`. Everything is expressed in the **portfolio
+currency**: no base-currency conversion is applied and only the market value
+goes through the asset→portfolio FX factor, so a value whose rate is missing
+is skipped and keeps being surfaced by the existing `fx_missing_count` /
+`fx_missing_value` data-quality fields. The figures are rounded by the same
+`finalizeBreakdowns` helper the dashboard uses, and the `holdings` list is
+returned as before.
+
 The typical Go pattern for reading multiple rows is:
 
 ```go
