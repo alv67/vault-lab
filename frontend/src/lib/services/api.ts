@@ -337,19 +337,22 @@ export interface PortfolioAssets {
   assets: AssetPerformance[]
 }
 
-/** One month or year bucket of the dashboard performance chart (EPIC I.3):
- * `period` is "YYYY-MM" (monthly) or "YYYY" (annual), `pnl` the P/L generated
- * inside the bucket (bars) and `realized` the cumulative realized P/L at the
- * bucket's last date (line). Buckets come back ascending; empty ones are
- * omitted. */
+/** One month or year bucket of the dashboard performance charts (EPIC I.3):
+ * `period` is "YYYY-MM" (monthly) or "YYYY" (annual), `return` the
+ * time-weighted return % generated inside the bucket (bars), `twr` the cumulative
+ * time-weighted return % up to the bucket's last date (line), `invested` the
+ * net invested capital and `value` the market value at the bucket's end, both
+ * in the base currency. Buckets come back ascending; empty ones are omitted. */
 export interface PerformanceBucket {
   period: string
-  pnl: string
-  realized: string
+  return: string
+  twr: string
+  invested: string
+  value: string
 }
 
-/** Vault-wide P/L chart across all the user's portfolios, converted to their
- * base currency and bucketed by month or year. */
+/** Vault-wide return/capital chart across all the user's portfolios,
+ * converted to their base currency and bucketed by month or year. */
 export interface DashboardPerformance {
   currency: string
   granularity: 'month' | 'year'

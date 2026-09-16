@@ -17,6 +17,7 @@
   } from '$lib/services/api'
   import { toast } from '$lib/stores/toast.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
+  import CapitalChart from '$lib/components/domain/CapitalChart.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import GeographyChart from '$lib/components/domain/GeographyChart.svelte'
@@ -43,9 +44,11 @@
   let expanded = new SvelteSet<string>()
   let initialized = false
 
-  // Performance card (EPIC I.3): vault-wide P/L buckets in the base currency,
-  // monthly by default, switchable to annual. Isolated like the allocation
-  // card: a failed fetch just renders the chart's empty state.
+  // Performance + Capital invested cards (EPIC I.3): vault-wide percentage
+  // return and invested-capital buckets in the base currency, monthly by
+  // default, switchable to annual. One fetch drives both charts. Isolated
+  // like the allocation card: a failed fetch just renders the charts' empty
+  // states.
   let perf = $state<DashboardPerformance | null>(null)
   let perfLoading = $state(true)
   let granularity = $state<'month' | 'year'>('month')
@@ -116,7 +119,8 @@
         .then((fresh) => {
           dash = fresh
           // The POST above cleared the GET cache and new prices can move the
-          // P/L buckets: refresh the Performance card too.
+          // performance buckets: refresh both the Performance and Capital
+          // invested cards (they share this one fetch).
           void loadPerformance(granularity)
         })
         .catch(() => { /* keep current data, omit the "Prices updated" line */ })
@@ -242,6 +246,10 @@
       {/if}
 
       <div class="grid gap-4 lg:grid-cols-2">
+        <!-- Percentage return card: bars = per-bucket time-weighted return,
+             line = cumulative TWR. The Monthly/Annual control lives here and
+             drives `granularity`, which also feeds the Capital invested card
+             below (both share the same `dashboardPerformance` fetch). -->
         <Card class="p-4">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 class="font-semibold">Performance</h2>
@@ -256,29 +264,42 @@
               <Spinner />
             </div>
           {:else}
-            <PerformanceChart
+            <PerformanceChart buckets={perf?.buckets ?? []} granularity={granularity} />
+          {/if}
+        </Card>
+
+        <!-- Capital invested card: invested (stepped) vs market value lines in
+             the base currency, over the SAME buckets/granularity. -->
+        <Card class="p-4">
+          <h2 class="mb-4 font-semibold">Capital invested</h2>
+          {#if perfLoading}
+            <div class="flex h-[340px] items-center justify-center text-muted-foreground">
+              <Spinner />
+            </div>
+          {:else}
+            <CapitalChart
               buckets={perf?.buckets ?? []}
               currency={perf?.currency || dash.base_currency || 'USD'}
               granularity={granularity}
             />
           {/if}
         </Card>
-
-        <Card class="p-4">
-          <h2 class="mb-4 font-semibold">Allocation by portfolio</h2>
-          <AllocationDonut
-            data={portfolioSlices}
-            title="Allocation by portfolio"
-            currency={dash.base_currency || dash.by_currency[0]?.currency || 'USD'}
-            showValue={!hasMultipleCurrencies}
-          />
-          {#if hasMultipleCurrencies}
-            <p class="mt-2 text-xs text-muted-foreground">
-              Portfolios use different currencies: values are not comparable, shares are indicative.
-            </p>
-          {/if}
-        </Card>
       </div>
+
+      <Card class="p-4">
+        <h2 class="mb-4 font-semibold">Allocation by portfolio</h2>
+        <AllocationDonut
+          data={portfolioSlices}
+          title="Allocation by portfolio"
+          currency={dash.base_currency || dash.by_currency[0]?.currency || 'USD'}
+          showValue={!hasMultipleCurrencies}
+        />
+        {#if hasMultipleCurrencies}
+          <p class="mt-2 text-xs text-muted-foreground">
+            Portfolios use different currencies: values are not comparable, shares are indicative.
+          </p>
+        {/if}
+      </Card>
 
       <div>
         <h2 class="mb-4 font-semibold">Portfolios</h2>

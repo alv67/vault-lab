@@ -2604,18 +2604,30 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 	})
 }
 
-// GetDashboardPerformance returns the vault-wide aggregate P/L chart of the
-// user in their base currency, bucketed by month or year. Each bucket's bar
-// is the P/L generated inside the bucket (total P/L at the bucket's last date
-// minus the previous bucket's, 0 baseline for the first) where the total P/L
-// of a date is market value - cost basis + realized; the line is the
-// cumulative realized P/L at that date. The daily points come from the
-// materialized per-asset series, converted per date through USD-pivoted FX
-// rates: while an asset's factor is missing its converted values are
-// forward-filled (zero before the first successful conversion). Positions of
-// assets without a market price never contribute market value or cost basis
-// (an unpriced position would fake a total loss), while their realized
-// always counts. Dates with no points produce no bucket.
+// GetDashboardPerformance returns the vault-wide true time-weighted return
+// (TWR) chart of the user in their base currency, bucketed by month or year.
+// Returns are measured daily and linked geometrically: each day carries
+// r(d) = (V(d) - V(d-1) - flow(d)) / V(d-1) when V(d-1) is positive and is
+// skipped otherwise (the first day and the gaps of a fully liquidated vault
+// measure nothing), where V(d) is the market value only: mv_priced(d), the
+// sum of the priced assets' market values, plus bond_at_cost(d), the cost
+// basis of the unpriced assets still held (already zero once fully sold),
+// all converted to the base currency. flow(d) is the day's external cash
+// flows at end of day: buy +(qty*price + fees), sell -(qty*price - fees),
+// standalone fee +feeAmount (qty*price, or the price alone when no quantity
+// is set), dividend -divAmount (income taken out) and split 0; a flow whose
+// FX rate is missing on its transaction date is skipped. Realized P&L never
+// enters V: it is already captured by the sell flow. The bucket return is
+// the geometric linking of its days' factors, Π(1 + r(d)) - 1, in percentage,
+// and twr the cumulative product Π(1 + r) - 1 across all buckets so far.
+// invested is the net capital: the cumulative flow excluding dividends (the
+// income part) up to the bucket's last date, and value V there. The daily
+// points come from the materialized per-asset series, converted per date
+// through USD-pivoted FX rates: while an asset's factor is missing its
+// converted value is forward-filled (zero before the first successful
+// conversion), and every asset keeps carrying its last converted value on
+// the dates where it has no new point. Dates with no points produce no
+// bucket.
 func (s *Service) GetDashboardPerformance(ctx context.Context, userID uuid.UUID, granularity string) (*model.DashboardPerformance, error) {
 	if granularity != "month" && granularity != "year" {
 		return nil, fmt.Errorf("%w: granularity must be month or year", ErrInvalidInput)
@@ -2651,12 +2663,18 @@ func (s *Service) GetDashboardPerformance(ctx context.Context, userID uuid.UUID,
 			return nil, err
 		}
 		// HasPrice is asset-level: it tells whether the asset has any price
-		// row. Positions of assets without a price must not feed the
-		// unrealized figures with a zero market value (they would show as a
-		// fake total loss), so they only contribute their realized.
+		// row. Priced assets contribute their market value to V, unpriced
+		// ones their cost basis (a bond carried at cost, never a fake total
+		// loss). The holding currency is the asset currency the cash flows
+		// are converted from.
 		pricedAsset := map[uuid.UUID]bool{}
+		assetCurrency := map[uuid.UUID]string{}
 		for _, h := range holdings {
-			pricedAsset[mustUUID(h.AssetID)] = h.HasPrice
+			assetID := mustUUID(h.AssetID)
+			pricedAsset[assetID] = h.HasPrice
+			if h.Currency != "" {
+				assetCurrency[assetID] = h.Currency
+			}
 		}
 
 		quoteSet := map[string]bool{baseCurrency: true}
@@ -2664,6 +2682,9 @@ func (s *Service) GetDashboardPerformance(ctx context.Context, userID uuid.UUID,
 			if p.Currency != "" {
 				quoteSet[p.Currency] = true
 			}
+		}
+		for _, cur := range assetCurrency {
+			quoteSet[cur] = true
 		}
 		quotes := make([]string, 0, len(quoteSet))
 		for c := range quoteSet {
@@ -2674,69 +2695,155 @@ func (s *Service) GetDashboardPerformance(ctx context.Context, userID uuid.UUID,
 			return nil, err
 		}
 
-		type dayTotal struct{ mv, cost, realized decimal.Decimal }
-		byDate := map[time.Time]*dayTotal{}
-		var dates []time.Time
+		// Daily market value in base currency: each asset walks its series as
+		// a forward-fill stream, contributing its last converted point — the
+		// market value when priced, the cost basis when unpriced — to every
+		// date after its first point. A missing conversion keeps the last
+		// converted value (zero before the first successful one).
+		type assetWalk struct {
+			pts    []model.PositionPoint
+			pos    int
+			priced bool
+			from   string
+			last   decimal.Decimal
+		}
+		var walks []*assetWalk
+		dateSet := map[time.Time]bool{}
 		for _, p := range portfolios {
 			assetSeries, err := s.repos.Series.FindPortfolio(ctx, p.ID)
 			if err != nil {
 				return nil, err
 			}
 			for _, a := range assetSeries {
-				priced := pricedAsset[mustUUID(a.AssetID)]
-				var last dayTotal
+				walks = append(walks, &assetWalk{
+					pts:    a.Series,
+					priced: pricedAsset[mustUUID(a.AssetID)],
+					from:   p.Currency,
+				})
 				for _, pt := range a.Series {
-					if factor, ok := dr.Factor(p.Currency, baseCurrency, pt.Date); ok {
-						last = dayTotal{
-							mv:       pt.MarketValue.Mul(factor),
-							cost:     pt.CostBasis.Mul(factor),
-							realized: pt.Realized.Mul(factor),
-						}
-					}
-					d := series.DayOf(pt.Date)
-					day, seen := byDate[d]
-					if !seen {
-						day = &dayTotal{}
-						byDate[d] = day
-						dates = append(dates, d)
-					}
-					if priced {
-						day.mv = day.mv.Add(last.mv)
-						day.cost = day.cost.Add(last.cost)
-					}
-					day.realized = day.realized.Add(last.realized)
+					dateSet[series.DayOf(pt.Date)] = true
 				}
 			}
 		}
+
+		// External cash flows per day in base currency. A transaction whose
+		// asset currency or FX rate is unknown cannot be converted and is
+		// skipped entirely. capital is the same flow without the dividend
+		// part: distributions are income, not deployed capital, so they move
+		// the return but never the invested.
+		type dayCash struct{ flow, capital decimal.Decimal }
+		flows := map[time.Time]*dayCash{}
+		txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range txs {
+			var flow decimal.Decimal
+			switch tx.Type {
+			case model.TxBuy:
+				flow = tx.Quantity.Mul(tx.Price).Add(tx.Fees)
+			case model.TxSell:
+				flow = tx.Quantity.Mul(tx.Price).Sub(tx.Fees).Neg()
+			case model.TxFee:
+				flow = tx.Price
+				if tx.Quantity.IsPositive() {
+					flow = tx.Quantity.Mul(tx.Price)
+				}
+			case model.TxDividend:
+				flow = tx.Price
+				if tx.Quantity.IsPositive() {
+					flow = tx.Quantity.Mul(tx.Price)
+				}
+				flow = flow.Neg()
+			default:
+				continue
+			}
+			factor, ok := dr.Factor(assetCurrency[tx.AssetID], baseCurrency, tx.Date)
+			if !ok {
+				continue
+			}
+			flow = flow.Mul(factor)
+			capital := flow
+			if tx.Type == model.TxDividend {
+				capital = decimal.Zero
+			}
+			d := series.DayOf(tx.Date)
+			dateSet[d] = true
+			day, seen := flows[d]
+			if !seen {
+				day = &dayCash{}
+				flows[d] = day
+			}
+			day.flow = day.flow.Add(flow)
+			day.capital = day.capital.Add(capital)
+		}
+
+		// The walk runs over the union of the market-observed dates and the
+		// flow dates. Dates are ascending and bucket periods are monotonic
+		// over them, so every time the period changes the previous bucket is
+		// sealed on its last date.
+		dates := make([]time.Time, 0, len(dateSet))
+		for d := range dateSet {
+			dates = append(dates, d)
+		}
 		sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
 
-		// Dates are ascending and bucket periods are monotonic over them, so
-		// the newest day of each period is the last entry seen for it.
-		type bucketEnd struct {
-			period string
-			day    *dayTotal
-		}
-		var ends []bucketEnd
-		for _, d := range dates {
-			period := performancePeriod(d, granularity)
-			if n := len(ends); n > 0 && ends[n-1].period == period {
-				ends[n-1].day = byDate[d]
-			} else {
-				ends = append(ends, bucketEnd{period: period, day: byDate[d]})
+		one := decimal.NewFromInt(1)
+		hundred := decimal.NewFromInt(100)
+		buckets := make([]model.PerformanceBucket, 0, len(dates))
+		bucketFactor, twrFactor := one, one
+		var period string
+		var invested, endValue, prevV decimal.Decimal
+		flush := func() {
+			if period == "" {
+				return
 			}
-		}
-
-		prevTotal := decimal.Zero
-		buckets := make([]model.PerformanceBucket, 0, len(ends))
-		for _, b := range ends {
-			total := b.day.mv.Sub(b.day.cost).Add(b.day.realized)
 			buckets = append(buckets, model.PerformanceBucket{
-				Period:   b.period,
-				PnL:      roundAmount(total.Sub(prevTotal)),
-				Realized: roundAmount(b.day.realized),
+				Period:   period,
+				Return:   bucketFactor.Sub(one).Mul(hundred).Round(4),
+				TWR:      twrFactor.Sub(one).Mul(hundred).Round(4),
+				Invested: roundAmount(invested),
+				Value:    roundAmount(endValue),
 			})
-			prevTotal = total
 		}
+		for _, d := range dates {
+			v := decimal.Zero
+			for _, w := range walks {
+				for w.pos < len(w.pts) && !series.DayOf(w.pts[w.pos].Date).After(d) {
+					pt := w.pts[w.pos]
+					if factor, ok := dr.Factor(w.from, baseCurrency, pt.Date); ok {
+						if w.priced {
+							w.last = pt.MarketValue.Mul(factor)
+						} else {
+							w.last = pt.CostBasis.Mul(factor)
+						}
+					}
+					w.pos++
+				}
+				v = v.Add(w.last)
+			}
+			var flow, capital decimal.Decimal
+			if c, ok := flows[d]; ok {
+				flow, capital = c.flow, c.capital
+			}
+			if p := performancePeriod(d, granularity); p != period {
+				flush()
+				period = p
+				bucketFactor = one
+			}
+			invested = invested.Add(capital)
+			// A day whose previous value is not positive (the vault's first
+			// days and the gaps of a fully liquidated one) measures no
+			// return: it is skipped, not turned into a fake ±100%.
+			if prevV.IsPositive() {
+				factor := v.Sub(prevV).Sub(flow).Div(prevV).Add(one)
+				bucketFactor = bucketFactor.Mul(factor)
+				twrFactor = twrFactor.Mul(factor)
+			}
+			endValue = v
+			prevV = v
+		}
+		flush()
 		perf.Buckets = buckets
 		return perf, nil
 	})

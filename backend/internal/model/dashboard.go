@@ -7,30 +7,30 @@ import (
 )
 
 type PortfolioSummary struct {
-	PortfolioID   string          `json:"portfolio_id"`
-	PortfolioName string          `json:"portfolio_name"`
-	TotalValue    decimal.Decimal `json:"total_value"`
-	TotalCost     decimal.Decimal `json:"total_cost"`
-	GainLoss      decimal.Decimal `json:"gain_loss"`
-	GainLossPct     decimal.Decimal `json:"gain_loss_pct"`
-	RealizedGL      decimal.Decimal `json:"realized_gl"`
-	UnrealizedGL    decimal.Decimal `json:"unrealized_gl"`
-	AssetCount      int             `json:"asset_count"`
-	FXMissingCount  int             `json:"fx_missing_count"`
-	FXMissingValue  decimal.Decimal `json:"fx_missing_value"`
-	MissingCountry  int             `json:"missing_country"`
-	MissingSector   int             `json:"missing_sector"`
-	StaleCount      int             `json:"stale_count"`
-	Holdings        []AssetHolding  `json:"holdings"`
+	PortfolioID    string          `json:"portfolio_id"`
+	PortfolioName  string          `json:"portfolio_name"`
+	TotalValue     decimal.Decimal `json:"total_value"`
+	TotalCost      decimal.Decimal `json:"total_cost"`
+	GainLoss       decimal.Decimal `json:"gain_loss"`
+	GainLossPct    decimal.Decimal `json:"gain_loss_pct"`
+	RealizedGL     decimal.Decimal `json:"realized_gl"`
+	UnrealizedGL   decimal.Decimal `json:"unrealized_gl"`
+	AssetCount     int             `json:"asset_count"`
+	FXMissingCount int             `json:"fx_missing_count"`
+	FXMissingValue decimal.Decimal `json:"fx_missing_value"`
+	MissingCountry int             `json:"missing_country"`
+	MissingSector  int             `json:"missing_sector"`
+	StaleCount     int             `json:"stale_count"`
+	Holdings       []AssetHolding  `json:"holdings"`
 }
 
 type AssetAllocation struct {
-	AssetID  string          `json:"asset_id"`
-	Ticker   string          `json:"ticker"`
-	Name     string          `json:"name"`
-	Value    decimal.Decimal `json:"value"`
-	AllocPct decimal.Decimal `json:"alloc_pct"`
-	FXMissing bool           `json:"fx_missing"`
+	AssetID   string          `json:"asset_id"`
+	Ticker    string          `json:"ticker"`
+	Name      string          `json:"name"`
+	Value     decimal.Decimal `json:"value"`
+	AllocPct  decimal.Decimal `json:"alloc_pct"`
+	FXMissing bool            `json:"fx_missing"`
 }
 
 // ClassAllocation is one investment-class bucket within a portfolio's class
@@ -268,19 +268,24 @@ type Dashboard struct {
 }
 
 // PerformanceBucket is one month or year of the dashboard performance chart:
-// Period is "YYYY-MM" for monthly and "YYYY" for yearly granularity, PnL is
-// the total P/L (market value - cost basis + realized, in base currency)
-// generated inside the bucket and Realized the cumulative realized P/L at the
-// bucket's last date.
+// Period is "YYYY-MM" for monthly and "YYYY" for yearly granularity, Return
+// is the bucket's true time-weighted return in percentage, the geometric
+// linking of its daily TWR returns, TWR the cumulative time-weighted return
+// compounded up to this bucket, Invested the net capital deployed in the
+// vault (cumulative external flows excluding dividends) at the bucket's last
+// date and Value the market value there (priced assets at market value,
+// unpriced ones at cost). Amounts are in the user's base currency.
 type PerformanceBucket struct {
 	Period   string          `json:"period"`
-	PnL      decimal.Decimal `json:"pnl"`
-	Realized decimal.Decimal `json:"realized"`
+	Return   decimal.Decimal `json:"return"`
+	TWR      decimal.Decimal `json:"twr"`
+	Invested decimal.Decimal `json:"invested"`
+	Value    decimal.Decimal `json:"value"`
 }
 
-// DashboardPerformance is the vault-wide aggregate P/L chart across all the
-// user's portfolios, converted to their base currency and bucketed by month
-// or year.
+// DashboardPerformance is the vault-wide time-weighted return chart across
+// all the user's portfolios, converted to their base currency and bucketed by
+// month or year.
 type DashboardPerformance struct {
 	Currency    string              `json:"currency"`
 	Granularity string              `json:"granularity"`

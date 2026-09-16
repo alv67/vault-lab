@@ -38,6 +38,14 @@ export function formatPercent(value: number | string): string {
   return `${val.toFixed(2)}%`
 }
 
+/** Like `formatPercent` but always prefixes an explicit `+` on positive
+ * values (e.g. `+3.42%`), used by the dashboard return chart tooltips where
+ * the sign carries the meaning. */
+export function formatSignedPercent(value: number | string): string {
+  const val = typeof value === 'string' ? Number(value) : value
+  return `${val > 0 ? '+' : ''}${val.toFixed(2)}%`
+}
+
 // Etichette italiane per le classi di asset (valore backend → label UI).
 export const ASSET_CLASS_LABELS: Record<string, string> = {
   equity: 'Azioni',

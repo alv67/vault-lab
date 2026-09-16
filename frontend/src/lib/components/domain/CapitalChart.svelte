@@ -2,7 +2,7 @@
   import type { EChartsOption } from 'echarts'
   import { Chart } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
-  import { BarChart, LineChart } from 'echarts/charts'
+  import { LineChart } from 'echarts/charts'
   import {
     DataZoomComponent,
     GridComponent,
@@ -10,14 +10,13 @@
     TooltipComponent,
   } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
-  import { formatSignedPercent } from '$lib/format'
+  import { formatCurrency } from '$lib/format'
   import type { PerformanceBucket } from '$lib/services/api'
   import { chartSemanticColors } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
 
   use([
-    BarChart,
     LineChart,
     DataZoomComponent,
     GridComponent,
@@ -35,12 +34,14 @@
 
   let {
     buckets = [] as PerformanceBucket[],
+    currency = 'USD',
     granularity = 'month' as 'month' | 'year',
   } = $props()
 
-  // Bar/line colors come from the semantic chart tokens, re-evaluated on
-  // theme flips (the {#key} block below also re-inits the chart with the new
-  // ECharts theme), same convention as PositionChart.
+  // Line colors come from the semantic chart tokens (grey cost basis for the
+  // invested capital, green market value), re-evaluated on theme flips (the
+  // {#key} block below also re-inits the chart with the new ECharts theme),
+  // same convention as PositionChart / PerformanceChart.
   const semantic = $derived(chartSemanticColors(resolved()))
 
   /** "2025-06" → "Jun 2025" (month name follows the browser locale);
@@ -64,22 +65,20 @@
           const raw = Array.isArray(params) ? params : [params]
           const series = raw as TooltipRow[]
           const period = series[0]?.axisValue ?? ''
-          // Both series are percentages (return and cumulative TWR): no
-          // currency formatting here, just a signed `+3.42%`.
           const lines = series
             .filter((p) => p.value != null)
             .map((p) => {
               const v = Array.isArray(p.value) ? p.value[1] : p.value
-              return `${p.marker}${p.seriesName}: <b>${formatSignedPercent(Number(v))}</b>`
+              return `${p.marker}${p.seriesName}: <b>${formatCurrency(Number(v), currency)}</b>`
             })
           return `<div>${period}</div>${lines.join('<br/>')}`
         },
       },
       legend: {
-        data: ['Gain/Loss', 'Cumulative'],
+        data: ['Invested', 'Value'],
         top: 0,
       },
-      grid: { left: 56, right: 16, top: 40, bottom: 52 },
+      grid: { left: 48, right: 16, top: 40, bottom: 52 },
       // Long monthly ranges stay usable: wheel/drag zoom plus the slider.
       dataZoom: [
         { type: 'inside', xAxisIndex: 0 },
@@ -92,33 +91,30 @@
       },
       yAxis: {
         type: 'value',
-        // Percentage axis: the values are already % numbers (e.g. 3.42).
-        axisLabel: { fontSize: 11, formatter: '{value}%' },
+        axisLabel: { fontSize: 11 },
       },
       series: [
         {
-          name: 'Gain/Loss',
-          type: 'bar',
-          // Time-weighted return generated inside each bucket: green bar
-          // when positive, red when negative (per-bar itemStyle, mirrors
-          // `pnlColorClass`).
-          data: rows.map((b) => {
-            const ret = Number(b.return)
-            return { value: ret, itemStyle: { color: ret >= 0 ? semantic.positive : semantic.negative } }
-          }),
-          itemStyle: { color: semantic.positive },
-          barMaxWidth: 28,
-        },
-        {
-          name: 'Cumulative',
+          name: 'Invested',
           type: 'line',
-          // Cumulative time-weighted return (TWR) up to the end of each
-          // bucket; reuses the amber cumulative-line semantic token.
-          data: rows.map((b) => Number(b.twr)),
+          // Net invested capital at the end of each bucket: it only moves on
+          // cash flows, so a stepped line mirrors the PositionChart cost basis.
+          data: rows.map((b) => Number(b.invested)),
+          step: 'end',
           smooth: false,
           symbolSize: 5,
-          lineStyle: { width: 2, color: semantic.realized },
-          itemStyle: { color: semantic.realized },
+          lineStyle: { width: 2, color: semantic.costBasis },
+          itemStyle: { color: semantic.costBasis },
+        },
+        {
+          name: 'Value',
+          type: 'line',
+          // Market value at the end of each bucket.
+          data: rows.map((b) => Number(b.value)),
+          smooth: true,
+          symbolSize: 5,
+          lineStyle: { width: 2, color: semantic.marketValue },
+          itemStyle: { color: semantic.marketValue },
         },
       ],
     }

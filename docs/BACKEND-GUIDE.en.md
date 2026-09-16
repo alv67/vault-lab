@@ -274,35 +274,60 @@ What happens, step by step:
    portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
    for future sharing support).
 
-### The aggregate P/L chart (`GET /dashboard/performance`, EPIC I.3)
+### The time-weighted return chart (`GET /dashboard/performance`, EPIC I.3)
 
 `GET /api/v1/dashboard/performance?granularity=month|year` returns one chart
 for the whole vault (all portfolios aggregated, converted to the user's base
 currency) instead of one series per portfolio. `granularity` defaults to
 `month`; any other value is rejected with 400. The response is
 `{currency, granularity, buckets[]}`, where each bucket carries `period`
-(`YYYY-MM` for months, `YYYY` for years), `pnl` and `realized`:
+(`YYYY-MM` for months, `YYYY` for years), `return`, `twr`, `invested` and
+`value`:
 
-- the **bar** (`pnl`) is the P/L *generated inside the bucket*: the total P/L
-  at the bucket's last date minus the total P/L at the previous bucket's last
-  date (baseline 0 for the first bucket), where the total P/L of a date is
-  `market_value − cost_basis + realized`;
-- the **line** (`realized`) is the cumulative realized P/L at the bucket's
-  last date.
+- the **`return`** is the bucket's **true time-weighted return (TWR)** in
+  percentage: the returns are measured **daily** and linked geometrically,
+  `return = (Π (1 + r(d)) − 1) × 100` over the days `d` of the bucket, where
+  each day carries `r(d) = (V(d) − V(d−1) − flow(d)) / V(d−1)` when
+  `V(d−1) > 0` and is skipped (factor 1) otherwise — the first day and the
+  gaps of a fully liquidated vault measure no return, so liquidating and
+  reopening a position never distorts the chart. `V(d)` is the **market
+  value only**: `V(d) = mv_priced(d) + bond_at_cost(d)`, the FX-converted
+  market value of the priced assets plus the cost basis of the unpriced
+  ones (a bond carried at cost while held; already zero once fully sold).
+  Realized P&L never enters `V`: it is already captured by the sell flow;
+- the **`twr`** is the cumulative time-weighted return compounded over all
+  days up to the bucket end: `(Π (1 + r) − 1) × 100`, i.e. the geometric
+  linking of the bucket returns too;
+- **`invested`** is the net capital deployed: the cumulative sum of the
+  base-currency *capital* flows up to the bucket end — the same flows but
+  with dividends counted as 0 (distributions are income, not capital; a
+  sell above cost can make it temporarily negative);
+- **`value`** is the market value `V` at the bucket's last date (priced
+  assets at market value, unpriced ones at cost).
 
-The daily points come from the materialized per-asset series `asset_series`
-(via `Series.FindPortfolio`) in the portfolio currency and are converted to
-the base currency per date through the USD-pivoted FX history: while an
-asset's rate is missing, its last converted values are forward-filled (zero
-before the first successful conversion). Positions of assets without any
-price row (e.g. a bond ETF with `price_source = none`) are recognized
-through the holdings' price flag and never contribute market value or cost
-basis to the daily totals — an unpriced position would otherwise fake a
-total loss in the month it is bought — while their realized (dividends and
-sale proceeds) always counts. The components are then aggregated across
-portfolios and assets per date, the dates are sorted ascending, the last
-date of each month/year is taken and the buckets are emitted in
-ascending order — buckets with no data are simply omitted.
+External cash flows per transaction — placed at the **end of the day** —
+converted to the base currency at the FX rate of the transaction date (the
+flow is skipped when that rate is missing): `buy → +(qty·price + fees)`
+(deposit), `sell → −(qty·price − fees)` (withdrawal), standalone
+`fee → +feeAmount` where `feeAmount = qty·price`, or the price alone when no
+quantity is set; `dividend → −divAmount` (same amount rule; income taken
+out, so it yields a positive return contribution without touching
+`invested`) and `split → 0`.
+
+The daily points come from the materialized per-asset series
+`asset_series` (via `Series.FindPortfolio`) in the portfolio currency and
+are converted to the base currency per date through the USD-pivoted FX
+history: while an asset's rate is missing, its last converted value is
+forward-filled (zero before the first successful conversion), and every
+asset keeps carrying its last converted value on the dates where it has no
+new point. The market values are aggregated per date into `V`, the flows are
+bucketed per day, and the walk runs over the union of the series dates and
+the flow dates in ascending order (the materialized series covers every
+calendar day from each asset's first transaction, so in practice flow days
+always carry a market observation). Bucket periods are monotonic over the
+dates, so the last date of each month/year seals its bucket and the buckets
+are emitted in ascending order — buckets with no data are simply omitted.
+`return` and `twr` are rounded to 4 decimals, `invested` and `value` to 8.
 
 The typical Go pattern for reading multiple rows is:
 
@@ -461,8 +486,9 @@ unpriced open positions stay out of invested/value, see chapter 7) and
 realized_pct) — where
 amounts whose rate is missing are excluded from the totals and reported by
 `fx_missing_count`/`fx_missing_value` (only non-zero amounts are flagged);
-`GET /dashboard/performance` buckets the same vault-wide P/L by month or year
-in the base currency (chapter 7);
+`GET /dashboard/performance` charts the vault-wide percentage time-weighted
+return (true TWR with daily geometric linking, with the invested/value
+capital series) by month or year in the base currency (chapter 7);
 `GET /dashboard/allocation` is expressed in the base currency too (it used to
 be fixed USD). The per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.
@@ -848,10 +874,11 @@ The user opens the dashboard ──► GET /dashboard:
     holdings (AVCO) + exchange rates
     → summary converted into the user's base currency → JSON to the frontend
 
-The user views the P/L chart ──► GET /dashboard/performance?granularity=month|year:
+The user views the return chart ──► GET /dashboard/performance?granularity=month|year:
     daily per-asset points from the materialized series + per-date FX
-    (assets with no price contribute only their realized)
-    → monthly/yearly P/L buckets in the base currency → JSON to the frontend
+    + daily external cash flows (priced assets at market value, unpriced at cost)
+    → monthly/yearly true TWR (geometric linking of daily returns) + cumulative
+      TWR buckets, in the base currency, with invested/value series → JSON to the frontend
 
 The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     quote ranges + price history from the database → JSON to the frontend

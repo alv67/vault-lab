@@ -268,37 +268,65 @@ Cosa succede, passo passo:
    portafogli con un `LEFT JOIN` sulla tabella di condivisione (in modo da
    essere già pronta per un futuro supporto alla condivisione).
 
-### Il grafico aggregato del P/L (`GET /dashboard/performance`, EPIC I.3)
+### Il grafico del time-weighted return (`GET /dashboard/performance`, EPIC I.3)
 
 `GET /api/v1/dashboard/performance?granularity=month|year` restituisce un
 unico grafico per l'intero vault (tutti i portafogli aggregati, convertiti
 nella valuta base dell'utente) invece di una serie per portafoglio.
 `granularity` è `month` di default; qualunque altro valore viene rifiutato
 con 400. La risposta è `{currency, granularity, buckets[]}`, dove ogni bucket
-ha `period` (`YYYY-MM` per i mesi, `YYYY` per gli anni), `pnl` e `realized`:
+ha `period` (`YYYY-MM` per i mesi, `YYYY` per gli anni), `return`, `twr`,
+`invested` e `value`:
 
-- la **barra** (`pnl`) è il P/L *generato all'interno del bucket*: il P/L
-  totale all'ultima data del bucket meno il P/L totale all'ultima data del
-  bucket precedente (base 0 per il primo bucket), dove il P/L totale di una
-  data è `market_value − cost_basis + realized`;
-- la **linea** (`realized`) è il P/L realizzato cumulativo all'ultima data
-  del bucket.
+- il **`return`** è il **vero time-weighted return (TWR)** percentuale del
+  bucket: i rendimenti sono misurati **giornalmente** e collegati
+  geometricamente, `return = (Π (1 + r(d)) − 1) × 100` sui giorni `d` del
+  bucket, dove ogni giorno porta `r(d) = (V(d) − V(d−1) − flusso(d)) /
+  V(d−1)` quando `V(d−1) > 0` e viene saltato (fattore 1) altrimenti — il
+  primo giorno e le pause di un vault completamente liquidato non misurano
+  alcun rendimento, quindi liquidare e riaprire una posizione non distorce
+  mai il grafico. `V(d)` è **solo il valore di mercato**: `V(d) =
+  mv_priced(d) + bond_at_cost(d)`, il valore di mercato convertito in FX
+  degli asset con prezzo più il costo di quelli senza prezzo (un'obbligazione
+  mantenuta al costo finché è in portafoglio; già zero una volta venduta
+  interamente). Il realized non entra mai in `V`: è già catturato dal flusso
+  di vendita;
+- il **`twr`** è il time-weighted return cumulativo composto su tutti i
+  giorni fino alla fine del bucket: `(Π (1 + r) − 1) × 100`, cioè la stessa
+  collegatura geometrica dei rendimenti dei bucket;
+- **`invested`** è il capitale netto impiegato: la somma cumulativa dei
+  *flussi di capitale* in valuta base fino alla fine del bucket — gli stessi
+  flussi ma con i dividendi contati come 0 (le distribuzioni sono reddito,
+  non capitale; una vendita sopra costo può renderlo temporaneamente
+  negativo);
+- **`value`** è il valore di mercato `V` all'ultima data del bucket (asset
+  con prezzo al valore di mercato, asset senza prezzo al costo).
+
+I flussi di cassa esterni per transazione — collocati a **fine giornata** —
+convertiti nella valuta base al tasso FX della data della transazione (il
+flusso viene saltato se quel tasso manca): `buy → +(qty·prezzo + fee)`
+(deposito), `sell → −(qty·prezzo − fee)` (prelievo), `fee` autonoma
+`→ +importoFee` dove `importoFee = qty·prezzo`, o solo il prezzo quando la
+quantità non è impostata; `dividend → −importoDiv` (stessa regola
+dell'importo; reddito prelevato, quindi dà un contributo positivo al
+rendimento senza toccare `invested`) e `split → 0`.
 
 I punti giornalieri arrivano dalle serie materializzate per singolo asset,
 `asset_series` (via `Series.FindPortfolio`), nella valuta del portafoglio, e
 vengono convertiti nella valuta base per data attraverso lo storico FX con
-pivot USD: finché il tasso per un asset manca, i suoi ultimi valori
-convertiti vengono ripetuti in avanti (zero prima della prima conversione
-riuscita). Le posizioni di asset senza alcuna riga di prezzo (per esempio un
-ETF obbligazionario con `price_source = none`) vengono riconosciute tramite
-il flag prezzo delle posizioni e non contribuiscono mai con market value né
-cost basis ai totali giornalieri — altrimenti una posizione senza prezzo
-simulerebbe una perdita totale nel mese in cui è acquistata — mentre il loro
-realized (dividendi e incassi di vendita) conta sempre. Le componenti
-vengono poi aggregate tra portafogli e asset per data, le date si ordinano
-in senso crescente, si prende l'ultima data di ogni mese/anno e si emettono
-i bucket in ordine crescente — i bucket senza dati vengono semplicemente
-omessi.
+pivot USD: finché il tasso per un asset manca, il suo ultimo valore
+convertito viene ripetuto in avanti (zero prima della prima conversione
+riuscita), e ogni asset continua a portare il suo ultimo valore convertito
+nelle date in cui non ha un nuovo punto. I valori di mercato vengono
+aggregati per data in `V`, i flussi raggruppati per giorno e la passeggiata
+scorre l'unione delle date delle serie e delle date dei flussi in ordine
+crescente (la serie materializzata copre ogni giorno solare dal primo
+movimento di ogni asset, quindi in pratica i giorni dei flussi hanno sempre
+un'osservazione di mercato). I periodi dei bucket sono monotoni sulle date,
+quindi l'ultima data di ogni mese/anno sigilla il suo bucket e i bucket
+vengono emessi in ordine crescente — i bucket senza dati vengono
+semplicemente omessi. `return` e `twr` si arrotondano a 4 decimali,
+`invested` e `value` a 8.
 
 Nel codice Go il pattern tipico per leggere più righe è:
 
@@ -460,8 +488,9 @@ dividendi delle posizioni completamente chiuse, realized = proceeds −
 invested, realized_pct) — dove gli importi senza
 tasso disponibile sono esclusi dai totali e riportati da
 `fx_missing_count`/`fx_missing_value` (solo gli importi nonnulli vengono
-segnalati); `GET /dashboard/performance` aggrega lo stesso P/L del vault per
-bucket mensili o annuali nella valuta base (capitolo 7); anche
+segnalati); `GET /dashboard/performance` mostra lo stesso rendimento
+percentuale time-weighted (TWR) del vault per bucket mensili o annuali nella
+valuta base, con le serie invested/value del capitale (capitolo 7); anche
 `GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
 USD). Le sezioni per-valuta (`by_currency`) e per-portafoglio (`portfolios`,
 `assets`) della dashboard mantengono la propria valuta.
@@ -849,10 +878,13 @@ L'utente apre la dashboard ──► GET /dashboard:
     posizioni (AVCO) + tassi di cambio
     → summary convertito nella valuta base dell'utente → JSON al frontend
 
-L'utente guarda il grafico del P/L ──► GET /dashboard/performance?granularity=month|year:
+L'utente guarda il grafico dei rendimenti ──► GET /dashboard/performance?granularity=month|year:
     punti giornalieri per asset dalle serie materializzate + FX per data
-    (gli asset senza prezzo contribuiscono solo con il realized)
-    → bucket di P/L mensili/annuali nella valuta base → JSON al frontend
+    + flussi esterni giornalieri (asset con prezzo al valore di mercato,
+      senza prezzo al costo)
+    → vero TWR mensile/annuale (collegatura geometrica dei rendimenti
+      giornalieri) + TWR cumulativo, nella valuta base, con serie
+      invested/value → JSON al frontend
 
 L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     range di quota + storico prezzi dal database → JSON al frontend
