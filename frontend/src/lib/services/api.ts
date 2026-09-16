@@ -363,12 +363,13 @@ export interface PortfolioAssets {
   assets: AssetPerformance[]
 }
 
-/** One month or year bucket of the dashboard performance charts (EPIC I.3):
+/** One month or year bucket of the performance charts (EPIC I.3):
  * `period` is "YYYY-MM" (monthly) or "YYYY" (annual), `return` the
  * time-weighted return % generated inside the bucket (bars), `twr` the cumulative
  * time-weighted return % up to the bucket's last date (line), `invested` the
  * net invested capital and `value` the market value at the bucket's end, both
- * in the base currency. Buckets come back ascending; empty ones are omitted. */
+ * in the payload's currency. Buckets come back ascending; empty ones are
+ * omitted. */
 export interface PerformanceBucket {
   period: string
   return: string
@@ -377,8 +378,10 @@ export interface PerformanceBucket {
   value: string
 }
 
-/** Vault-wide return/capital chart across all the user's portfolios,
- * converted to their base currency and bucketed by month or year. */
+/** Return/capital chart bucketed by month or year: vault-wide in the user's
+ * base currency (`/dashboard/performance`, EPIC I.3) or — since EPIC I.8
+ * (#87) — of a single portfolio in the portfolio's own currency
+ * (`/portfolios/{id}/performance/buckets`). Same shape for both endpoints. */
 export interface DashboardPerformance {
   currency: string
   granularity: 'month' | 'year'
@@ -662,6 +665,10 @@ export const portfolioApi = {
   // yearly (`period` = "YYYY-MM" / "YYYY", ascending, empty buckets omitted).
   dashboardPerformance: (granularity: 'month' | 'year') =>
     request<DashboardPerformance>('/dashboard/performance', { params: { granularity } }),
+  // EPIC I.8 (#87): the same monthly/yearly TWR buckets for a SINGLE portfolio,
+  // in the portfolio's own currency (same `DashboardPerformance` shape).
+  performanceBuckets: (id: string, granularity: 'month' | 'year') =>
+    request<DashboardPerformance>(`/portfolios/${id}/performance/buckets`, { params: { granularity } }),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),

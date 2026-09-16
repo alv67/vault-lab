@@ -198,6 +198,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 
 			r.Get("/portfolios/{id}/summary", h.GetPortfolioSummary)
 			r.Get("/portfolios/{id}/performance", h.GetPortfolioPerformance)
+			r.Get("/portfolios/{id}/performance/buckets", h.GetPortfolioPerformanceBuckets)
 			r.Get("/portfolios/{id}/allocation", h.GetPortfolioAllocation)
 			r.Get("/portfolios/{id}/allocation/class", h.GetPortfolioClassAllocation)
 			r.Get("/portfolios/{id}/allocation/geography", h.GetPortfolioGeographyAllocation)

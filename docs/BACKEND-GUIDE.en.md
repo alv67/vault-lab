@@ -338,6 +338,23 @@ dates, so the last date of each month/year seals its bucket and the buckets
 are emitted in ascending order — buckets with no data are simply omitted.
 `return` and `twr` are rounded to 4 decimals, `invested` and `value` to 8.
 
+### The per-portfolio TWR chart (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
+
+`GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`
+applies exactly the same daily TWR model to a **single portfolio**, expressed
+in the **portfolio's own currency**: same `granularity` default (`month`, any
+other value → 400) and same `{currency, granularity, buckets[]}` response
+shape as the vault-wide chart. It is simpler than the dashboard version
+because nothing is converted to a base currency: the materialized per-asset
+series is already denominated in the portfolio currency, so `V(d)` needs no
+FX leg at all. Only the cash flows — recorded in the asset currency — are
+converted to the portfolio currency at the FX rate of the transaction date
+(via the USD-pivoted history), and a transaction whose rate or asset
+currency is unknown is skipped, exactly like on the dashboard. Ownership is
+enforced before the cache lookup (403 for someone else's portfolio, 404 for
+a missing one), and the result is cached under the `pf-perf` key as
+`{portfolioID}:{granularity}`.
+
 ### The portfolio summary (`GET /portfolios/{id}/summary`, EPIC I.6)
 
 The portfolio detail page shows the same "Investments" card the dashboard
@@ -520,6 +537,9 @@ amounts whose rate is missing are excluded from the totals and reported by
 `GET /dashboard/performance` charts the vault-wide percentage time-weighted
 return (true TWR with daily geometric linking, with the invested/value
 capital series) by month or year in the base currency (chapter 7);
+`GET /portfolios/{id}/performance/buckets` charts the same buckets for a
+single portfolio, staying in that portfolio's own currency (chapter 7,
+EPIC I.8);
 `GET /dashboard/allocation` is expressed in the base currency too (it used to
 be fixed USD) and aggregates every portfolio into the vault-wide `classes`,
 `regions`, `countries` and `sectors` breakdowns (chapter 19). The
@@ -915,6 +935,10 @@ The user views the return chart ──► GET /dashboard/performance?granularity
     + daily external cash flows (priced assets at market value, unpriced at cost)
     → monthly/yearly true TWR (geometric linking of daily returns) + cumulative
       TWR buckets, in the base currency, with invested/value series → JSON to the frontend
+
+The user opens a portfolio's return chart ──► GET /portfolios/{id}/performance/buckets?granularity=month|year:
+    same daily TWR model for one portfolio, in the portfolio currency
+    (series need no conversion; only the flows do) → JSON to the frontend
 
 The user opens the asset detail page ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     quote ranges + price history from the database → JSON to the frontend

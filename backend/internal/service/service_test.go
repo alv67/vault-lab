@@ -3664,6 +3664,336 @@ func TestGetDashboardPerformance_InvalidGranularity(t *testing.T) {
 	}
 }
 
+// newPortfolioPerfTestService wires a single-portfolio performance-buckets
+// service: the portfolio row carries owner so the authz path can be checked,
+// the series map is keyed by its id and the ledger holds its transactions.
+func newPortfolioPerfTestService(t *testing.T, p *fakePortfolioRepo, fx *fakeFXRepo, assets map[uuid.UUID][]model.AssetPositionSeries, txs *fakeTransactionRepo) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:       &fakeAssetRepo{},
+		User:        &fakeUserRepo{user: &model.User{ID: uuid.New(), Email: "u@example.com"}},
+		Portfolio:   p,
+		Exposure:    &fakeExposureRepo{},
+		FX:          fx,
+		Series:      &fakeSeriesRepo{assets: assets},
+		Transaction: txs,
+	}
+	return New(repos, nil, nil, nil, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
+}
+
+// perfPortfolio is the owner-scoped portfolio fixture the buckets methods
+// look up by id before anything else.
+func perfPortfolio(owner uuid.UUID, id uuid.UUID, currency string) *model.Portfolio {
+	return &model.Portfolio{ID: id, UserID: owner, Currency: currency}
+}
+
+func TestGetPortfolioPerformanceBuckets_MonthlyBucketsWithoutFlows(t *testing.T) {
+	owner := uuid.New()
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	buy := time.Date(2025, 1, 5, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 28, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolio: perfPortfolio(owner, pfUSD, "USD"),
+		holdings:  []*model.Holding{seriesHolding(pfUSD, stockID)},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+			}},
+		},
+	}
+	txs := &fakeTransactionRepo{txs: []model.TransactionWithAsset{
+		perfTx(pfUSD, stockID, model.TxBuy, buy, 10, 100, 0),
+	}}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, assets, txs)
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfUSD, owner, "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "USD" || got.Granularity != "month" {
+		t.Fatalf("currency/granularity = (%q, %q), want (USD, month)", got.Currency, got.Granularity)
+	}
+	// Same vault-wide model at portfolio scale: the first deposit day has
+	// V(d−1) = 0 and is skipped, February holds flat, so both buckets
+	// report 0% while invested and value are populated.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(1000), Value: decimal.NewFromInt(1000)},
+		{Period: "2025-02", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(1000), Value: decimal.NewFromInt(1000)},
+	})
+}
+
+func TestGetPortfolioPerformanceBuckets_CanonicalMidPeriodSale(t *testing.T) {
+	owner := uuid.New()
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	buy := time.Date(2025, 1, 5, 0, 0, 0, 0, time.UTC)
+	sell := time.Date(2025, 2, 14, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 14, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2025, 2, 28, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolio: perfPortfolio(owner, pfUSD, "USD"),
+		holdings:  []*model.Holding{seriesHolding(pfUSD, stockID)},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(300)},
+				{Date: d2, MarketValue: decimal.NewFromInt(600), CostBasis: decimal.NewFromInt(150), Realized: decimal.NewFromInt(450)},
+				{Date: d3, MarketValue: decimal.NewFromInt(750), CostBasis: decimal.NewFromInt(150), Realized: decimal.NewFromInt(450)},
+			}},
+		},
+	}
+	txs := &fakeTransactionRepo{txs: []model.TransactionWithAsset{
+		perfTx(pfUSD, stockID, model.TxBuy, buy, 100, 10, 0),
+		perfTx(pfUSD, stockID, model.TxSell, sell, 50, 12, 0),
+	}}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, assets, txs)
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfUSD, owner, "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The withdrawal cannot distort the return: the sale day measures
+	// (600 − 1000 + 600)/1000 = +20% on the full pre-sale value and the
+	// rest of February (750 − 600)/600 = +25% on the remainder, linked to
+	// 1.2 · 1.25 − 1 = +50%. invested nets the withdrawal and V ignores the
+	// realized the series carries.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(1000), Value: decimal.NewFromInt(1000)},
+		{Period: "2025-02", Return: decimal.NewFromInt(50), TWR: decimal.NewFromInt(50), Invested: decimal.NewFromInt(400), Value: decimal.NewFromInt(750)},
+	})
+}
+
+func TestGetPortfolioPerformanceBuckets_MidPeriodBuyIsTimeWeighted(t *testing.T) {
+	owner := uuid.New()
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	buy1 := time.Date(2025, 1, 5, 0, 0, 0, 0, time.UTC)
+	buy2 := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2025, 2, 9, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolio: perfPortfolio(owner, pfUSD, "USD"),
+		holdings:  []*model.Holding{seriesHolding(pfUSD, stockID)},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(990), CostBasis: decimal.NewFromInt(1090)},
+				{Date: d3, MarketValue: decimal.NewFromInt(880), CostBasis: decimal.NewFromInt(1090)},
+			}},
+		},
+	}
+	txs := &fakeTransactionRepo{txs: []model.TransactionWithAsset{
+		perfTx(pfUSD, stockID, model.TxBuy, buy1, 100, 10, 0),
+		perfTx(pfUSD, stockID, model.TxBuy, buy2, 10, 9, 0),
+	}}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, assets, txs)
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfUSD, owner, "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The +90 deposit is isolated out of the return: the buy day measures
+	// (990 − 1000 − 90)/1000 = −10% and the rest of the month −11⅑%, the
+	// true TWR of the 10 → 9 → 8 path: 0.9 · 8/9 − 1 = −20%.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(1000), Value: decimal.NewFromInt(1000)},
+		{Period: "2025-02", Return: decimal.NewFromInt(-20), TWR: decimal.NewFromInt(-20), Invested: decimal.NewFromInt(1090), Value: decimal.NewFromInt(880)},
+	})
+}
+
+func TestGetPortfolioPerformanceBuckets_UnpricedBondCarriedAtCost(t *testing.T) {
+	owner := uuid.New()
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	bondID := uuid.New().String()
+	buyStock := time.Date(2025, 1, 5, 0, 0, 0, 0, time.UTC)
+	buyBond := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	sellBond := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 5, 0, 0, 0, 0, time.UTC)
+	d3 := time.Date(2025, 2, 10, 0, 0, 0, 0, time.UTC)
+	d4 := time.Date(2025, 2, 28, 0, 0, 0, 0, time.UTC)
+	stock := seriesHolding(pfUSD, stockID)
+	bond := seriesHolding(pfUSD, bondID)
+	bond.HasPrice = false
+	pf := &fakePortfolioRepo{
+		portfolio: perfPortfolio(owner, pfUSD, "USD"),
+		holdings:  []*model.Holding{stock, bond},
+	}
+	// The unpriced bond is carried at its 900 cost basis while held and at
+	// the 450 remaining cost after the half-sale on February the 10th: the
+	// 50 gain (proceeds − sold cost) surfaces exactly on the sale day.
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d3, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+				{Date: d4, MarketValue: decimal.NewFromInt(1000), CostBasis: decimal.NewFromInt(1000)},
+			}},
+			{AssetID: bondID, Series: []model.PositionPoint{
+				{Date: d1, CostBasis: decimal.NewFromInt(900)},
+				{Date: d2, CostBasis: decimal.NewFromInt(900)},
+				{Date: d3, CostBasis: decimal.NewFromInt(450), Realized: decimal.NewFromInt(50)},
+				{Date: d4, CostBasis: decimal.NewFromInt(450), Realized: decimal.NewFromInt(50)},
+			}},
+		},
+	}
+	txs := &fakeTransactionRepo{txs: []model.TransactionWithAsset{
+		perfTx(pfUSD, stockID, model.TxBuy, buyStock, 100, 10, 0),
+		perfTx(pfUSD, bondID, model.TxBuy, buyBond, 10, 90, 0),
+		perfTx(pfUSD, bondID, model.TxSell, sellBond, 5, 100, 0),
+	}}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, assets, txs)
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfUSD, owner, "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(1900), Value: decimal.NewFromInt(1900)},
+		{Period: "2025-02", Return: decimal.RequireFromString("2.6316"), TWR: decimal.RequireFromString("2.6316"), Invested: decimal.NewFromInt(1400), Value: decimal.NewFromInt(1450)},
+	})
+}
+
+func TestGetPortfolioPerformanceBuckets_YearlyBuckets(t *testing.T) {
+	owner := uuid.New()
+	pfUSD := uuid.New()
+	stockID := uuid.New().String()
+	buy := time.Date(2024, 1, 5, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 6, 10, 0, 0, 0, 0, time.UTC)
+	pf := &fakePortfolioRepo{
+		portfolio: perfPortfolio(owner, pfUSD, "USD"),
+		holdings:  []*model.Holding{seriesHolding(pfUSD, stockID)},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfUSD: {
+			{AssetID: stockID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(1200), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(60)},
+				{Date: d2, MarketValue: decimal.NewFromInt(1400), CostBasis: decimal.NewFromInt(1000), Realized: decimal.NewFromInt(60)},
+			}},
+		},
+	}
+	txs := &fakeTransactionRepo{txs: []model.TransactionWithAsset{
+		perfTx(pfUSD, stockID, model.TxBuy, buy, 100, 10, 0),
+	}}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, assets, txs)
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfUSD, owner, "year")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Granularity != "year" {
+		t.Fatalf("granularity = %q, want year", got.Granularity)
+	}
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2024", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(1000), Value: decimal.NewFromInt(1200)},
+		{Period: "2025", Return: decimal.RequireFromString("16.6667"), TWR: decimal.RequireFromString("16.6667"), Invested: decimal.NewFromInt(1000), Value: decimal.NewFromInt(1400)},
+	})
+}
+
+func TestGetPortfolioPerformanceBuckets_ForeignAssetFlowsUsePortfolioCurrency(t *testing.T) {
+	owner := uuid.New()
+	pfEUR := uuid.New()
+	usdAssetID := uuid.New().String()
+	buyJan := time.Date(2025, 1, 10, 0, 0, 0, 0, time.UTC)
+	d1 := time.Date(2025, 1, 20, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2025, 2, 28, 0, 0, 0, 0, time.UTC)
+	// A USD asset inside a EUR portfolio: the materialized series is already
+	// in EUR (1000 USD at 0.9), while the ledger is in USD and must be
+	// converted to EUR at the transaction-date FX (+1000 USD → +900).
+	h := seriesHolding(pfEUR, usdAssetID)
+	h.Currency = "USD"
+	pf := &fakePortfolioRepo{
+		portfolio: perfPortfolio(owner, pfEUR, "EUR"),
+		holdings:  []*model.Holding{h},
+	}
+	fx := &fakeFXRepo{
+		rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.9")},
+	}
+	assets := map[uuid.UUID][]model.AssetPositionSeries{
+		pfEUR: {
+			{AssetID: usdAssetID, Series: []model.PositionPoint{
+				{Date: d1, MarketValue: decimal.NewFromInt(900), CostBasis: decimal.NewFromInt(900)},
+				{Date: d2, MarketValue: decimal.NewFromInt(990), CostBasis: decimal.NewFromInt(900)},
+			}},
+		},
+	}
+	txs := &fakeTransactionRepo{txs: []model.TransactionWithAsset{
+		perfTx(pfEUR, usdAssetID, model.TxBuy, buyJan, 10, 100, 0),
+	}}
+	svc := newPortfolioPerfTestService(t, pf, fx, assets, txs)
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfEUR, owner, "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "EUR" {
+		t.Fatalf("currency = %q, want EUR (the portfolio's, not the asset's)", got.Currency)
+	}
+	// January is the first bucket (return 0, invested 1000*0.9 = 900 = V).
+	// February is flat at EUR 990 after the +90 rise already measured in
+	// the series... except the rise happens on the last point: the only
+	// priced days are Jan 20 (900) and Feb 28 (990), so February's single
+	// day measures (990 − 900)/900 = +10%.
+	assertPerfBuckets(t, got.Buckets, []model.PerformanceBucket{
+		{Period: "2025-01", Return: decimal.Zero, TWR: decimal.Zero, Invested: decimal.NewFromInt(900), Value: decimal.NewFromInt(900)},
+		{Period: "2025-02", Return: decimal.NewFromInt(10), TWR: decimal.NewFromInt(10), Invested: decimal.NewFromInt(900), Value: decimal.NewFromInt(990)},
+	})
+}
+
+func TestGetPortfolioPerformanceBuckets_EmptyPortfolioHasNoBuckets(t *testing.T) {
+	owner := uuid.New()
+	pfEUR := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pfEUR, "EUR")}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, nil, &fakeTransactionRepo{})
+
+	got, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfEUR, owner, "month")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Currency != "EUR" || got.Granularity != "month" {
+		t.Fatalf("currency/granularity = (%q, %q), want (EUR, month)", got.Currency, got.Granularity)
+	}
+	if got.Buckets == nil || len(got.Buckets) != 0 {
+		t.Fatalf("buckets = %+v, want an empty non-nil slice", got.Buckets)
+	}
+}
+
+func TestGetPortfolioPerformanceBuckets_InvalidGranularity(t *testing.T) {
+	owner := uuid.New()
+	pfEUR := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pfEUR, "EUR")}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, nil, &fakeTransactionRepo{})
+
+	for _, g := range []string{"", "week", "MONTH"} {
+		if _, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfEUR, owner, g); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("granularity %q: err = %v, want ErrInvalidInput", g, err)
+		}
+	}
+}
+
+func TestGetPortfolioPerformanceBuckets_ForeignOwnerRejected(t *testing.T) {
+	pfEUR := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(uuid.New(), pfEUR, "EUR")}
+	svc := newPortfolioPerfTestService(t, pf, &fakeFXRepo{}, nil, &fakeTransactionRepo{})
+
+	if _, err := svc.GetPortfolioPerformanceBuckets(context.Background(), pfEUR, uuid.New(), "month"); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("err = %v, want ErrForbidden", err)
+	}
+}
+
 // perfTx builds a transaction ledger row for the dashboard performance
 // tests: quantity, price and fees are integer amounts in the asset currency.
 func perfTx(pf uuid.UUID, assetID string, typ model.TransactionType, date time.Time, qty, price, fees int64) model.TransactionWithAsset {

@@ -14,6 +14,7 @@
     type Portfolio,
     type PortfolioSummary,
     type PortfolioHistory,
+    type DashboardPerformance,
     type Transaction,
     type Asset,
   } from '$lib/services/api'
@@ -21,6 +22,7 @@
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
   import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
   import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
+  import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import TransactionTable from '$lib/components/domain/TransactionTable.svelte'
   import AddTransactionModal from '$lib/components/domain/AddTransactionModal.svelte'
@@ -34,6 +36,9 @@
   import { resolved } from '$lib/stores/theme.svelte'
   import { Plus, Download } from 'lucide-svelte'
   import Button from '$lib/components/ui/Button.svelte'
+  import Card from '$lib/components/ui/Card.svelte'
+  import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
+  import Spinner from '$lib/components/ui/Spinner.svelte'
 
   const id = $derived(page.params.id as string | undefined)
 
@@ -53,6 +58,52 @@
   let editingTx = $state<Transaction | null>(null)
 
   const currency = $derived(portfolio?.currency || 'USD')
+
+  // EPIC I.8 (#87): the portfolio's own percentage performance card — same
+  // bucket model as the dashboard "Performance" card (EPIC I.3) but in the
+  // PORTFOLIO currency, fed by `performanceBuckets(id, granularity)`
+  // (`GET /portfolios/{id}/performance/buckets`). Isolated like the
+  // allocations: a failed fetch just shows the chart's "No data" empty
+  // state, and a `Spinner` covers every load.
+  let perf = $state<DashboardPerformance | null>(null)
+  let perfLoading = $state(true)
+  let granularity = $state<'month' | 'year'>('month')
+  const perfItems = [
+    { value: 'month', label: 'Monthly' },
+    { value: 'year', label: 'Annual' },
+  ]
+
+  // SegmentedControl binds a plain string; the accessors keep the union type.
+  function getGranularity(): string {
+    return granularity
+  }
+  function setGranularity(value: string): void {
+    if (value === 'month' || value === 'year') granularity = value
+  }
+
+  // Monotonic request id: when the toggle is flipped quickly, only the last
+  // issued request may write the state (same guard as the dashboard).
+  let perfReq = 0
+  async function loadPerformance(g: 'month' | 'year'): Promise<void> {
+    if (!id) return
+    const req = ++perfReq
+    perfLoading = true
+    try {
+      const res = await portfolioApi.performanceBuckets(id, g)
+      if (req === perfReq) perf = res
+    } catch {
+      if (req === perfReq) perf = null
+    } finally {
+      if (req === perfReq) perfLoading = false
+    }
+  }
+
+  // Runs once on mount with the default granularity, refetches on every
+  // Monthly/Annual toggle change (and on portfolio navigation, since `id`
+  // is read reactively inside `loadPerformance`).
+  $effect(() => {
+    void loadPerformance(granularity)
+  })
 
   // EPIC I.7 (#86): the allocation section mirrors the dashboard's
   // "Allocazione complessiva" card. The region/sector/country payloads are
@@ -157,7 +208,12 @@
           }
           return portfolioApi.summary(id)
         })
-        .then((fresh) => { summary = fresh })
+        .then((fresh) => {
+          summary = fresh
+          // The POST above cleared the GET cache and new prices can move the
+          // buckets: refresh the performance card too (same as the dashboard).
+          void loadPerformance(granularity)
+        })
         .catch(() => { /* keep current data */ })
     }
   }
@@ -206,6 +262,9 @@
       const message = err instanceof Error ? err.message : 'Failed to refresh portfolio'
       toast.error(message)
     }
+    // New/edited transactions change the flows behind the TWR buckets too
+    // (the mutation already cleared the GET cache) — refresh the card.
+    void loadPerformance(granularity)
     await loadAllocations()
   }
 
@@ -281,6 +340,31 @@
     <p class="mb-6 text-sm text-muted-foreground">No positions</p>
   {/if}
 
+  <!-- EPIC I.8 (#87): the portfolio's own percentage performance, same shared
+       `PerformanceChart` as the dashboard card (bars = per-bucket `return` %,
+       line = cumulative `twr`) with its own Monthly/Annual toggle; amounts in
+       the Performance bucket payloads are already in the portfolio currency,
+       and both series are pure percentages so no `currency` prop is needed. -->
+  <Card class="mb-6 p-4">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <h2 class="font-semibold">Performance</h2>
+      <SegmentedControl
+        items={perfItems}
+        bind:value={getGranularity, setGranularity}
+        ariaLabel="Performance granularity"
+      />
+    </div>
+    {#if perfLoading}
+      <div class="flex h-[340px] items-center justify-center text-muted-foreground">
+        <Spinner />
+      </div>
+    {:else}
+      <PerformanceChart buckets={perf?.buckets ?? []} granularity={granularity} />
+    {/if}
+  </Card>
+
+  <!-- Secondary view (kept below the percentage chart, EPIC I.8 #87): the
+       raw invested/value/realized capital lines with the per-asset selector. -->
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <h2 class="mb-4 font-semibold">Performance history</h2>
     {#if history && history.series.length > 0}

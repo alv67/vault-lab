@@ -338,6 +338,25 @@ vengono emessi in ordine crescente — i bucket senza dati vengono
 semplicemente omessi. `return` e `twr` si arrotondano a 4 decimali,
 `invested` e `value` a 8.
 
+### Il grafico TWR per singolo portafoglio (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
+
+`GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`
+applica esattamente lo stesso modello TWR giornaliero a un **singolo
+portafoglio**, espresso nella **valuta del portafoglio stesso**: stesso
+default di `granularity` (`month`, qualunque altro valore → 400) e stessa
+forma di risposta `{currency, granularity, buckets[]}` del grafico
+vault-wide. È la versione più semplice di quella della dashboard perché non
+c'è alcuna conversione in valuta base: le serie materializzate per asset sono
+già denominate nella valuta del portafoglio, quindi `V(d)` non ha bisogno di
+alcun passaggio FX. Solo i flussi di cassa — registrati nella valuta
+dell'asset — vengono convertiti nella valuta del portafoglio al tasso FX
+della data della transazione (via lo storico con pivot USD), e una
+transazione senza tasso o senza valuta nota dell'asset viene saltata,
+proprio come sulla dashboard. La proprietà del portafoglio è verificata prima
+della consultazione della cache (403 per il portafoglio altrui, 404 se non
+esiste) e il risultato è cachato sotto la chiave `pf-perf` come
+`{portfolioID}:{granularity}`.
+
 ### Il riepilogo del portafoglio (`GET /portfolios/{id}/summary`, EPIC I.6)
 
 La pagina di dettaglio del portafoglio mostra la stessa card "Investimenti"
@@ -523,7 +542,10 @@ tasso disponibile sono esclusi dai totali e riportati da
 `fx_missing_count`/`fx_missing_value` (solo gli importi nonnulli vengono
 segnalati); `GET /dashboard/performance` mostra lo stesso rendimento
 percentuale time-weighted (TWR) del vault per bucket mensili o annuali nella
-valuta base, con le serie invested/value del capitale (capitolo 7); anche
+valuta base, con le serie invested/value del capitale (capitolo 7);
+`GET /portfolios/{id}/performance/buckets` mostra gli stessi bucket per un
+singolo portafoglio, restando nella valuta del portafoglio (capitolo 7,
+EPIC I.8); anche
 `GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
 USD) e aggrega tutti i portafogli nelle ripartizioni vault-wide `classes`,
 `regions`, `countries` e `sectors` (capitolo 19). Le sezioni per-valuta
@@ -922,6 +944,11 @@ L'utente guarda il grafico dei rendimenti ──► GET /dashboard/performance?g
     → vero TWR mensile/annuale (collegatura geometrica dei rendimenti
       giornalieri) + TWR cumulativo, nella valuta base, con serie
       invested/value → JSON al frontend
+
+L'utente guarda il grafico dei rendimenti di un portafoglio ──► GET /portfolios/{id}/performance/buckets?granularity=month|year:
+    stesso modello TWR giornaliero per un solo portafoglio, nella valuta del
+    portafoglio (serie senza conversione; solo i flussi la richiedono)
+    → JSON al frontend
 
 L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     range di quota + storico prezzi dal database → JSON al frontend

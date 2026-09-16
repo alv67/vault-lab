@@ -443,6 +443,46 @@ func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request
 	respond(w, http.StatusOK, performance)
 }
 
+func (h *Handler) GetPortfolioPerformanceBuckets(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	granularity := "month"
+	if query := r.URL.Query(); query.Has("granularity") {
+		granularity = query.Get("granularity")
+	}
+
+	perf, err := h.svc.GetPortfolioPerformanceBuckets(r.Context(), portfolioID, claims.UserID, granularity)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "granularity must be month or year")
+			return
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		case errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, "portfolio not found")
+			return
+		}
+		log.Error().Err(err).Msg("get portfolio performance buckets failed")
+		respondError(w, http.StatusInternalServerError, "portfolio performance buckets failed")
+		return
+	}
+
+	respond(w, http.StatusOK, perf)
+}
+
 func (h *Handler) GetPortfolioROI(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
