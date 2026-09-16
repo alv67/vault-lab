@@ -2782,6 +2782,114 @@ func TestGetDashboard_BreakdownAmountsAreRounded(t *testing.T) {
 	}
 }
 
+func TestGetDashboard_InvestedAssetsAggregatesAcrossPortfolios(t *testing.T) {
+	pfUSD := uuid.New()
+	pfEUR := uuid.New()
+	vwraID := uuid.New().String()
+	bondID := uuid.New().String()
+	equityID := uuid.New().String()
+	jpyID := uuid.New().String()
+	closedID := uuid.New().String()
+
+	// Same USD asset held in both portfolios: one row, base-currency sums.
+	vwraUSD := dashboardHolding(pfUSD.String(), vwraID, "USD",
+		decimal.NewFromInt(10), decimal.NewFromInt(100), decimal.NewFromInt(800), decimal.Zero)
+	vwraUSD.Ticker = "VWRA"
+	vwraUSD.Name = "Vanguard All-World"
+	vwraEUR := dashboardHolding(pfEUR.String(), vwraID, "USD",
+		decimal.NewFromInt(5), decimal.NewFromInt(100), decimal.NewFromInt(450), decimal.Zero)
+	vwraEUR.Ticker = "VWRA"
+	// Open unpriced bond: carried at cost with has_price false.
+	bond := dashboardHolding(pfEUR.String(), bondID, "EUR",
+		decimal.NewFromInt(5), decimal.Zero, decimal.NewFromInt(12663), decimal.Zero)
+	bond.Ticker = "BOND"
+	bond.HasPrice = false
+	// Priced EUR asset: identity conversion.
+	equity := dashboardHolding(pfEUR.String(), equityID, "EUR",
+		decimal.NewFromInt(1), decimal.NewFromInt(5000), decimal.NewFromInt(4000), decimal.Zero)
+	equity.Ticker = "EQ"
+	// Priced JPY asset with no JPY rate: the value cannot convert, so it
+	// falls back to the (convertible) invested cost: no fake loss.
+	jpy := dashboardHolding(pfEUR.String(), jpyID, "JPY",
+		decimal.NewFromInt(1), decimal.NewFromInt(1000), decimal.NewFromInt(8), decimal.Zero)
+	jpy.Ticker = "JPYEQ"
+	// Fully closed position: excluded.
+	closed := dashboardHolding(pfUSD.String(), closedID, "USD",
+		decimal.Zero, decimal.NewFromInt(120), decimal.Zero, decimal.NewFromInt(20))
+	closed.Ticker = "GONE"
+
+	pf := &fakePortfolioRepo{
+		portfolios: []*model.Portfolio{
+			{ID: pfUSD, Currency: "USD"},
+			{ID: pfEUR, Currency: "EUR"},
+		},
+		holdings: []*model.Holding{vwraUSD, vwraEUR, bond, equity, jpy, closed},
+	}
+	fx := &fakeFXRepo{rates: map[string]decimal.Decimal{"EUR": decimal.RequireFromString("0.9")}}
+	svc := newDashboardTestService(t, pf, fx, "EUR", nil)
+
+	got, err := svc.GetDashboard(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Value-descending order: BOND 12663 > EQ 5000 > VWRA 1350 > JPYEQ 8;
+	// the closed GONE position never appears.
+	wantOrder := []string{bondID, equityID, vwraID, jpyID}
+	if len(got.InvestedAssets) != len(wantOrder) {
+		t.Fatalf("invested_assets len = %d, want %d: %+v", len(got.InvestedAssets), len(wantOrder), got.InvestedAssets)
+	}
+	for i, id := range wantOrder {
+		if got.InvestedAssets[i].AssetID != id {
+			t.Fatalf("invested_assets[%d].asset_id = %s, want %s (value-descending order)", i, got.InvestedAssets[i].AssetID, id)
+		}
+	}
+	byID := map[string]model.InvestedAsset{}
+	for _, ia := range got.InvestedAssets {
+		byID[ia.AssetID] = ia
+	}
+	if _, ok := byID[closedID]; ok {
+		t.Fatal("closed position must not appear in invested_assets")
+	}
+
+	// VWRA: invested 800*0.9 + 450, value 10*100*0.9 + 5*100*0.9.
+	v := byID[vwraID]
+	if v.Ticker != "VWRA" || v.Name != "Vanguard All-World" || v.Currency != "USD" || !v.HasPrice {
+		t.Fatalf("VWRA row = %+v, want ticker VWRA, name Vanguard All-World, currency USD, has_price true", v)
+	}
+	if !equalDecimal(v.Invested, decimal.NewFromInt(1170)) || !equalDecimal(v.Value, decimal.NewFromInt(1350)) {
+		t.Fatalf("VWRA invested/value = (%v, %v), want (1170, 1350)", v.Invested, v.Value)
+	}
+	if !equalDecimal(v.GainLoss, decimal.NewFromInt(180)) {
+		t.Fatalf("VWRA gain_loss = %v, want 180", v.GainLoss)
+	}
+	assertDecimalInDelta(t, v.GainLossPct, decimal.RequireFromString("15.38"), "0.01", "VWRA gain_loss_pct")
+
+	b := byID[bondID]
+	if b.HasPrice {
+		t.Fatalf("BOND has_price = true, want false (unpriced asset)")
+	}
+	if !equalDecimal(b.Invested, decimal.NewFromInt(12663)) || !equalDecimal(b.Value, decimal.NewFromInt(12663)) ||
+		!equalDecimal(b.GainLoss, decimal.Zero) || !equalDecimal(b.GainLossPct, decimal.Zero) {
+		t.Fatalf("BOND row = %+v, want invested and value carried at cost 12663 with zero gain", b)
+	}
+
+	e := byID[equityID]
+	if !equalDecimal(e.Invested, decimal.NewFromInt(4000)) || !equalDecimal(e.Value, decimal.NewFromInt(5000)) ||
+		!equalDecimal(e.GainLoss, decimal.NewFromInt(1000)) {
+		t.Fatalf("EQ row = %+v, want invested 4000 value 5000 gain 1000", e)
+	}
+	assertDecimalInDelta(t, e.GainLossPct, decimal.NewFromInt(25), "0.01", "EQ gain_loss_pct")
+
+	j := byID[jpyID]
+	if !j.HasPrice {
+		t.Fatalf("JPYEQ has_price = false, want true (priced, only the FX is missing)")
+	}
+	if !equalDecimal(j.Invested, decimal.NewFromInt(8)) || !equalDecimal(j.Value, decimal.NewFromInt(8)) ||
+		!equalDecimal(j.GainLoss, decimal.Zero) {
+		t.Fatalf("JPYEQ row = %+v, want the unconvertible value carried at the invested cost 8", j)
+	}
+}
+
 func TestGetDashboard_NoPortfoliosReturnsBaseCurrencyWithoutSummary(t *testing.T) {
 	svc := newDashboardTestService(t, &fakePortfolioRepo{}, &fakeFXRepo{}, "EUR", nil)
 
@@ -2794,6 +2902,9 @@ func TestGetDashboard_NoPortfoliosReturnsBaseCurrencyWithoutSummary(t *testing.T
 	}
 	if got.Summary != nil {
 		t.Fatalf("summary = %+v, want nil for an empty vault", got.Summary)
+	}
+	if got.InvestedAssets == nil || len(got.InvestedAssets) != 0 {
+		t.Fatalf("invested_assets = %v, want an empty (non-nil) slice for an empty vault", got.InvestedAssets)
 	}
 }
 

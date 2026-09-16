@@ -304,7 +304,12 @@ bucket `YYYY-MM` o `YYYY` nella valuta base dell'utente). Ogni bucket porta
 `return` (il rendimento TWR % del periodo, barre), `twr` (il
 rendimento time-weighted cumulato %, linea), `invested` (capitale netto
 investito a fine bucket) e `value` (valore di mercato a fine bucket) — i due
-importi nella valuta base.
+importi nella valuta base. Da EPIC I.5 `Dashboard` porta anche
+`invested_assets` (`InvestedAsset[]`): le posizioni aperte aggregate su tutti
+i portafogli nella valuta base (`ticker`, `name`, `invested`, `value`,
+`gain_loss`, `gain_loss_pct`, `has_price`), ordinate per valore decrescente —
+le righe con `has_price: false` portano il valore al costo, quindi il loro
+P/L è 0.
 
 > **Nota**: `portfolioApi` espone i metodi di allocazione geografica e
 > settoriale (`geographyAllocation(id)`, `sectorAllocation(id)` — serviti dal
@@ -433,7 +438,7 @@ scuro contornato di bianco).
 | `SectorChart.svelte` (`lib/components/domain/`) | struttura identica, sui settori | la card **settore** del dettaglio portafoglio (la dashboard usa ora `ExposureBarChart` per i settori, EPIC I.4). Accetta `SectorAllocation[]` (`{sector, value, weight}`), più la stessa nota di copertura opzionale `covered`/`excluded` di `GeographyChart` |
 | `ClassDonut.svelte` (`lib/components/domain/`) | **ciambella** delle classi di asset del vault (EPIC I.4, stesso stile radius/palette/etichette di `GeographyChart`): righe `AssetClassSlice[]` (`{class, value, weight}`) mappate con `ASSET_CLASS_LABELS` per i nomi in chiaro, tooltip con importo (`formatCurrency`) e peso (`formatPercent`), fetta `other` in grigio spento, righe a peso zero scartate, stato vuoto "Nessuna allocazione per classi"; prop `label` opzionale per l'intestazione sopra il grafico | il pannello classi della card "Allocazione complessiva" della **dashboard**, alimentato da `dashboardAllocation().classes` (vault intero, valuta base) |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | **barre orizzontali** riutilizzabili (EPIC I.4) su righe generiche `{name, value, weight}[]` (`ExposureBarRow`): barre ordinate **per valore decrescente** (risortese in modo difensivo nel componente, righe non positive scartate; asse categorie `inverse`, quindi la barra più grande sta in alto), peso % stampato a fine barra, tooltip con importo (`formatCurrency(value, currency)`) e peso (`formatPercent`), asse dei valori nascosto (le barre servono solo a confrontarsi tra loro), altezza del canvas proporzionale al numero di righe, `colorFor?: (name) => string` per colore per-riga (altrimenti palette `resolvePalette` per indice), `labelFor?: (name) => string` per mappare le etichette dell'asse (l'asse mostra il nome leggibile — es. codice ISO → nome completo del paese via `countryDisplayName` — e il tooltip aggiunge il nome grezzo tra parentesi quando differisce, "United States (US)"; la colonna delle etichette si allarga a 140px quando `labelFor` è attivo), `maxVisibleRows?: number` limita l'area visibile a quel numero di righe con un viewport `overflow-y-auto` mentre il canvas mantiene l'altezza completa (tutte le righe scorrevoli), `label` e `note` (didascalia muted) opzionali, stato vuoto "No data", re-init theme-aware (`{#key}`) | i pannelli regioni, settori e paesi della card "Allocazione complessiva" della **dashboard**, alimentati da `dashboardAllocation().regions` / `.sectors` / `.countries` (i chiamanti mappano `RegionAllocation`/`SectorAllocation`/`CountryAllocation` su `ExposureBarRow`; i paesi portano codici ISO alpha-2 renderizzati con `labelFor={countryDisplayName}` e `maxVisibleRows={10}` — si vedono le ~10 barre maggiori, le altre scorrono in verticale; i pannelli regioni e settori non passano nulla: etichette invariate e tutte le righe visibili — le ~10 macro-regioni non hanno mai bisogno del cap) |
-| `PositionTable.svelte` (`lib/components/domain/`) | tabella posizioni generica sul tipo `PositionRow` (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` mostrano le colonne opzionali, `showPrice` aggiunge la colonna Price (prima di Qty, formattata con `priceCurrency`, visibile anche sulle righe chiuse), `linkAssets` collega il ticker alla pagina asset; le righe chiuse mostrano `-` su tutte le celle tranne il realizzato | l'accordion posizioni della **dashboard** (E.1) e la tabella Positions del **dettaglio portafoglio** (E.2) |
+| `PositionTable.svelte` (`lib/components/domain/`) | tabella posizioni generica sul tipo `PositionRow` (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` mostrano le colonne opzionali, `showPrice` aggiunge la colonna Price (prima di Qty, formattata con `priceCurrency`, visibile anche sulle righe chiuse), `linkAssets` collega il ticker alla pagina asset; le righe chiuse mostrano `-` su tutte le celle tranne il realizzato | la tabella Positions del **dettaglio portafoglio** (E.2) — l'accordion posizioni della **dashboard** (E.1) è stato sostituito dalla tabella consolidata "Invested assets" nell'EPIC I.5 (#82) e non usa più questo componente |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | ciambella theme-aware di quote `{name, value}[]` (pesi ricalcolati sul totale positivo); `showValue={false}` nasconde il valore nel tooltip (donut multi-valuta) | la card "Allocation by portfolio" della **dashboard** (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2) |
@@ -709,9 +714,20 @@ chiamata che alimenta sia la card Performance sia la card Capital invested).
   portafoglio ha effettivamente venduto lotti (`hasClosedActivity`, cioè
   `closed.invested ≠ 0`), in tono muted e con il realizzato colorato via
   `pnlColorClass`.
-- Sezioni espandibili per portafoglio con la tabella asset (link del ticker a
-  `/assets/{id}`, quantità, investito, valore, gain/loss, realizzato, ROI — con
-  badge "cambio mancante" quando il tasso FX non è disponibile).
+- Card **Invested assets** (EPIC I.5, #82 — sostituisce i vecchi accordion
+  espandibili per portafoglio e le loro `PositionTable`): un'unica `Card` con
+  una tabella su `dashboard().invested_assets`, una riga per ogni asset
+  **aperto** aggregato su tutti i portafogli nella **valuta base**
+  dell'utente. Colonne: **Asset** (ticker collegato a `/assets/{id}` con nome
+  su una seconda riga muted), **Investito**, **Valore**, **Gain/Loss**,
+  **P/L %**; colonne numeriche allineate a destra in `tabular-nums`
+  (`Th`/`Td align="right"`, stesse primitive e stile della card Investments),
+  celle P/L firmate colorate con `pnlColorClass` e righe nell'ordine del
+  backend (valore decrescente, nessun riordino lato client). Gli asset senza
+  prezzo (`has_price: false`) portano il valore al costo — mostrano un piccolo
+  badge muted **no price** accanto al ticker il cui tooltip spiega che il P/L
+  è 0 perché non c'è prezzo disponibile. Con payload vuoto la card renderizza
+  un `EmptyState` tratteggiato ("No invested assets yet").
 - Stato vuoto: "Create your first portfolio" → `/portfolios`.
 
 ### `/login` — Sign in / Register (`routes/login/+page.svelte`)

@@ -262,8 +262,18 @@ Cosa succede, passo passo:
     perdita del -100%), mentre i loro dividendi contano comunque. `closed`
     riporta `invested` (costo AVCO dei lotti venduti), `proceeds` (incasso
     netto di vendita più i dividendi
-    conferiti dalle posizioni completamente chiuse), `realized` (proceeds −
-    invested) e `realized_pct` (realized / invested × 100).
+conferiti dalle posizioni completamente chiuse), `realized` (proceeds −
+     invested) e `realized_pct` (realized / invested × 100). La risposta
+     espone anche `invested_assets` (EPIC I.5): l'unico elenco consolidato
+     degli asset attualmente investiti, aggregato per asset su tutti i
+     portafogli dell'utente (lo stesso asset presente in più portafogli è una
+     sola riga) e convertito nella valuta base. Ogni riga porta `asset_id`,
+     `ticker`, `name`, `currency` (quella dell'asset), `invested` (costo della
+     quantità aperta), `value` (valore di mercato, al costo quando l'asset non
+     ha prezzo — `has_price: false` — o quando manca il suo tasso FX verso la
+     valuta base, così non compare una finta perdita), `gain_loss` e
+     `gain_loss_pct`; le righe sono ordinate per `value` decrescente e le
+     posizioni chiuse (qty ≤ 0) sono escluse.
 5. **Repository**: esegue le query SQL, per esempio la query che carica i
    portafogli con un `LEFT JOIN` sulla tabella di condivisione (in modo da
    essere già pronta per un futuro supporto alla condivisione).
@@ -495,7 +505,9 @@ valuta base, con le serie invested/value del capitale (capitolo 7); anche
 USD) e aggrega tutti i portafogli nelle ripartizioni vault-wide `classes`,
 `regions`, `countries` e `sectors` (capitolo 19). Le sezioni per-valuta
 (`by_currency`) e per-portafoglio (`portfolios`, `assets`) della dashboard
-mantengono la propria valuta.
+mantengono la propria valuta. L'elenco `invested_assets` è invece espresso
+nella valuta base: le posizioni aperte dell'utente aggregate per asset su
+tutti i suoi portafogli (capitolo 7, EPIC I.5).
 
 ---
 

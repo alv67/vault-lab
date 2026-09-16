@@ -2420,10 +2420,11 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			return nil, err
 		}
 		dash := &model.Dashboard{
-			BaseCurrency: baseCurrency,
-			ByCurrency:   []model.CurrencyPerformance{},
-			Portfolios:   []model.PortfolioPerformanceSummary{},
-			Assets:       []model.PortfolioAssets{},
+			BaseCurrency:   baseCurrency,
+			ByCurrency:     []model.CurrencyPerformance{},
+			Portfolios:     []model.PortfolioPerformanceSummary{},
+			Assets:         []model.PortfolioAssets{},
+			InvestedAssets: []model.InvestedAsset{},
 		}
 		if len(portfolios) == 0 {
 			return dash, nil
@@ -2454,6 +2455,7 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		}
 
 		byCurrency := map[string]*model.CurrencyPerformance{}
+		investedByAsset := map[string]*model.InvestedAsset{}
 		summary := &model.DashboardSummary{Currency: baseCurrency}
 		for _, h := range holdings {
 			p := byID[mustUUID(h.PortfolioID)]
@@ -2512,6 +2514,34 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 					summary.FXMissingValue = summary.FXMissingValue.Add(value)
 				}
 			}
+			// The consolidated invested-assets list aggregates the open
+			// positions by asset across the portfolios, in the base
+			// currency: a holding whose portfolio factor is missing is
+			// skipped like the unconvertible summary amounts, a priced
+			// asset whose own factor is missing is carried at cost (no fake
+			// loss) and so is an unpriced one, flagged by has_price.
+			if h.Qty.IsPositive() && pfOK {
+				ia := investedByAsset[h.AssetID]
+				if ia == nil {
+					ia = &model.InvestedAsset{
+						AssetID:  h.AssetID,
+						Ticker:   h.Ticker,
+						Name:     h.Name,
+						Currency: h.Currency,
+					}
+					investedByAsset[h.AssetID] = ia
+				}
+				invested := h.Cost.Mul(pfFactor)
+				value := invested
+				if h.HasPrice {
+					if factor, ok := series.FxFactor(rates, h.Currency, baseCurrency); ok {
+						value = h.Qty.Mul(h.LastClose).Mul(factor)
+					}
+					ia.HasPrice = true
+				}
+				ia.Invested = ia.Invested.Add(invested)
+				ia.Value = ia.Value.Add(value)
+			}
 		}
 		finalizeBreakdowns(&summary.Active, &summary.Closed)
 		dash.Summary = summary
@@ -2521,6 +2551,27 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				cp.GainLossPct = cp.GainLoss.Div(cp.Invested).Mul(decimal.NewFromInt(100))
 			}
 			dash.ByCurrency = append(dash.ByCurrency, *cp)
+		}
+
+		investedAssets := make([]*model.InvestedAsset, 0, len(investedByAsset))
+		for _, ia := range investedByAsset {
+			investedAssets = append(investedAssets, ia)
+		}
+		sort.Slice(investedAssets, func(i, j int) bool {
+			if investedAssets[i].Value.Equal(investedAssets[j].Value) {
+				return investedAssets[i].Ticker < investedAssets[j].Ticker
+			}
+			return investedAssets[i].Value.GreaterThan(investedAssets[j].Value)
+		})
+		dash.InvestedAssets = make([]model.InvestedAsset, 0, len(investedAssets))
+		for _, ia := range investedAssets {
+			ia.Invested = roundAmount(ia.Invested)
+			ia.Value = roundAmount(ia.Value)
+			ia.GainLoss = roundAmount(ia.Value.Sub(ia.Invested))
+			if ia.Invested.IsPositive() {
+				ia.GainLossPct = roundAmount(ia.GainLoss.Div(ia.Invested).Mul(decimal.NewFromInt(100)))
+			}
+			dash.InvestedAssets = append(dash.InvestedAssets, *ia)
 		}
 
 		assetsByPF := map[uuid.UUID][]model.AssetPerformance{}

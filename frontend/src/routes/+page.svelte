@@ -4,7 +4,6 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { SvelteSet } from 'svelte/reactivity'
   import { resolve } from '$app/paths'
   import {
     portfolioApi,
@@ -12,14 +11,12 @@
     type Dashboard,
     type DashboardAllocation,
     type DashboardPerformance,
-    type PortfolioAssets,
     type PortfolioPerformanceSummary,
   } from '$lib/services/api'
   import { toast } from '$lib/stores/toast.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
   import CapitalChart from '$lib/components/domain/CapitalChart.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
-  import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
   import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
   import { countryDisplayName } from '$lib/countryNames'
@@ -34,18 +31,16 @@
   import Tr from '$lib/components/ui/Tr.svelte'
   import Th from '$lib/components/ui/Th.svelte'
   import Td from '$lib/components/ui/Td.svelte'
+  import Badge from '$lib/components/ui/Badge.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
-  import { ChevronDown, ChevronRight } from 'lucide-svelte'
 
   let dash = $state<Dashboard | null>(null)
   let alloc = $state<DashboardAllocation | null>(null)
   let loading = $state(true)
   let lastUpdate = $state('')
-  let expanded = new SvelteSet<string>()
-  let initialized = false
 
   // Performance + Capital invested cards (EPIC I.3): vault-wide percentage
   // return and invested-capital buckets in the base currency, monthly by
@@ -129,27 +124,19 @@
         })
         .catch(() => { /* keep current data, omit the "Prices updated" line */ })
     }
-
-    const firstPortfolioId = dash?.assets?.[0]?.portfolio_id
-    if (firstPortfolioId && !initialized) {
-      initialized = true
-      expanded.add(firstPortfolioId)
-    }
   })
-
-  function toggle(id: string): void {
-    if (expanded.has(id)) {
-      expanded.delete(id)
-    } else {
-      expanded.add(id)
-    }
-  }
 
   const hasMultipleCurrencies = $derived((dash?.by_currency?.length ?? 0) > 1)
   const pricesUpdatedLabel = $derived(lastUpdate ? new Date(lastUpdate).toLocaleString() : '')
   const portfolioSlices = $derived(
     (dash?.portfolios ?? []).map((p) => ({ name: p.portfolio_name, value: Number(p.active.value) })),
   )
+
+  // EPIC I.5 consolidated "Invested assets" table: open positions aggregated
+  // across portfolios in the base currency, already sorted by descending
+  // value server-side (kept as-is, no client re-sort). `?? []` also covers
+  // older backends that still omit the field.
+  const investedAssets = $derived(dash?.invested_assets ?? [])
 
   // EPIC I.4 "Allocazione complessiva" card: region, sector and country
   // payloads are mapped onto the generic ExposureBarRow shape consumed by
@@ -190,20 +177,6 @@
   // they no longer drive the visibility on their own.
   function hasClosedActivity(p: PortfolioPerformanceSummary): boolean {
     return Number(p.closed.invested) !== 0
-  }
-
-  // value/realized come from the *_pf fields, consolidated in the portfolio
-  // currency, so the table stays currency-consistent across FX assets.
-  function positionRows(pa: PortfolioAssets): PositionRow[] {
-    return pa.assets.map((a) => ({
-      assetId: a.asset_id,
-      ticker: a.ticker,
-      name: a.name,
-      qty: Number(a.qty),
-      value: Number(a.value_pf),
-      realized: Number(a.realized_pf ?? a.realized),
-      roi: Number(a.roi),
-    }))
   }
 </script>
 
@@ -422,35 +395,66 @@
         {/if}
       </div>
 
-      {#each dash.assets as pa (pa.portfolio_id)}
-        <div class="rounded-card border-border bg-surface p-4 shadow-card">
-          <button onclick={() => toggle(pa.portfolio_id)} class="flex w-full items-center gap-2 text-left">
-            {#if expanded.has(pa.portfolio_id)}
-              <ChevronDown class="h-4 w-4 text-muted-foreground" />
-            {:else}
-              <ChevronRight class="h-4 w-4 text-muted-foreground" />
-            {/if}
-            <span class="font-semibold">{pa.portfolio_name}</span>
-            <span class="ml-1 text-xs text-muted-foreground">({pa.currency})</span>
-            <span class="ml-auto text-sm text-muted-foreground tabular-nums">
-              {formatCurrency(
-                dash.portfolios.find((p) => p.portfolio_id === pa.portfolio_id)?.active.value ?? 0,
-                pa.currency,
-              )}
-            </span>
-          </button>
-
-          {#if expanded.has(pa.portfolio_id)}
-            <div class="mt-3">
-              {#if pa.assets.length === 0}
-                <p class="text-sm text-muted-foreground">No assets in this portfolio.</p>
-              {:else}
-                <PositionTable rows={positionRows(pa)} currency={pa.currency} linkAssets showRealized />
-              {/if}
-            </div>
-          {/if}
-        </div>
-      {/each}
+      <!-- EPIC I.5: consolidated invested-assets table replacing the old
+           per-portfolio accordions. One row per open asset merged across all
+           portfolios, in the base currency, ordered by value descending as
+           returned by the backend. -->
+      <Card class="p-4">
+        <h2 class="mb-3 font-semibold">Invested assets</h2>
+        {#if investedAssets.length === 0}
+          <EmptyState
+            dashed
+            title="No invested assets yet"
+            description="Open positions will appear here once you record transactions in your portfolios."
+          />
+        {:else}
+          <div class="overflow-x-auto">
+            <Table aria-label="Invested assets">
+              <THead>
+                <Tr>
+                  <Th>Asset</Th>
+                  <Th align="right">Invested</Th>
+                  <Th align="right">Value</Th>
+                  <Th align="right">Gain/Loss</Th>
+                  <Th align="right">P/L %</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {#each investedAssets as a (a.asset_id)}
+                  <Tr>
+                    <Td>
+                      <a
+                        href={resolve(`/assets/${a.asset_id}`)}
+                        class="font-medium text-accent-text hover:underline"
+                      >
+                        {a.ticker}
+                      </a>
+                      {#if !a.has_price}
+                        <Badge
+                          variant="neutral"
+                          class="ml-1.5 align-middle"
+                          title="No price data: value is carried at cost, so its P/L is 0"
+                        >
+                          no price
+                        </Badge>
+                      {/if}
+                      <span class="block text-xs text-muted-foreground">{a.name}</span>
+                    </Td>
+                    <Td align="right">{formatCurrency(a.invested, dash.base_currency)}</Td>
+                    <Td align="right">{formatCurrency(a.value, dash.base_currency)}</Td>
+                    <Td align="right" class="font-medium {pnlColorClass(a.gain_loss)}">
+                      {formatCurrency(a.gain_loss, dash.base_currency)}
+                    </Td>
+                    <Td align="right" class={pnlColorClass(a.gain_loss_pct)}>
+                      {formatPercent(a.gain_loss_pct)}
+                    </Td>
+                  </Tr>
+                {/each}
+              </TBody>
+            </Table>
+          </div>
+        {/if}
+      </Card>
     </div>
   {/if}
 </div>

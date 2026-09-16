@@ -267,12 +267,27 @@ type DashboardSummary struct {
 	FXMissingValue decimal.Decimal `json:"fx_missing_value"`
 }
 
+// InvestedAsset is one open asset aggregated across all the user's portfolios,
+// expressed in the base currency.
+type InvestedAsset struct {
+	AssetID     string          `json:"asset_id"`
+	Ticker      string          `json:"ticker"`
+	Name        string          `json:"name"`
+	Currency    string          `json:"currency"`
+	Invested    decimal.Decimal `json:"invested"`  // cost of the open quantity
+	Value       decimal.Decimal `json:"value"`     // market value (cost when there is no price)
+	GainLoss    decimal.Decimal `json:"gain_loss"` // value - invested
+	GainLossPct decimal.Decimal `json:"gain_loss_pct"`
+	HasPrice    bool            `json:"has_price"`
+}
+
 type Dashboard struct {
-	BaseCurrency string                        `json:"base_currency"`
-	Summary      *DashboardSummary             `json:"summary,omitempty"`
-	ByCurrency   []CurrencyPerformance         `json:"by_currency"`
-	Portfolios   []PortfolioPerformanceSummary `json:"portfolios"`
-	Assets       []PortfolioAssets             `json:"assets"`
+	BaseCurrency   string                        `json:"base_currency"`
+	Summary        *DashboardSummary             `json:"summary,omitempty"`
+	ByCurrency     []CurrencyPerformance         `json:"by_currency"`
+	Portfolios     []PortfolioPerformanceSummary `json:"portfolios"`
+	Assets         []PortfolioAssets             `json:"assets"`
+	InvestedAssets []InvestedAsset               `json:"invested_assets"`
 }
 
 // PerformanceBucket is one month or year of the dashboard performance chart:

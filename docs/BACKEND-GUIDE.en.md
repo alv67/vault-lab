@@ -267,9 +267,18 @@ What happens, step by step:
      compared with, and counting it would fake a -100% loss), while their
      dividends still count. `closed` reports `invested` (AVCO cost of the
      sold lots),
-    `proceeds` (net sale proceeds plus the dividends folded in by the fully
-    closed positions), `realized` (proceeds − invested) and `realized_pct`
-    (realized / invested × 100).
+     `proceeds` (net sale proceeds plus the dividends folded in by the fully
+     closed positions), `realized` (proceeds − invested) and `realized_pct`
+     (realized / invested × 100). The response also carries `invested_assets`
+     (EPIC I.5): the single consolidated list of the currently invested
+     assets, aggregated by asset across all the user's portfolios (the same
+     asset held in several portfolios is one row) and converted into the base
+     currency. Each row carries `asset_id`, `ticker`, `name`, `currency` (the
+     asset's own), `invested` (cost of the open quantity), `value` (market
+     value, at cost when the asset has no price — `has_price: false` — or when
+     its FX rate to the base currency is missing, so no fake loss appears),
+     `gain_loss` and `gain_loss_pct`; rows are ordered by `value` descending
+     and closed positions (qty ≤ 0) are excluded.
 5. **Repository**: runs the SQL queries, for example the query that loads the
    portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
    for future sharing support).
@@ -494,6 +503,9 @@ be fixed USD) and aggregates every portfolio into the vault-wide `classes`,
 `regions`, `countries` and `sectors` breakdowns (chapter 19). The
 per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.
+The `invested_assets` list is in the base currency too: the user's open
+positions aggregated per asset across all their portfolios (chapter 7,
+EPIC I.5).
 
 ---
 

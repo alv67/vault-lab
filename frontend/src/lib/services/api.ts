@@ -445,10 +445,29 @@ export interface DashboardSummary {
   fx_missing_value: string
 }
 
+/** One open asset aggregated across all the user's portfolios, expressed in
+ * the base currency (EPIC I.5): `invested` is the cost of the open quantity,
+ * `value` the market value — carried at cost when `has_price` is false, so
+ * such rows show a zero P/L. Sorted by descending value. */
+export interface InvestedAsset {
+  asset_id: string
+  ticker: string
+  name: string
+  currency: string
+  invested: string
+  value: string
+  gain_loss: string
+  gain_loss_pct: string
+  has_price: boolean
+}
+
 export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
   assets: PortfolioAssets[]
+  /** Consolidated invested-assets table (EPIC I.5): open positions merged
+   * across portfolios in `base_currency`, sorted by value descending. */
+  invested_assets: InvestedAsset[]
   /** User's base currency: the consolidated `summary` (and the separate
    * `/dashboard/performance` endpoint) are expressed in it. The old `history`
    * series was removed in EPIC I.3, superseded by `dashboardPerformance`. */
