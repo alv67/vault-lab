@@ -174,6 +174,17 @@ export interface Transaction {
   notes: string
 }
 
+/** Envelope of the paginated `GET /portfolios/{id}/transactions` (EPIC I.9,
+ * #88): one page of transactions (newest first), the portfolio-wide total
+ * count and the `limit`/`offset` the backend actually applied (default
+ * limit 20, clamped to a max of 100). */
+export interface TransactionPage {
+  transactions: Transaction[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface AssetHolding {
   asset_id: string
   ticker: string
@@ -718,7 +729,18 @@ export const assetApi = {
 }
 
 export const transactionApi = {
-  list: (portfolioId: string) => request<Transaction[]>(`/portfolios/${portfolioId}/transactions`),
+  // EPIC I.9 (#88): paginated list returning the `TransactionPage` envelope.
+  // `limit`/`offset` are only appended when provided; without them the
+  // backend serves its default first page (limit 20, order date desc).
+  list: (
+    portfolioId: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<TransactionPage> => {
+    const query: Record<string, string> = {}
+    if (params?.limit !== undefined) query.limit = String(params.limit)
+    if (params?.offset !== undefined) query.offset = String(params.offset)
+    return request<TransactionPage>(`/portfolios/${portfolioId}/transactions`, { params: query })
+  },
   create: (portfolioId: string, data: Partial<Transaction>) =>
     request<Transaction>(`/portfolios/${portfolioId}/transactions`, { method: 'POST', body: data }),
   update: (id: string, data: Partial<Transaction>) =>

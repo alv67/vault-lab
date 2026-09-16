@@ -57,6 +57,66 @@
   let showTx = $state(false)
   let editingTx = $state<Transaction | null>(null)
 
+  // EPIC I.9 (#88): the Transactions table is paginated through the
+  // `TransactionPage` envelope of `GET /portfolios/{id}/transactions`
+  // (order date desc). `txPage` is the 1-based page index, `txOffset` the
+  // row window start; the page size mirrors the backend default (20).
+  const TX_PAGE_SIZE = 20
+  let txPage = $state(1)
+  let txLimit = $state(TX_PAGE_SIZE)
+  let txOffset = $state(0)
+  let txTotal = $state(0)
+  let txLoading = $state(false)
+
+  // Same "1–20 of 137" range label and footer layout as the health page.
+  const txRangeLabel = $derived(
+    (transactions?.length ?? 0) === 0
+      ? `0 of ${txTotal}`
+      : `${txOffset + 1}–${txOffset + (transactions?.length ?? 0)} of ${txTotal}`,
+  )
+
+  // Monotonic request id (same guard as the performance card): rapid page
+  // flips must never let a stale response overwrite the current window.
+  let txReq = 0
+
+  /** Fetch the current transaction page into `transactions`/`txTotal`,
+   * touching nothing else on the page. If the window comes back empty while
+   * rows still exist (the last row of the last page was just deleted), step
+   * back to the previous page — clamped against the fresh total — and
+   * refetch it within the same call. */
+  async function loadTransactions(): Promise<void> {
+    if (!id) return
+    const req = ++txReq
+    txLoading = true
+    try {
+      let res = await transactionApi.list(id, { limit: txLimit, offset: txOffset })
+      if (req === txReq && res.transactions.length === 0 && res.total > 0 && txOffset > 0) {
+        const maxPage = Math.max(1, Math.ceil(res.total / txLimit))
+        txPage = Math.min(Math.max(1, txPage - 1), maxPage)
+        txOffset = (txPage - 1) * txLimit
+        res = await transactionApi.list(id, { limit: txLimit, offset: txOffset })
+      }
+      if (req === txReq) {
+        transactions = res.transactions
+        txTotal = res.total
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load transactions'
+      if (req === txReq) toast.error(message)
+    } finally {
+      if (req === txReq) txLoading = false
+    }
+  }
+
+  /** Jump to a 1-based page (clamped to the last page of `txTotal`) and
+   * refetch only the transactions window — never the whole portfolio page. */
+  function gotoTxPage(target: number): void {
+    const maxPage = Math.max(1, Math.ceil(txTotal / txLimit))
+    txPage = Math.min(Math.max(1, target), maxPage)
+    txOffset = (txPage - 1) * txLimit
+    void loadTransactions()
+  }
+
   const currency = $derived(portfolio?.currency || 'USD')
 
   // EPIC I.8 (#87): the portfolio's own percentage performance card — same
@@ -173,15 +233,16 @@
   async function load(): Promise<void> {
     if (!id) return
     try {
-      const [p, s, t, a] = await Promise.all([
+      const [p, s, txs, a] = await Promise.all([
         portfolioApi.get(id),
         portfolioApi.summary(id),
-        transactionApi.list(id),
+        transactionApi.list(id, { limit: txLimit, offset: txOffset }),
         assetApi.list(),
       ])
       portfolio = p
       summary = s
-      transactions = t
+      transactions = txs.transactions
+      txTotal = txs.total
       assets = a
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load portfolio'
@@ -250,12 +311,16 @@
   async function reloadAfterMutation(): Promise<void> {
     if (!id) return
     try {
-      const [t, s, h] = await Promise.all([
-        transactionApi.list(id),
+      // Refetch the CURRENT transactions page (plus total, with the
+      // empty-page step-back) in parallel with the summary/history.
+      // `loadTransactions` never rejects (it toasts its own errors), so a
+      // transactions failure cannot block the other refreshes. The
+      // mutation already cleared the GET cache.
+      const [s, h] = await Promise.all([
         portfolioApi.summary(id),
         portfolioApi.history(id),
+        loadTransactions(),
       ])
-      transactions = t
       summary = s
       history = h
     } catch (err: unknown) {
@@ -467,6 +532,29 @@
         showTx = true
       }}
     />
+    <!-- EPIC I.9 (#88): pagination footer with the same "1–20 of 137" range
+         label and Previous/Next layout used by the admin health page. -->
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+      <span class="text-sm tabular-nums text-muted-foreground">{txRangeLabel}</span>
+      <div class="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={txOffset === 0 || txLoading}
+          onclick={() => gotoTxPage(txPage - 1)}
+        >
+          Previous
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={txOffset + txLimit >= txTotal || txLoading}
+          onclick={() => gotoTxPage(txPage + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
   </div>
 </div>
 

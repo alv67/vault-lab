@@ -366,7 +366,8 @@ func newFetchTestService(t *testing.T, a *fakeAssetRepo, e *fakeExposureRepo, lk
 type fakeTransactionRepo struct {
 	minDates map[uuid.UUID]time.Time
 	// txs backs FindByPortfoliosAsc so the cash-flow paths (dashboard
-	// performance) can be tested with a fixed transaction ledger.
+	// performance) can be tested with a fixed transaction ledger. It also
+	// backs the paginated read, which slices it honoring limit/offset.
 	txs []model.TransactionWithAsset
 }
 
@@ -375,6 +376,19 @@ func (f *fakeTransactionRepo) Create(ctx context.Context, tx *model.Transaction)
 }
 func (f *fakeTransactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error) {
 	return nil, nil
+}
+func (f *fakeTransactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, limit, offset int) ([]model.TransactionWithAsset, error) {
+	if offset >= len(f.txs) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(f.txs) {
+		end = len(f.txs)
+	}
+	return f.txs[offset:end], nil
+}
+func (f *fakeTransactionRepo) CountByPortfolio(ctx context.Context, portfolioID uuid.UUID) (int64, error) {
+	return int64(len(f.txs)), nil
 }
 func (f *fakeTransactionRepo) FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error) {
 	return f.txs, nil
@@ -4055,5 +4069,141 @@ func TestGetDashboardAllocation_UsesUserBaseCurrency(t *testing.T) {
 	}
 	if !equalDecimal(got.Covered, decimal.NewFromInt(90)) {
 		t.Fatalf("covered = %v, want 90", got.Covered)
+	}
+}
+
+// newTransactionPageTestService wires the minimal repos the paginated
+// transactions read touches: portfolio ownership lookup and the ledger.
+func newTransactionPageTestService(t *testing.T, p *fakePortfolioRepo, txs *fakeTransactionRepo) *Service {
+	t.Helper()
+	repos := &repository.Repository{
+		Asset:       &fakeAssetRepo{},
+		Portfolio:   p,
+		Transaction: txs,
+		Exposure:    &fakeExposureRepo{},
+		FX:          &fakeFXRepo{},
+		Lookup:      &fakeLookupRepo{},
+	}
+	return New(repos, nil, nil, nil, time.Minute, time.Hour, cache.New(nil), 0, 0, nil)
+}
+
+// pagedTxLedger builds n transactions in the order the SQL would return them
+// (newest first), so the fake can simply slice them.
+func pagedTxLedger(portfolioID uuid.UUID, n int) []model.TransactionWithAsset {
+	txs := make([]model.TransactionWithAsset, 0, n)
+	base := time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < n; i++ {
+		txs = append(txs, model.TransactionWithAsset{
+			ID:          uuid.New(),
+			PortfolioID: portfolioID,
+			AssetID:     uuid.New(),
+			AssetTicker: "ACME",
+			Type:        model.TxBuy,
+			Quantity:    decimal.NewFromInt(1),
+			Price:       decimal.NewFromInt(int64(100 + i)),
+			Date:        base.AddDate(0, 0, -i),
+			CreatedAt:   base.AddDate(0, 0, -i),
+		})
+	}
+	return txs
+}
+
+func TestListTransactionsPaged_FirstPageAndTotal(t *testing.T) {
+	owner := uuid.New()
+	pid := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
+	ledger := pagedTxLedger(pid, 5)
+	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: ledger})
+
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 2, 0)
+	if err != nil {
+		t.Fatalf("ListTransactionsPaged: %v", err)
+	}
+	if page.Total != 5 {
+		t.Fatalf("total = %d, want 5", page.Total)
+	}
+	if page.Limit != 2 || page.Offset != 0 {
+		t.Fatalf("limit/offset = %d/%d, want 2/0", page.Limit, page.Offset)
+	}
+	if len(page.Transactions) != 2 {
+		t.Fatalf("page size = %d, want 2", len(page.Transactions))
+	}
+	for i, tx := range page.Transactions {
+		if tx.ID != ledger[i].ID {
+			t.Fatalf("tx %d = %s, want %s", i, tx.ID, ledger[i].ID)
+		}
+	}
+}
+
+func TestListTransactionsPaged_OffsetBeyondEndYieldsEmptyPageWithTotal(t *testing.T) {
+	owner := uuid.New()
+	pid := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
+	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 3)})
+
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 50)
+	if err != nil {
+		t.Fatalf("ListTransactionsPaged: %v", err)
+	}
+	if page.Transactions == nil {
+		t.Fatal("transactions must be an empty slice, never null")
+	}
+	if len(page.Transactions) != 0 {
+		t.Fatalf("page size = %d, want 0", len(page.Transactions))
+	}
+	if page.Total != 3 {
+		t.Fatalf("total = %d, want 3", page.Total)
+	}
+}
+
+func TestListTransactionsPaged_LimitDefaultsAndClamps(t *testing.T) {
+	owner := uuid.New()
+	pid := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
+	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 3)})
+
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 0, 0)
+	if err != nil {
+		t.Fatalf("ListTransactionsPaged (default): %v", err)
+	}
+	if page.Limit != 20 {
+		t.Fatalf("default limit = %d, want 20", page.Limit)
+	}
+
+	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 500, 0)
+	if err != nil {
+		t.Fatalf("ListTransactionsPaged (clamp): %v", err)
+	}
+	if page.Limit != 100 {
+		t.Fatalf("clamped limit = %d, want 100", page.Limit)
+	}
+	if len(page.Transactions) != 3 {
+		t.Fatalf("page size = %d, want 3", len(page.Transactions))
+	}
+}
+
+func TestListTransactionsPaged_RejectsNegativePagination(t *testing.T) {
+	owner := uuid.New()
+	pid := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
+	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 1)})
+
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, -1, 0); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("negative limit err = %v, want ErrInvalidInput", err)
+	}
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, -5); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("negative offset err = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestListTransactionsPaged_NonOwnerForbidden(t *testing.T) {
+	owner := uuid.New()
+	stranger := uuid.New()
+	pid := uuid.New()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
+	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 3)})
+
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, stranger, 10, 0); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("non-owner err = %v, want ErrForbidden", err)
 	}
 }

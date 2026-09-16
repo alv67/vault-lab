@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -228,6 +229,12 @@ func (h *Handler) DeleteTransaction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
 	if err != nil {
@@ -235,14 +242,44 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txs, err := h.svc.ListTransactions(r.Context(), portfolioID)
+	limit := 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+		offset = v
+	}
+
+	page, err := h.svc.ListTransactionsPaged(r.Context(), portfolioID, claims.UserID, limit, offset)
 	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "invalid pagination parameters")
+			return
+		case errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, "portfolio not found")
+			return
+		}
 		log.Error().Err(err).Msg("list transactions failed")
 		respondError(w, http.StatusInternalServerError, "list failed")
 		return
 	}
 
-	respond(w, http.StatusOK, txs)
+	respond(w, http.StatusOK, page)
 }
 
 func (h *Handler) GetPortfolioSummary(w http.ResponseWriter, r *http.Request) {

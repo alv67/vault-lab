@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- The portfolio transactions list is now paginated: it comes back page by page (20 at a time by default, up to 100) in a stable newest-first order, together with the total count, so long histories stay fast and predictable
 - The portfolio detail now has its own monthly/annual percentage performance chart: the same time-weighted return the dashboard shows, measured for that single portfolio in its own currency, with the invested-versus-value capital series next to it
 - The portfolio detail allocation section now mirrors the dashboard's "Allocazione complessiva" card: an asset-class donut plus descending region, sector and country bars, all in the portfolio's currency (equity-only, ordered by value)
 - The portfolio detail page now shows the same active vs closed investments breakdown as the dashboard, in the portfolio's own currency: open positions with invested, current value, gain/loss and dividends, and the closed part with the cost of the sold lots, the proceeds and the realized gain/loss

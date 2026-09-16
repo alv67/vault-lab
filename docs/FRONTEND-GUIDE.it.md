@@ -273,7 +273,7 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
 | | exposure, saveExposure, fetchExposure, fetchETFExposure, fetchMorningstarExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure`, `POST /assets/{id}/fetch-morningstar-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
-| `transactionApi` | list, create | `GET/POST /portfolios/{id}/transactions` |
+| `transactionApi` | list, create | `GET /portfolios/{id}/transactions?limit=&offset=` (EPIC I.9: restituisce l'involucro `TransactionPage` — `transactions`, `total`, `limit`/`offset` applicati; limite di default 20, max 100, ordine per data decrescente), `POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
 | `pricesApi` | refresh | `POST /prices/refresh` (query opzionale `portfolio_id`, restituisce il `RefreshReport`) |
 | | byAsset | `GET /prices/{assetId}?full=1` |
@@ -281,7 +281,8 @@ verificato contro le rotte del backend (`backend/cmd/server/main.go`).
 | `api` (generico) | get/post/put/patch/delete | il client grezzo, usato dalla pagina health per `GET /health/prices` |
 
 I tipi esportati accanto (`User`, `Portfolio`, `Asset`, `Transaction`,
-`PortfolioSummary`, `AssetHolding`, `Dashboard`, `DashboardSummary`,
+`TransactionPage`, `PortfolioSummary`, `AssetHolding`, `Dashboard`,
+`DashboardSummary`,
 `ActiveBreakdown`, `ClosedBreakdown`, `RefreshReport`, `AssetQuote`,
 `AssetExposure`, `PortfolioHistory`, `AssetPositionSeries`,
 `PortfolioExportDocument`, ...) rispecchiano i modelli del backend. Nota: i
@@ -312,8 +313,11 @@ importi nella `currency` del payload. Da EPIC I.5 `Dashboard` porta anche
 `invested_assets` (`InvestedAsset[]`): le posizioni aperte aggregate su tutti
 i portafogli nella valuta base (`ticker`, `name`, `invested`, `value`,
 `gain_loss`, `gain_loss_pct`, `has_price`), ordinate per valore decrescente —
-le righe con `has_price: false` portano il valore al costo, quindi il loro
-P/L è 0.
+ le righe con `has_price: false` portano il valore al costo, quindi il loro
+P/L è 0. Dall'EPIC I.9 (#88) `transactionApi.list(id, { limit, offset })` non
+restituisce più un semplice array ma l'involucro `TransactionPage`
+(`transactions`, `total`, `limit`/`offset` applicati; limite di default 20,
+max 100, ordine per data decrescente), che il dettaglio portafoglio pagina.
 
 > **Nota**: `portfolioApi` espone i metodi di allocazione geografica e
 > settoriale (`geographyAllocation(id)`, `sectorAllocation(id)` — serviti dal
@@ -453,7 +457,7 @@ scuro contornato di bianco).
 | `PositionTable.svelte` (`lib/components/domain/`) | tabella posizioni generica sul tipo `PositionRow` (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` mostrano le colonne opzionali, `showPrice` aggiunge la colonna Price (prima di Qty, formattata con `priceCurrency`, visibile anche sulle righe chiuse), `linkAssets` collega il ticker alla pagina asset; le righe chiuse mostrano `-` su tutte le celle tranne il realizzato | la tabella Positions del **dettaglio portafoglio** (E.2) — l'accordion posizioni della **dashboard** (E.1) è stato sostituito dalla tabella consolidata "Invested assets" nell'EPIC I.5 (#82) e non usa più questo componente |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | ciambella theme-aware di quote `{name, value}[]` (pesi ricalcolati sul totale positivo); `showValue={false}` nasconde il valore nel tooltip (donut multi-valuta) | la card "Allocation by portfolio" della **dashboard** (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
-| `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2) |
+| `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2); dall'EPIC I.9 (#88) la pagina le passa una pagina da 20 righe alla volta e mostra i pulsanti Previous/Next con l'intervallo sotto di essa |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | finestra di aggiunta/modifica/eliminazione transazione: combobox asset, tipo (buy/sell/dividend), quantità/prezzo o importo, data, commissioni, note; validazione inline e totale live; gestisce chiamate API, toast e conferma di eliminazione | la pagina **dettaglio portafoglio** (E.2), aperta da "Add Transaction" e dall'azione di modifica della tabella |
 | `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profile / Password / Currencies / Health), tab attivo marcato con `aria-current="page"` | tutte e quattro le pagine **Settings** (E.4) |
 
@@ -782,7 +786,7 @@ Endpoint chiamati: `portfolioApi.list()`, `settingsApi.listCurrencies()`.
 
 Endpoint chiamati: `portfolioApi.get`, `.summary`, `.performanceBuckets`,
 `.history`, `.classAllocation`, `.geographyAllocation`, `.sectorAllocation`,
-`transactionApi.list`, `assetApi.list`, poi il
+`transactionApi.list(id, { limit, offset })`, `assetApi.list`, poi il
 `pricesApi.refresh(id)` di sessione + summary fresco + refill dei bucket di
 performance.
 
@@ -825,12 +829,19 @@ performance.
   della pagina (sostituisce la vecchia card ciambella `ExposurePie` + tabella
   "Allocazione per classi" e le card `GeographyChart` / `SectorChart`
   affiancate).
-- **Transazioni**: tabella (data, asset, badge del tipo, quantità, prezzo,
-  totale), form di aggiunta/modifica per **buy / sell / dividend** (il
+- **Transazioni**: tabella paginata (data, asset, badge del tipo, quantità,
+  prezzo, totale), 20 righe per pagina (`$state` `txPage`/`txLimit`/`txOffset`
+  /`txTotal`, EPIC I.9 #88): la finestra viene caricata con
+  `transactionApi.list(id, { limit, offset })` e il piè di pagina sotto la
+  tabella — la stessa disposizione Previous/Next + intervallo "1–20 of 137"
+  della pagina health admin — ricarica solo le transazioni, mai l'intera
+  pagina. Form di aggiunta/modifica per **buy / sell / dividend** (il
   dividendo chiede l'importo totale invece di quantità × prezzo; la quantità
   viene inviata come `1`), eliminazione con conferma. Dopo ogni mutazione
-  vengono rifetchati lista, summary, storico, i bucket della card Performance
-  e le allocazioni.
+  vengono rifetchati la pagina CORRENTE delle transazioni (col totale; se
+  cancellando l'ultima riga dell'ultima pagina la finestra resta vuota, si
+  retrocede di una pagina con l'offset clampato al totale appena ricevuto),
+  il summary, lo storico, i bucket della card Performance e le allocazioni.
 - **Export**: `portfolioApi.exportDoc(id)` → download del file JSON
   (`vault-lab-<nome>.json`).
 

@@ -184,6 +184,13 @@ type TransactionWithAsset struct {
 	CreatedAt   time.Time       `json:"created_at"`
 }
 
+type TransactionPage struct {
+	Transactions []TransactionWithAsset `json:"transactions"`
+	Total        int64                  `json:"total"`
+	Limit        int                    `json:"limit"`
+	Offset       int                    `json:"offset"`
+}
+
 type Price struct {
 	ID        uuid.UUID       `json:"id"`
 	AssetID   uuid.UUID       `json:"asset_id"`

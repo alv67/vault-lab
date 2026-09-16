@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- L'elenco delle transazioni del portafoglio ora è paginato: viene restituito pagina per pagina (di default 20 alla volta, fino a 100) in un ordine stabile dalla più recente, insieme al conteggio totale, così le storici lunghi restano rapidi e prevedibili
 - Il dettaglio del portafoglio ha ora un proprio grafico di performance percentuale mensile/annuale: lo stesso time-weighted return della dashboard, misurato per il singolo portafoglio nella sua valuta, accanto alla serie del capitale investito rispetto al valore attuale
 - La sezione allocazione del dettaglio portafoglio ora replica la card "Allocazione complessiva" della dashboard: una ciambella per classe di attività e barre decrescenti per regioni, settori e paesi, tutto nella valuta del portafoglio (solo azioni, ordinate per valore)
 - Anche nel dettaglio del portafoglio compare lo stesso riepilogo degli investimenti attivi e chiusi della dashboard, nella valuta del portafoglio: le posizioni aperte con investito, valore attuale, guadagno/perdita e dividendi, e la parte chiusa con il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata

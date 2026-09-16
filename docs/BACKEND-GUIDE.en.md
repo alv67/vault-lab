@@ -338,6 +338,23 @@ dates, so the last date of each month/year seals its bucket and the buckets
 are emitted in ascending order — buckets with no data are simply omitted.
 `return` and `twr` are rounded to 4 decimals, `invested` and `value` to 8.
 
+### The paginated transactions list (`GET /portfolios/{id}/transactions`, EPIC I.9)
+
+`GET /api/v1/portfolios/{id}/transactions?limit=&offset=` returns a
+pagination envelope — `{transactions[], total, limit, offset}` — instead of
+the bare array it used to emit. `limit` defaults to 20 and is clamped to a
+maximum of 100 (a larger value comes back as `limit: 100`), `offset`
+defaults to 0; a non-numeric value on either parameter is a 400, and so is a
+negative one (surfaced by the service as `ErrInvalidInput`). The page is
+ordered by `date DESC, created_at DESC, id DESC` — a fully deterministic
+tie-break, so two transactions sharing a date can never straddle pages or
+repeat. Ownership is enforced by the service before querying: a portfolio
+that belongs to someone else is a 403 and a missing one a 404 (previously
+this endpoint performed no ownership check at all). `total` is the full
+number of transactions in the portfolio, not the page size, so a page past
+the end simply yields an empty `transactions` array with the correct
+`total`.
+
 ### The per-portfolio TWR chart (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
 
 `GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`

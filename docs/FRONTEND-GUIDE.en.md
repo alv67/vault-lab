@@ -261,7 +261,7 @@ verified against the backend routes (`backend/cmd/server/main.go`).
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
 | | exposure, saveExposure, fetchExposure, fetchETFExposure, fetchMorningstarExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure`, `POST /assets/{id}/fetch-morningstar-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
-| `transactionApi` | list, create | `GET/POST /portfolios/{id}/transactions` |
+| `transactionApi` | list, create | `GET /portfolios/{id}/transactions?limit=&offset=` (EPIC I.9: returns the `TransactionPage` envelope — `transactions`, `total`, applied `limit`/`offset`; default limit 20, max 100, order date desc), `POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
 | `pricesApi` | refresh | `POST /prices/refresh` (optional query `portfolio_id`, returns the `RefreshReport`) |
 | | byAsset | `GET /prices/{assetId}?full=1` |
@@ -269,8 +269,9 @@ verified against the backend routes (`backend/cmd/server/main.go`).
 | `api` (generic) | get/post/put/patch/delete | the raw client, used by the health page for `GET /health/prices` |
 
 The types exported alongside (`User`, `Portfolio`, `Asset`, `Transaction`,
-`PortfolioSummary`, `AssetHolding`, `Dashboard`, `DashboardSummary`,
-`ActiveBreakdown`, `ClosedBreakdown`, `RefreshReport`, `AssetQuote`,
+`TransactionPage`, `PortfolioSummary`, `AssetHolding`, `Dashboard`,
+`DashboardSummary`, `ActiveBreakdown`, `ClosedBreakdown`, `RefreshReport`,
+`AssetQuote`,
 `AssetExposure`, `PortfolioHistory`, `AssetPositionSeries`,
 `PortfolioExportDocument`, ...) mirror the backend models. Note that monetary
 values arrive as **strings** (e.g. `"1234.56"`) to avoid floating-point
@@ -303,6 +304,10 @@ amounts in the payload's `currency`. Since EPIC I.5 `Dashboard` also carries
 all portfolios in the base currency (`ticker`, `name`, `invested`, `value`,
 `gain_loss`, `gain_loss_pct`, `has_price`), sorted by descending value —
 rows with `has_price: false` carry their value at cost, so their P/L is 0.
+Since EPIC I.9 (#88) `transactionApi.list(id, { limit, offset })` no longer
+returns a bare array but the `TransactionPage` envelope (`transactions`,
+`total`, applied `limit`/`offset`; default limit 20, max 100, order date
+desc), which the portfolio detail paginates.
 
 > **Note**: `portfolioApi` exposes the geography and sector allocation methods
 > (`geographyAllocation(id)`, `sectorAllocation(id)` — served by the backend
@@ -438,7 +443,7 @@ in white).
 | `PositionTable.svelte` (`lib/components/domain/`) | generic positions table over the `PositionRow` type (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` toggle the optional columns, `showPrice` adds a Price column (before Qty, formatted with `priceCurrency`, shown even for closed rows), `linkAssets` links the ticker to the asset page; closed rows dash out every cell except realized | the **portfolio detail** Positions table (E.2) — the dashboard positions accordion (E.1) was replaced by the consolidated "Invested assets" table in EPIC I.5 (#82) and no longer uses this component |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | theme-aware donut of `{name, value}[]` shares (weights recomputed on the positive total); `showValue={false}` hides the value in the tooltip (mixed-currency donut) | the **dashboard** "Allocation by portfolio" (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
-| `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2) |
+| `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2); since EPIC I.9 (#88) the page feeds it one 20-row page at a time and renders the Previous/Next footer under it |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction dialog: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls, toasts and the delete confirm | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
 | `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Currencies / Health), active tab marked with `aria-current="page"` | all four **Settings** pages (E.4) |
 
@@ -755,7 +760,7 @@ Called endpoints: `portfolioApi.list()`, `settingsApi.listCurrencies()`.
 
 Called endpoints: `portfolioApi.get`, `.summary`, `.performanceBuckets`,
 `.history`, `.classAllocation`, `.geographyAllocation`, `.sectorAllocation`,
-`transactionApi.list`, `assetApi.list`, then the session
+`transactionApi.list(id, { limit, offset })`, `assetApi.list`, then the session
 `pricesApi.refresh(id)` + fresh summary + a performance-buckets refetch.
 
 - KPI: the shared `InvestmentsTable` card (Active/Closed roll-ups from
@@ -795,10 +800,17 @@ Called endpoints: `portfolioApi.get`, `.summary`, `.performanceBuckets`,
   panels show "non disponibile" without blocking the section or the rest of
   the page (replaces the old `ExposurePie` class donut + table card and the
   `GeographyChart` / `SectorChart` cards).
-- **Transactions**: table (date, asset, type badge, quantity, price, total),
-  add/edit form for **buy / sell / dividend** (dividend asks the total amount
-  instead of quantity × price; quantity is sent as `1`), delete with confirm.
-  After each mutation the list, the summary, the history, the Performance
+- **Transactions**: paginated table (date, asset, type badge, quantity, price,
+  total), 20 rows per page (`txPage`/`txLimit`/`txOffset`/`txTotal` `$state`,
+  EPIC I.9 #88): the window is fetched with
+  `transactionApi.list(id, { limit, offset })` and the footer under the table —
+  same Previous/Next + "1–20 of 137" range layout as the admin health page —
+  only refetches the transactions, never the whole page. Add/edit form for
+  **buy / sell / dividend** (dividend asks the total amount instead of
+  quantity × price; quantity is sent as `1`), delete with confirm. After each
+  mutation the CURRENT transactions page (plus the total; if deleting the last
+  row of the last page empties the window the page steps back to the previous
+  one, clamped to the fresh total), the summary, the history, the Performance
   card buckets and the allocations are refetched.
 - **Export**: `portfolioApi.exportDoc(id)` → JSON file download
   (`vault-lab-<name>.json`).

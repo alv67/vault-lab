@@ -1419,8 +1419,58 @@ func (s *Service) AddTransaction(ctx context.Context, tx *model.Transaction) (*m
 	return tx, nil
 }
 
-func (s *Service) ListTransactions(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error) {
-	return s.repos.Transaction.FindByPortfolio(ctx, portfolioID)
+// defaultTransactionLimit and maxTransactionLimit bound the page size of the
+// paginated transactions endpoint: unset means the default, anything above
+// the max is clamped down.
+const (
+	defaultTransactionLimit = 20
+	maxTransactionLimit     = 100
+)
+
+// ListTransactionsPaged returns one page of a portfolio's transactions plus
+// the total count, newest first. Negative limit/offset are rejected with
+// ErrInvalidInput; limit is defaulted and clamped as per the constants above.
+// Ownership is enforced like on the other portfolio-scoped reads: missing
+// portfolios yield ErrNotFound, someone else's portfolio yields ErrForbidden.
+func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID uuid.UUID, limit, offset int) (*model.TransactionPage, error) {
+	if limit < 0 || offset < 0 {
+		return nil, ErrInvalidInput
+	}
+	if limit == 0 {
+		limit = defaultTransactionLimit
+	}
+	if limit > maxTransactionLimit {
+		limit = maxTransactionLimit
+	}
+
+	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if !s.canAccessPortfolio(ctx, p, userID) {
+		return nil, ErrForbidden
+	}
+
+	txs, err := s.repos.Transaction.FindByPortfolioPage(ctx, portfolioID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if txs == nil {
+		txs = []model.TransactionWithAsset{}
+	}
+	total, err := s.repos.Transaction.CountByPortfolio(ctx, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.TransactionPage{
+		Transactions: txs,
+		Total:        total,
+		Limit:        limit,
+		Offset:       offset,
+	}, nil
 }
 
 // UpdateTransaction edits a transaction after verifying the caller owns the

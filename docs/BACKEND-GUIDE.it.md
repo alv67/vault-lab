@@ -338,6 +338,25 @@ vengono emessi in ordine crescente — i bucket senza dati vengono
 semplicemente omessi. `return` e `twr` si arrotondano a 4 decimali,
 `invested` e `value` a 8.
 
+### L'elenco paginato delle transazioni (`GET /portfolios/{id}/transactions`, EPIC I.9)
+
+`GET /api/v1/portfolios/{id}/transactions?limit=&offset=` restituisce un
+involucro di paginazione — `{transactions[], total, limit, offset}` — in
+vece del semplice array che emetteva prima. `limit` ha default 20 e viene
+limitato a un massimo di 100 (un valore più grande torna come
+`limit: 100`), `offset` ha default 0; un valore non numerico per uno dei due
+parametri è un 400, e lo stesso vale per un valore negativo (espresso dal
+service come `ErrInvalidInput`). La pagina è ordinata per
+`date DESC, created_at DESC, id DESC` — un tie-break del tutto
+deterministico, quindi due transazioni con la stessa data non possono
+finire a cavallo di due pagine né ripetersi. La proprietà del portafoglio
+è verificata nel service prima di qualsiasi query: il portafoglio altrui è
+un 403 e uno inesistente un 404 (prima di questa modifica l'endpoint non
+faceva alcun controllo di proprietà). `total` è il numero completo di
+transazioni del portafoglio, non la dimensione della pagina: una pagina
+oltre la fine restituisce semplicemente un array `transactions` vuoto con
+il `total` corretto.
+
 ### Il grafico TWR per singolo portafoglio (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
 
 `GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`
