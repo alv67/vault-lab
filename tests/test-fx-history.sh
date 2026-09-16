@@ -181,7 +181,7 @@ pause
 # --- FASE 4: buy transaction (skip if already present on rerun) ---------------------------
 note "FASE 4 — Buy 1 unit @ 100 EUR on 2024-01-10 (skip if present on rerun)"
 TXS=$(curl -s "$API/portfolios/$PID/transactions" -H "Authorization: Bearer $TOK")
-if [ "$(jq 'length' <<<"$TXS")" -gt 0 ]; then
+if [ "$(jq '.total' <<<"$TXS")" -gt 0 ]; then
   note "(rerun) transactions already present — buy skipped"
   ok "existing transactions detected, buy skipped"
 else

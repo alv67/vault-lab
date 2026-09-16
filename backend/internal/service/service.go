@@ -253,12 +253,26 @@ func (s *Service) GetCurrentUser(ctx context.Context, claims *auth.Claims) (*mod
 	return s.repos.User.FindByID(ctx, claims.UserID)
 }
 
-func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, name, email string) (*model.User, error) {
+// UpdateProfile patches the user's name and email, and optionally the base
+// currency used by the dashboard aggregations. An empty baseCurrency keeps
+// the stored value; a non-empty one must be an enabled whitelist currency.
+func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, name, email, baseCurrency string) (*model.User, error) {
 	if name == "" {
 		return nil, ErrInvalidInput
 	}
 	if email == "" || !strings.Contains(email, "@") {
 		return nil, ErrInvalidInput
+	}
+
+	code := strings.ToUpper(strings.TrimSpace(baseCurrency))
+	if code != "" {
+		enabled, err := s.repos.Currency.EnabledByCodes(ctx, []string{code})
+		if err != nil {
+			return nil, err
+		}
+		if len(enabled) == 0 {
+			return nil, fmt.Errorf("%w: %s is not an enabled currency", ErrInvalidInput, code)
+		}
 	}
 
 	user, err := s.repos.User.FindByID(ctx, userID)
@@ -274,6 +288,9 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, name, ema
 		user.Email = email
 	}
 	user.Name = name
+	if code != "" {
+		user.BaseCurrency = code
+	}
 
 	if err := s.repos.User.Update(ctx, user); err != nil {
 		return nil, err
@@ -1402,8 +1419,58 @@ func (s *Service) AddTransaction(ctx context.Context, tx *model.Transaction) (*m
 	return tx, nil
 }
 
-func (s *Service) ListTransactions(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error) {
-	return s.repos.Transaction.FindByPortfolio(ctx, portfolioID)
+// defaultTransactionLimit and maxTransactionLimit bound the page size of the
+// paginated transactions endpoint: unset means the default, anything above
+// the max is clamped down.
+const (
+	defaultTransactionLimit = 20
+	maxTransactionLimit     = 100
+)
+
+// ListTransactionsPaged returns one page of a portfolio's transactions plus
+// the total count, newest first. Negative limit/offset are rejected with
+// ErrInvalidInput; limit is defaulted and clamped as per the constants above.
+// Ownership is enforced like on the other portfolio-scoped reads: missing
+// portfolios yield ErrNotFound, someone else's portfolio yields ErrForbidden.
+func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID uuid.UUID, limit, offset int) (*model.TransactionPage, error) {
+	if limit < 0 || offset < 0 {
+		return nil, ErrInvalidInput
+	}
+	if limit == 0 {
+		limit = defaultTransactionLimit
+	}
+	if limit > maxTransactionLimit {
+		limit = maxTransactionLimit
+	}
+
+	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if !s.canAccessPortfolio(ctx, p, userID) {
+		return nil, ErrForbidden
+	}
+
+	txs, err := s.repos.Transaction.FindByPortfolioPage(ctx, portfolioID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	if txs == nil {
+		txs = []model.TransactionWithAsset{}
+	}
+	total, err := s.repos.Transaction.CountByPortfolio(ctx, portfolioID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.TransactionPage{
+		Transactions: txs,
+		Total:        total,
+		Limit:        limit,
+		Offset:       offset,
+	}, nil
 }
 
 // UpdateTransaction edits a transaction after verifying the caller owns the
@@ -1522,6 +1589,32 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 				}
 			}
 			summary.Holdings = append(summary.Holdings, ah)
+			// The active/closed breakdown mirrors the per-portfolio rules of
+			// GetDashboard, without any conversion to a base currency: cost,
+			// dividends, closed cost and proceeds are already expressed in
+			// the portfolio currency and only the market value needs the
+			// asset->portfolio factor. Only open lots of priced assets feed
+			// the active invested, so neither the AVCO rounding residue of a
+			// closed position nor the uncomparable cost of an unpriced one
+			// inflates it. Dividends follow the position: still-open ones
+			// (even partially sold or unpriced) stay in the active group,
+			// fully closed ones fold into the proceeds. An unconvertible
+			// value is skipped here and already reported by the FX-missing
+			// bookkeeping of the flat fields above.
+			summary.Closed.Invested = summary.Closed.Invested.Add(h.ClosedCost)
+			summary.Closed.Proceeds = summary.Closed.Proceeds.Add(h.Proceeds)
+			if h.HasPrice && h.Qty.IsPositive() {
+				summary.Active.Invested = summary.Active.Invested.Add(h.Cost)
+				value := h.Qty.Mul(h.LastClose)
+				if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+					summary.Active.Value = summary.Active.Value.Add(value.Mul(factor))
+				}
+			}
+			if h.Qty.IsPositive() {
+				summary.Active.Dividends = summary.Active.Dividends.Add(h.Dividends)
+			} else {
+				summary.Closed.Proceeds = summary.Closed.Proceeds.Add(h.Dividends)
+			}
 		}
 		summary.TotalCost = totalCost
 		summary.TotalValue = totalValue
@@ -1531,6 +1624,7 @@ func (s *Service) GetPortfolioSummary(ctx context.Context, portfolioID uuid.UUID
 		if totalCost.IsPositive() {
 			summary.GainLossPct = summary.GainLoss.Div(totalCost).Mul(decimal.NewFromInt(100))
 		}
+		finalizeBreakdowns(&summary.Active, &summary.Closed)
 		return summary, nil
 	})
 }
@@ -1655,6 +1749,10 @@ func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolio
 		if err != nil {
 			return nil, err
 		}
+		countryExposures, err := s.repos.Exposure.FindCountriesByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
 		buckets, total, cov := buildBuckets(holdings, rates, p.Currency, geo.Regions, exposures,
 			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
 		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
@@ -1669,7 +1767,22 @@ func (s *Service) GetPortfolioGeographyAllocation(ctx context.Context, portfolio
 				e.Weight = e.Value.Div(total).Mul(decimal.NewFromInt(100))
 			}
 		}
-		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions, Covered: cov.covered, Excluded: cov.excluded}, nil
+		cBuckets, cTotal, _ := buildBuckets(holdings, rates, p.Currency, geo.Countries, countryExposures,
+			func(h *model.Holding) string { return h.Country })
+		countries := make([]*model.CountryAllocation, 0, len(cBuckets))
+		for name, value := range cBuckets {
+			if !value.IsPositive() {
+				continue
+			}
+			countries = append(countries, &model.CountryAllocation{Country: name, Value: value})
+		}
+		sort.Slice(countries, func(i, j int) bool { return countries[i].Value.GreaterThan(countries[j].Value) })
+		for _, c := range countries {
+			if cTotal.IsPositive() {
+				c.Weight = c.Value.Div(cTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+		return &model.PortfolioGeographyAllocation{Currency: p.Currency, Regions: regions, Countries: countries, Covered: cov.covered, Excluded: cov.excluded}, nil
 	})
 }
 
@@ -2022,11 +2135,13 @@ func (s *Service) ExportPortfolio(ctx context.Context, portfolioID uuid.UUID, us
 	sort.Slice(assets, func(i, j int) bool { return assets[i].Ticker < assets[j].Ticker })
 	for _, a := range assets {
 		doc.Assets = append(doc.Assets, model.ExportAsset{
-			Ticker:   a.Ticker,
-			Name:     a.Name,
-			Type:     a.Type,
-			Currency: a.Currency,
-			ISIN:     a.ISIN,
+			Ticker:      a.Ticker,
+			Name:        a.Name,
+			Type:        a.Type,
+			Currency:    a.Currency,
+			ISIN:        a.ISIN,
+			PriceSource: a.PriceSource,
+			AssetClass:  a.AssetClass,
 		})
 	}
 	for _, tx := range txs {
@@ -2053,7 +2168,13 @@ func (s *Service) ExportPortfolio(ctx context.Context, portfolioID uuid.UUID, us
 // mode the target portfolio is deleted and recreated from the document. Both
 // paths run atomically.
 func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *model.PortfolioExport, mode, name string, targetID *uuid.UUID) (*model.Portfolio, error) {
-	if doc == nil || doc.Version != 1 {
+	if doc == nil {
+		return nil, ErrInvalidInput
+	}
+	if doc.Version > 1 {
+		return nil, fmt.Errorf("%w: unsupported export version %d", ErrInvalidInput, doc.Version)
+	}
+	if doc.Version != 1 {
 		return nil, ErrInvalidInput
 	}
 	if strings.TrimSpace(doc.Portfolio.Name) == "" {
@@ -2085,6 +2206,12 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 		}
 
 		assetByTicker := map[string]*model.Asset{}
+		// The defaults below keep documents exported by older app versions
+		// importable: those files predate fields like price_source/asset_class
+		// and may omit any optional value, so every missing piece is filled
+		// with a constraint-satisfying default instead of failing the insert.
+		// An unknown or absent price_source falls back to "yahoo" rather than
+		// erroring, the same default Service.CreateAsset applies.
 		createAsset := func(ticker string) (*model.Asset, error) {
 			if a, ok := assetByTicker[ticker]; ok {
 				return a, nil
@@ -2094,22 +2221,32 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 				return nil, err
 			}
 			if a == nil {
-				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD", AssetClass: "equity"}
+				a = &model.Asset{Ticker: ticker, Name: ticker, Type: model.AssetTypeStock, Currency: "USD", PriceSource: "yahoo"}
 				for i := range doc.Assets {
-					if strings.EqualFold(doc.Assets[i].Ticker, ticker) {
-						if doc.Assets[i].Name != "" {
-							a.Name = doc.Assets[i].Name
-						}
-						a.ISIN = doc.Assets[i].ISIN
-						if doc.Assets[i].Type != "" {
-							a.Type = doc.Assets[i].Type
-							a.AssetClass = defaultAssetClassForType(a.Type)
-						}
-						if doc.Assets[i].Currency != "" {
-							a.Currency = doc.Assets[i].Currency
-						}
-						break
+					ea := doc.Assets[i]
+					if !strings.EqualFold(ea.Ticker, ticker) {
+						continue
 					}
+					if ea.Name != "" {
+						a.Name = ea.Name
+					}
+					a.ISIN = ea.ISIN
+					if ea.Type != "" {
+						a.Type = ea.Type
+					}
+					if ea.Currency != "" {
+						a.Currency = ea.Currency
+					}
+					if ea.AssetClass != "" {
+						a.AssetClass = ea.AssetClass
+					}
+					if priceSources[ea.PriceSource] {
+						a.PriceSource = ea.PriceSource
+					}
+					break
+				}
+				if a.AssetClass == "" {
+					a.AssetClass = defaultAssetClassForType(a.Type)
 				}
 				a, err = rx.Asset.Create(ctx, a)
 				if err != nil {
@@ -2336,20 +2473,54 @@ func (s *Service) syncAssetBackground(assetID uuid.UUID) {
 	}()
 }
 
+// roundAmount strips the rounding residues accumulated by AVCO division
+// (shopspring/decimal works at 16 decimal places) from the dashboard amounts.
+func roundAmount(d decimal.Decimal) decimal.Decimal {
+	return d.Round(8)
+}
+
+// finalizeBreakdowns rounds the aggregated active/closed amounts and
+// recomputes the derived fields from the rounded inputs, so residues never
+// surface in the dashboard figures or in their percentages.
+func finalizeBreakdowns(active *model.ActiveBreakdown, closed *model.ClosedBreakdown) {
+	active.Invested = roundAmount(active.Invested)
+	active.Value = roundAmount(active.Value)
+	active.Dividends = roundAmount(active.Dividends)
+	active.GainLoss = roundAmount(active.Value.Sub(active.Invested))
+	if active.Invested.IsPositive() {
+		active.GainLossPct = roundAmount(active.GainLoss.Div(active.Invested).Mul(decimal.NewFromInt(100)))
+	}
+	closed.Invested = roundAmount(closed.Invested)
+	closed.Proceeds = roundAmount(closed.Proceeds)
+	closed.Realized = roundAmount(closed.Proceeds.Sub(closed.Invested))
+	if closed.Invested.IsPositive() {
+		closed.RealizedPct = roundAmount(closed.Realized.Div(closed.Invested).Mul(decimal.NewFromInt(100)))
+	}
+}
+
 // GetDashboard returns the consolidated dashboard for a user: performance
-// grouped by currency, per-portfolio summaries, assets grouped per portfolio
-// and per-portfolio historical series.
+// grouped by currency, per-portfolio summaries and assets grouped per
+// portfolio.
 func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Dashboard, error) {
 	return cached(s.cache, ctx, "dash", userID.String(), cacheTTLStats, false, func() (*model.Dashboard, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		baseCurrency := user.BaseCurrency
+		if baseCurrency == "" {
+			baseCurrency = "EUR"
+		}
 		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
 		dash := &model.Dashboard{
-			ByCurrency: []model.CurrencyPerformance{},
-			Portfolios: []model.PortfolioPerformanceSummary{},
-			Assets:     []model.PortfolioAssets{},
-			History:    []model.PortfolioHistory{},
+			BaseCurrency:   baseCurrency,
+			ByCurrency:     []model.CurrencyPerformance{},
+			Portfolios:     []model.PortfolioPerformanceSummary{},
+			Assets:         []model.PortfolioAssets{},
+			InvestedAssets: []model.InvestedAsset{},
 		}
 		if len(portfolios) == 0 {
 			return dash, nil
@@ -2363,7 +2534,13 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings, "")
+		pfCurrencies := make([]string, 0, len(portfolios))
+		for _, p := range portfolios {
+			if p.Currency != "" {
+				pfCurrencies = append(pfCurrencies, p.Currency)
+			}
+		}
+		rates, err := series.LoadRates(ctx, s.repos, holdings, baseCurrency, pfCurrencies...)
 		if err != nil {
 			return nil, err
 		}
@@ -2374,6 +2551,8 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 		}
 
 		byCurrency := map[string]*model.CurrencyPerformance{}
+		investedByAsset := map[string]*model.InvestedAsset{}
+		summary := &model.DashboardSummary{Currency: baseCurrency}
 		for _, h := range holdings {
 			p := byID[mustUUID(h.PortfolioID)]
 			if p == nil {
@@ -2389,7 +2568,79 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			if h.HasPrice {
 				cp.Value = cp.Value.Add(h.Qty.Mul(h.LastClose))
 			}
+
+			// Summary totals are converted per amount, mirroring the
+			// FX-missing semantics of GetPortfolioSummary: an amount whose
+			// rate is missing is skipped from the totals, counted in
+			// FXMissingCount and added raw to FXMissingValue (currencies of
+			// skipped amounts may differ, so the flag count is what matters;
+			// zero amounts are not counted).
+			pfFactor, pfOK := series.FxFactor(rates, p.Currency, baseCurrency)
+			addPF := func(dst *decimal.Decimal, amt decimal.Decimal) {
+				if pfOK {
+					*dst = dst.Add(amt.Mul(pfFactor))
+				} else if !amt.IsZero() {
+					summary.FXMissingCount++
+					summary.FXMissingValue = summary.FXMissingValue.Add(amt)
+				}
+			}
+			addPF(&summary.Closed.Invested, h.ClosedCost)
+			addPF(&summary.Closed.Proceeds, h.Proceeds)
+			// Only open lots of priced assets feed the active invested: a fully
+			// closed position can still carry a negligible cost basis left by
+			// AVCO division rounding, and an unpriced asset has no market
+			// value to compare its cost with (counting it would fake a -100%
+			// loss). Dividends follow the position: still-open ones (even
+			// partially sold or unpriced) stay in the active group, fully
+			// closed ones fold into the proceeds.
+			if h.HasPrice && h.Qty.IsPositive() {
+				addPF(&summary.Active.Invested, h.Cost)
+			}
+			if h.Qty.IsPositive() {
+				addPF(&summary.Active.Dividends, h.Dividends)
+			} else {
+				addPF(&summary.Closed.Proceeds, h.Dividends)
+			}
+			if h.HasPrice && h.Qty.IsPositive() {
+				value := h.Qty.Mul(h.LastClose)
+				if factor, ok := series.FxFactor(rates, h.Currency, baseCurrency); ok {
+					summary.Active.Value = summary.Active.Value.Add(value.Mul(factor))
+				} else {
+					summary.FXMissingCount++
+					summary.FXMissingValue = summary.FXMissingValue.Add(value)
+				}
+			}
+			// The consolidated invested-assets list aggregates the open
+			// positions by asset across the portfolios, in the base
+			// currency: a holding whose portfolio factor is missing is
+			// skipped like the unconvertible summary amounts, a priced
+			// asset whose own factor is missing is carried at cost (no fake
+			// loss) and so is an unpriced one, flagged by has_price.
+			if h.Qty.IsPositive() && pfOK {
+				ia := investedByAsset[h.AssetID]
+				if ia == nil {
+					ia = &model.InvestedAsset{
+						AssetID:  h.AssetID,
+						Ticker:   h.Ticker,
+						Name:     h.Name,
+						Currency: h.Currency,
+					}
+					investedByAsset[h.AssetID] = ia
+				}
+				invested := h.Cost.Mul(pfFactor)
+				value := invested
+				if h.HasPrice {
+					if factor, ok := series.FxFactor(rates, h.Currency, baseCurrency); ok {
+						value = h.Qty.Mul(h.LastClose).Mul(factor)
+					}
+					ia.HasPrice = true
+				}
+				ia.Invested = ia.Invested.Add(invested)
+				ia.Value = ia.Value.Add(value)
+			}
 		}
+		finalizeBreakdowns(&summary.Active, &summary.Closed)
+		dash.Summary = summary
 		for _, cp := range byCurrency {
 			cp.GainLoss = cp.Value.Sub(cp.Invested)
 			if cp.Invested.IsPositive() {
@@ -2398,10 +2649,33 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 			dash.ByCurrency = append(dash.ByCurrency, *cp)
 		}
 
+		investedAssets := make([]*model.InvestedAsset, 0, len(investedByAsset))
+		for _, ia := range investedByAsset {
+			investedAssets = append(investedAssets, ia)
+		}
+		sort.Slice(investedAssets, func(i, j int) bool {
+			if investedAssets[i].Value.Equal(investedAssets[j].Value) {
+				return investedAssets[i].Ticker < investedAssets[j].Ticker
+			}
+			return investedAssets[i].Value.GreaterThan(investedAssets[j].Value)
+		})
+		dash.InvestedAssets = make([]model.InvestedAsset, 0, len(investedAssets))
+		for _, ia := range investedAssets {
+			ia.Invested = roundAmount(ia.Invested)
+			ia.Value = roundAmount(ia.Value)
+			ia.GainLoss = roundAmount(ia.Value.Sub(ia.Invested))
+			if ia.Invested.IsPositive() {
+				ia.GainLossPct = roundAmount(ia.GainLoss.Div(ia.Invested).Mul(decimal.NewFromInt(100)))
+			}
+			dash.InvestedAssets = append(dash.InvestedAssets, *ia)
+		}
+
 		assetsByPF := map[uuid.UUID][]model.AssetPerformance{}
+		holdingsByPF := map[uuid.UUID][]*model.Holding{}
 		for _, h := range holdings {
 			pfID := mustUUID(h.PortfolioID)
 			p := byID[pfID]
+			holdingsByPF[pfID] = append(holdingsByPF[pfID], h)
 			ap := model.AssetPerformance{
 				AssetID:    h.AssetID,
 				Ticker:     h.Ticker,
@@ -2437,18 +2711,33 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				Currency:      p.Currency,
 				AssetCount:    len(assetsByPF[p.ID]),
 			}
-			for _, ap := range assetsByPF[p.ID] {
-				ps.Invested = ps.Invested.Add(ap.Invested)
-				ps.Value = ps.Value.Add(ap.ValuePF)
-				ps.RealizedGL = ps.RealizedGL.Add(ap.RealizedPF)
-				if ap.FXMissing {
-					ps.FXMissing++
+			for _, h := range holdingsByPF[p.ID] {
+				ps.Closed.Invested = ps.Closed.Invested.Add(h.ClosedCost)
+				ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Proceeds)
+				// Same guards as the vault summary: only open lots of priced
+				// assets feed the active invested, so neither the AVCO
+				// rounding residue of a closed position nor the uncomparable
+				// cost of an unpriced one inflates it. Dividends follow the
+				// position: still-open ones stay in the active group, fully
+				// closed ones fold into the proceeds.
+				if h.HasPrice && h.Qty.IsPositive() {
+					ps.Active.Invested = ps.Active.Invested.Add(h.Cost)
+				}
+				if h.Qty.IsPositive() {
+					ps.Active.Dividends = ps.Active.Dividends.Add(h.Dividends)
+				} else {
+					ps.Closed.Proceeds = ps.Closed.Proceeds.Add(h.Dividends)
+				}
+				if h.HasPrice && h.Qty.IsPositive() {
+					value := h.Qty.Mul(h.LastClose)
+					if factor, ok := series.FxFactor(rates, h.Currency, p.Currency); ok {
+						ps.Active.Value = ps.Active.Value.Add(value.Mul(factor))
+					} else {
+						ps.FXMissing++
+					}
 				}
 			}
-			ps.GainLoss = ps.Value.Sub(ps.Invested)
-			if ps.Invested.IsPositive() {
-				ps.GainLossPct = ps.GainLoss.Div(ps.Invested).Mul(decimal.NewFromInt(100))
-			}
+			finalizeBreakdowns(&ps.Active, &ps.Closed)
 			dash.Portfolios = append(dash.Portfolios, *ps)
 			dash.Assets = append(dash.Assets, model.PortfolioAssets{
 				PortfolioID:   p.ID.String(),
@@ -2456,43 +2745,504 @@ func (s *Service) GetDashboard(ctx context.Context, userID uuid.UUID) (*model.Da
 				Currency:      p.Currency,
 				Assets:        assetsByPF[p.ID],
 			})
-
-			agg, err := s.repos.Series.FindPortfolioAgg(ctx, p.ID)
-			if err != nil {
-				return nil, err
-			}
-			seriesVals := make([]model.PortfolioPerformance, 0, len(agg))
-			for _, pt := range agg {
-				seriesVals = append(seriesVals, model.PortfolioPerformance{Date: pt.Date, Value: pt.MarketValue})
-			}
-			seriesVals = series.PortfolioPerformance(seriesVals, s.seriesMaxPoints)
-			dash.History = append(dash.History, model.PortfolioHistory{
-				PortfolioID:   p.ID.String(),
-				PortfolioName: p.Name,
-				Currency:      p.Currency,
-				Series:        seriesVals,
-			})
 		}
 
 		return dash, nil
 	})
 }
 
-// GetDashboardAllocation returns the user's whole-vault geographic and sector
-// allocation in USD, aggregating holdings across all portfolios.
+// GetDashboardPerformance returns the vault-wide true time-weighted return
+// (TWR) chart of the user in their base currency, bucketed by month or year.
+// Returns are measured daily and linked geometrically: each day carries
+// r(d) = (V(d) - V(d-1) - flow(d)) / V(d-1) when V(d-1) is positive and is
+// skipped otherwise (the first day and the gaps of a fully liquidated vault
+// measure nothing), where V(d) is the market value only: mv_priced(d), the
+// sum of the priced assets' market values, plus bond_at_cost(d), the cost
+// basis of the unpriced assets still held (already zero once fully sold),
+// all converted to the base currency. flow(d) is the day's external cash
+// flows at end of day: buy +(qty*price + fees), sell -(qty*price - fees),
+// standalone fee +feeAmount (qty*price, or the price alone when no quantity
+// is set), dividend -divAmount (income taken out) and split 0; a flow whose
+// FX rate is missing on its transaction date is skipped. Realized P&L never
+// enters V: it is already captured by the sell flow. The bucket return is
+// the geometric linking of its days' factors, Π(1 + r(d)) - 1, in percentage,
+// and twr the cumulative product Π(1 + r) - 1 across all buckets so far.
+// invested is the net capital: the cumulative flow excluding dividends (the
+// income part) up to the bucket's last date, and value V there. The daily
+// points come from the materialized per-asset series, converted per date
+// through USD-pivoted FX rates: while an asset's factor is missing its
+// converted value is forward-filled (zero before the first successful
+// conversion), and every asset keeps carrying its last converted value on
+// the dates where it has no new point. Dates with no points produce no
+// bucket.
+func (s *Service) GetDashboardPerformance(ctx context.Context, userID uuid.UUID, granularity string) (*model.DashboardPerformance, error) {
+	if granularity != "month" && granularity != "year" {
+		return nil, fmt.Errorf("%w: granularity must be month or year", ErrInvalidInput)
+	}
+	return cached(s.cache, ctx, "dash-perf", userID.String()+":"+granularity, cacheTTLStats, false, func() (*model.DashboardPerformance, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		baseCurrency := user.BaseCurrency
+		if baseCurrency == "" {
+			baseCurrency = "EUR"
+		}
+		perf := &model.DashboardPerformance{
+			Currency:    baseCurrency,
+			Granularity: granularity,
+			Buckets:     []model.PerformanceBucket{},
+		}
+		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		if len(portfolios) == 0 {
+			return perf, nil
+		}
+
+		ids := make([]uuid.UUID, 0, len(portfolios))
+		for _, p := range portfolios {
+			ids = append(ids, p.ID)
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		// HasPrice is asset-level: it tells whether the asset has any price
+		// row. Priced assets contribute their market value to V, unpriced
+		// ones their cost basis (a bond carried at cost, never a fake total
+		// loss). The holding currency is the asset currency the cash flows
+		// are converted from.
+		pricedAsset := map[uuid.UUID]bool{}
+		assetCurrency := map[uuid.UUID]string{}
+		for _, h := range holdings {
+			assetID := mustUUID(h.AssetID)
+			pricedAsset[assetID] = h.HasPrice
+			if h.Currency != "" {
+				assetCurrency[assetID] = h.Currency
+			}
+		}
+
+		quoteSet := map[string]bool{baseCurrency: true}
+		for _, p := range portfolios {
+			if p.Currency != "" {
+				quoteSet[p.Currency] = true
+			}
+		}
+		for _, cur := range assetCurrency {
+			quoteSet[cur] = true
+		}
+		quotes := make([]string, 0, len(quoteSet))
+		for c := range quoteSet {
+			quotes = append(quotes, c)
+		}
+		dr, err := series.LoadDateRates(ctx, s.repos, "USD", quotes)
+		if err != nil {
+			return nil, err
+		}
+
+		// Daily market value in base currency: each asset walks its series as
+		// a forward-fill stream, contributing its last converted point — the
+		// market value when priced, the cost basis when unpriced — to every
+		// date after its first point. A missing conversion keeps the last
+		// converted value (zero before the first successful one).
+		type assetWalk struct {
+			pts    []model.PositionPoint
+			pos    int
+			priced bool
+			from   string
+			last   decimal.Decimal
+		}
+		var walks []*assetWalk
+		dateSet := map[time.Time]bool{}
+		for _, p := range portfolios {
+			assetSeries, err := s.repos.Series.FindPortfolio(ctx, p.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, a := range assetSeries {
+				walks = append(walks, &assetWalk{
+					pts:    a.Series,
+					priced: pricedAsset[mustUUID(a.AssetID)],
+					from:   p.Currency,
+				})
+				for _, pt := range a.Series {
+					dateSet[series.DayOf(pt.Date)] = true
+				}
+			}
+		}
+
+		// External cash flows per day in base currency. A transaction whose
+		// asset currency or FX rate is unknown cannot be converted and is
+		// skipped entirely. capital is the same flow without the dividend
+		// part: distributions are income, not deployed capital, so they move
+		// the return but never the invested.
+		type dayCash struct{ flow, capital decimal.Decimal }
+		flows := map[time.Time]*dayCash{}
+		txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range txs {
+			var flow decimal.Decimal
+			switch tx.Type {
+			case model.TxBuy:
+				flow = tx.Quantity.Mul(tx.Price).Add(tx.Fees)
+			case model.TxSell:
+				flow = tx.Quantity.Mul(tx.Price).Sub(tx.Fees).Neg()
+			case model.TxFee:
+				flow = tx.Price
+				if tx.Quantity.IsPositive() {
+					flow = tx.Quantity.Mul(tx.Price)
+				}
+			case model.TxDividend:
+				flow = tx.Price
+				if tx.Quantity.IsPositive() {
+					flow = tx.Quantity.Mul(tx.Price)
+				}
+				flow = flow.Neg()
+			default:
+				continue
+			}
+			factor, ok := dr.Factor(assetCurrency[tx.AssetID], baseCurrency, tx.Date)
+			if !ok {
+				continue
+			}
+			flow = flow.Mul(factor)
+			capital := flow
+			if tx.Type == model.TxDividend {
+				capital = decimal.Zero
+			}
+			d := series.DayOf(tx.Date)
+			dateSet[d] = true
+			day, seen := flows[d]
+			if !seen {
+				day = &dayCash{}
+				flows[d] = day
+			}
+			day.flow = day.flow.Add(flow)
+			day.capital = day.capital.Add(capital)
+		}
+
+		// The walk runs over the union of the market-observed dates and the
+		// flow dates. Dates are ascending and bucket periods are monotonic
+		// over them, so every time the period changes the previous bucket is
+		// sealed on its last date.
+		dates := make([]time.Time, 0, len(dateSet))
+		for d := range dateSet {
+			dates = append(dates, d)
+		}
+		sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
+
+		one := decimal.NewFromInt(1)
+		hundred := decimal.NewFromInt(100)
+		buckets := make([]model.PerformanceBucket, 0, len(dates))
+		bucketFactor, twrFactor := one, one
+		var period string
+		var invested, endValue, prevV decimal.Decimal
+		flush := func() {
+			if period == "" {
+				return
+			}
+			buckets = append(buckets, model.PerformanceBucket{
+				Period:   period,
+				Return:   bucketFactor.Sub(one).Mul(hundred).Round(4),
+				TWR:      twrFactor.Sub(one).Mul(hundred).Round(4),
+				Invested: roundAmount(invested),
+				Value:    roundAmount(endValue),
+			})
+		}
+		for _, d := range dates {
+			v := decimal.Zero
+			for _, w := range walks {
+				for w.pos < len(w.pts) && !series.DayOf(w.pts[w.pos].Date).After(d) {
+					pt := w.pts[w.pos]
+					if factor, ok := dr.Factor(w.from, baseCurrency, pt.Date); ok {
+						if w.priced {
+							w.last = pt.MarketValue.Mul(factor)
+						} else {
+							w.last = pt.CostBasis.Mul(factor)
+						}
+					}
+					w.pos++
+				}
+				v = v.Add(w.last)
+			}
+			var flow, capital decimal.Decimal
+			if c, ok := flows[d]; ok {
+				flow, capital = c.flow, c.capital
+			}
+			if p := performancePeriod(d, granularity); p != period {
+				flush()
+				period = p
+				bucketFactor = one
+			}
+			invested = invested.Add(capital)
+			// A day whose previous value is not positive (the vault's first
+			// days and the gaps of a fully liquidated one) measures no
+			// return: it is skipped, not turned into a fake ±100%.
+			if prevV.IsPositive() {
+				factor := v.Sub(prevV).Sub(flow).Div(prevV).Add(one)
+				bucketFactor = bucketFactor.Mul(factor)
+				twrFactor = twrFactor.Mul(factor)
+			}
+			endValue = v
+			prevV = v
+		}
+		flush()
+		perf.Buckets = buckets
+		return perf, nil
+	})
+}
+
+func performancePeriod(d time.Time, granularity string) string {
+	if granularity == "year" {
+		return d.Format("2006")
+	}
+	return d.Format("2006-01")
+}
+
+// GetPortfolioPerformanceBuckets returns the true time-weighted return (TWR)
+// chart of a single portfolio in the portfolio's own currency, bucketed by
+// month or year, with the same daily model as GetDashboardPerformance:
+// r(d) = (V(d) - V(d-1) - flow(d)) / V(d-1) on the market value V (priced
+// assets at market value, unpriced ones carried at cost), external flows at
+// the transaction-date FX and geometric linking into buckets. It is simpler
+// than the vault-wide chart because nothing is converted to a base currency:
+// the materialized per-asset series is already denominated in the portfolio
+// currency, so only the cash flows — recorded in the asset currency — are
+// converted to it, and a transaction whose FX rate or asset currency is
+// unknown is skipped. Ownership is enforced before the cache lookup so a
+// cached bucket set is never served to a caller who cannot access the
+// portfolio.
+func (s *Service) GetPortfolioPerformanceBuckets(ctx context.Context, portfolioID, userID uuid.UUID, granularity string) (*model.DashboardPerformance, error) {
+	if granularity != "month" && granularity != "year" {
+		return nil, fmt.Errorf("%w: granularity must be month or year", ErrInvalidInput)
+	}
+	p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if !s.canAccessPortfolio(ctx, p, userID) {
+		return nil, ErrForbidden
+	}
+	currency := p.Currency
+	return cached(s.cache, ctx, "pf-perf", portfolioID.String()+":"+granularity, cacheTTLStats, false, func() (*model.DashboardPerformance, error) {
+		perf := &model.DashboardPerformance{
+			Currency:    currency,
+			Granularity: granularity,
+			Buckets:     []model.PerformanceBucket{},
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		// HasPrice is asset-level: priced assets contribute their market
+		// value to V, unpriced ones their cost basis. The holding currency
+		// is the asset currency the cash flows are converted from.
+		pricedAsset := map[uuid.UUID]bool{}
+		assetCurrency := map[uuid.UUID]string{}
+		for _, h := range holdings {
+			assetID := mustUUID(h.AssetID)
+			pricedAsset[assetID] = h.HasPrice
+			if h.Currency != "" {
+				assetCurrency[assetID] = h.Currency
+			}
+		}
+
+		quoteSet := map[string]bool{}
+		if currency != "" {
+			quoteSet[currency] = true
+		}
+		for _, cur := range assetCurrency {
+			quoteSet[cur] = true
+		}
+		quotes := make([]string, 0, len(quoteSet))
+		for c := range quoteSet {
+			quotes = append(quotes, c)
+		}
+		dr, err := series.LoadDateRates(ctx, s.repos, "USD", quotes)
+		if err != nil {
+			return nil, err
+		}
+
+		// Daily market value in the portfolio currency: each asset walks its
+		// series as a forward-fill stream, contributing its last point — the
+		// market value when priced, the cost basis when unpriced — to every
+		// date after its first one. The series is already in the portfolio
+		// currency, so no per-date conversion is needed.
+		type assetWalk struct {
+			pts    []model.PositionPoint
+			pos    int
+			priced bool
+			last   decimal.Decimal
+		}
+		assetSeries, err := s.repos.Series.FindPortfolio(ctx, portfolioID)
+		if err != nil {
+			return nil, err
+		}
+		var walks []*assetWalk
+		dateSet := map[time.Time]bool{}
+		for _, a := range assetSeries {
+			walks = append(walks, &assetWalk{
+				pts:    a.Series,
+				priced: pricedAsset[mustUUID(a.AssetID)],
+			})
+			for _, pt := range a.Series {
+				dateSet[series.DayOf(pt.Date)] = true
+			}
+		}
+
+		// External cash flows per day in the portfolio currency. capital is
+		// the same flow without the dividend part: distributions are income,
+		// not deployed capital, so they move the return but never the
+		// invested.
+		type dayCash struct{ flow, capital decimal.Decimal }
+		flows := map[time.Time]*dayCash{}
+		txs, err := s.repos.Transaction.FindByPortfoliosAsc(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range txs {
+			var flow decimal.Decimal
+			switch tx.Type {
+			case model.TxBuy:
+				flow = tx.Quantity.Mul(tx.Price).Add(tx.Fees)
+			case model.TxSell:
+				flow = tx.Quantity.Mul(tx.Price).Sub(tx.Fees).Neg()
+			case model.TxFee:
+				flow = tx.Price
+				if tx.Quantity.IsPositive() {
+					flow = tx.Quantity.Mul(tx.Price)
+				}
+			case model.TxDividend:
+				flow = tx.Price
+				if tx.Quantity.IsPositive() {
+					flow = tx.Quantity.Mul(tx.Price)
+				}
+				flow = flow.Neg()
+			default:
+				continue
+			}
+			factor, ok := dr.Factor(assetCurrency[tx.AssetID], currency, tx.Date)
+			if !ok {
+				continue
+			}
+			flow = flow.Mul(factor)
+			capital := flow
+			if tx.Type == model.TxDividend {
+				capital = decimal.Zero
+			}
+			d := series.DayOf(tx.Date)
+			dateSet[d] = true
+			day, seen := flows[d]
+			if !seen {
+				day = &dayCash{}
+				flows[d] = day
+			}
+			day.flow = day.flow.Add(flow)
+			day.capital = day.capital.Add(capital)
+		}
+
+		// The walk runs over the union of the market-observed dates and the
+		// flow dates. Dates are ascending and bucket periods are monotonic
+		// over them, so every time the period changes the previous bucket is
+		// sealed on its last date.
+		dates := make([]time.Time, 0, len(dateSet))
+		for d := range dateSet {
+			dates = append(dates, d)
+		}
+		sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
+
+		one := decimal.NewFromInt(1)
+		hundred := decimal.NewFromInt(100)
+		buckets := make([]model.PerformanceBucket, 0, len(dates))
+		bucketFactor, twrFactor := one, one
+		var period string
+		var invested, endValue, prevV decimal.Decimal
+		flush := func() {
+			if period == "" {
+				return
+			}
+			buckets = append(buckets, model.PerformanceBucket{
+				Period:   period,
+				Return:   bucketFactor.Sub(one).Mul(hundred).Round(4),
+				TWR:      twrFactor.Sub(one).Mul(hundred).Round(4),
+				Invested: roundAmount(invested),
+				Value:    roundAmount(endValue),
+			})
+		}
+		for _, d := range dates {
+			v := decimal.Zero
+			for _, w := range walks {
+				for w.pos < len(w.pts) && !series.DayOf(w.pts[w.pos].Date).After(d) {
+					pt := w.pts[w.pos]
+					if w.priced {
+						w.last = pt.MarketValue
+					} else {
+						w.last = pt.CostBasis
+					}
+					w.pos++
+				}
+				v = v.Add(w.last)
+			}
+			var flow, capital decimal.Decimal
+			if c, ok := flows[d]; ok {
+				flow, capital = c.flow, c.capital
+			}
+			if p := performancePeriod(d, granularity); p != period {
+				flush()
+				period = p
+				bucketFactor = one
+			}
+			invested = invested.Add(capital)
+			// A day whose previous value is not positive (the portfolio's
+			// first days and the gaps of a fully liquidated one) measures no
+			// return: it is skipped, not turned into a fake ±100%.
+			if prevV.IsPositive() {
+				factor := v.Sub(prevV).Sub(flow).Div(prevV).Add(one)
+				bucketFactor = bucketFactor.Mul(factor)
+				twrFactor = twrFactor.Mul(factor)
+			}
+			endValue = v
+			prevV = v
+		}
+		flush()
+		perf.Buckets = buckets
+		return perf, nil
+	})
+}
+
+// GetDashboardAllocation returns the user's whole-vault class, geographic,
+// country and sector allocation in their base currency, aggregating holdings
+// across all portfolios.
 func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) (*model.DashboardAllocation, error) {
 	return cached(s.cache, ctx, "dash-allocation", userID.String(), cacheTTLStats, false, func() (*model.DashboardAllocation, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		baseCurrency := user.BaseCurrency
+		if baseCurrency == "" {
+			baseCurrency = "EUR"
+		}
 		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
 		if len(portfolios) == 0 {
 			return &model.DashboardAllocation{
-				Currency: "USD",
-				Regions:  []*model.RegionAllocation{},
-				Sectors:  []*model.SectorAllocation{},
-				Covered:  decimal.Zero,
-				Excluded: decimal.Zero,
+				Currency:  baseCurrency,
+				Classes:   []*model.ClassAllocation{},
+				Regions:   []*model.RegionAllocation{},
+				Countries: []*model.CountryAllocation{},
+				Sectors:   []*model.SectorAllocation{},
+				Covered:   decimal.Zero,
+				Excluded:  decimal.Zero,
 			}, nil
 		}
 
@@ -2504,10 +3254,47 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 		if err != nil {
 			return nil, err
 		}
-		rates, err := series.LoadRates(ctx, s.repos, holdings, "USD")
+		rates, err := series.LoadRates(ctx, s.repos, holdings, baseCurrency)
 		if err != nil {
 			return nil, err
 		}
+
+		byClass := map[string]decimal.Decimal{}
+		var classTotal decimal.Decimal
+		for _, h := range holdings {
+			if !h.Qty.IsPositive() || !h.HasPrice {
+				continue
+			}
+			value := h.Qty.Mul(h.LastClose)
+			factor, ok := series.FxFactor(rates, h.Currency, baseCurrency)
+			if !ok {
+				continue
+			}
+			value = value.Mul(factor)
+			if !value.IsPositive() {
+				continue
+			}
+			class := h.AssetClass
+			if class == "" {
+				class = "other"
+			}
+			byClass[class] = byClass[class].Add(value)
+			classTotal = classTotal.Add(value)
+		}
+		classes := make([]*model.ClassAllocation, 0, len(byClass))
+		for class, value := range byClass {
+			classes = append(classes, &model.ClassAllocation{
+				Class: class,
+				Value: value,
+			})
+		}
+		sort.Slice(classes, func(i, j int) bool { return classes[i].Value.GreaterThan(classes[j].Value) })
+		for _, c := range classes {
+			if classTotal.IsPositive() {
+				c.Weight = c.Value.Div(classTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
 		geoExposures, err := s.repos.Exposure.FindRegionsByAssets(ctx, holdingAssetIDs(holdings))
 		if err != nil {
 			return nil, err
@@ -2516,8 +3303,12 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 		if err != nil {
 			return nil, err
 		}
+		countryExposures, err := s.repos.Exposure.FindCountriesByAssets(ctx, holdingAssetIDs(holdings))
+		if err != nil {
+			return nil, err
+		}
 
-		gBuckets, gTotal, gCov := buildBuckets(holdings, rates, "USD", geo.Regions, geoExposures,
+		gBuckets, gTotal, gCov := buildBuckets(holdings, rates, baseCurrency, geo.Regions, geoExposures,
 			func(h *model.Holding) string { return geo.RegionForCountry(h.Country) })
 		regions := make([]*model.RegionAllocation, 0, len(geo.Regions)+1)
 		for _, name := range geo.Regions {
@@ -2532,7 +3323,7 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 			}
 		}
 
-		sBuckets, sTotal, _ := buildBuckets(holdings, rates, "USD", geo.GICSSectors, secExposures,
+		sBuckets, sTotal, _ := buildBuckets(holdings, rates, baseCurrency, geo.GICSSectors, secExposures,
 			func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) })
 		sectors := make([]*model.SectorAllocation, 0, len(geo.GICSSectors)+1)
 		for _, name := range geo.GICSSectors {
@@ -2547,7 +3338,31 @@ func (s *Service) GetDashboardAllocation(ctx context.Context, userID uuid.UUID) 
 			}
 		}
 
-		return &model.DashboardAllocation{Currency: "USD", Regions: regions, Sectors: sectors, Covered: gCov.covered, Excluded: gCov.excluded}, nil
+		cBuckets, cTotal, _ := buildBuckets(holdings, rates, baseCurrency, geo.Countries, countryExposures,
+			func(h *model.Holding) string { return h.Country })
+		countries := make([]*model.CountryAllocation, 0, len(cBuckets))
+		for name, value := range cBuckets {
+			if !value.IsPositive() {
+				continue
+			}
+			countries = append(countries, &model.CountryAllocation{Country: name, Value: value})
+		}
+		sort.Slice(countries, func(i, j int) bool { return countries[i].Value.GreaterThan(countries[j].Value) })
+		for _, c := range countries {
+			if cTotal.IsPositive() {
+				c.Weight = c.Value.Div(cTotal).Mul(decimal.NewFromInt(100))
+			}
+		}
+
+		return &model.DashboardAllocation{
+			Currency:  baseCurrency,
+			Classes:   classes,
+			Regions:   regions,
+			Countries: countries,
+			Sectors:   sectors,
+			Covered:   gCov.covered,
+			Excluded:  gCov.excluded,
+		}, nil
 	})
 }
 

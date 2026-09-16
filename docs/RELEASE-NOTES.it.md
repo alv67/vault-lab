@@ -1,5 +1,22 @@
 # Release Notes
 
+## Unreleased
+
+### Nuove funzionalità
+- L'elenco delle transazioni del portafoglio ora è paginato: viene restituito pagina per pagina (di default 20 alla volta, fino a 100) in un ordine stabile dalla più recente, insieme al conteggio totale, così le storici lunghi restano rapidi e prevedibili
+- Il dettaglio del portafoglio ha ora un proprio grafico di performance percentuale mensile/annuale: lo stesso time-weighted return della dashboard, misurato per il singolo portafoglio nella sua valuta, accanto alla serie del capitale investito rispetto al valore attuale
+- La sezione allocazione del dettaglio portafoglio ora replica la card "Allocazione complessiva" della dashboard: una ciambella per classe di attività e barre decrescenti per regioni, settori e paesi, tutto nella valuta del portafoglio (solo azioni, ordinate per valore)
+- Anche nel dettaglio del portafoglio compare lo stesso riepilogo degli investimenti attivi e chiusi della dashboard, nella valuta del portafoglio: le posizioni aperte con investito, valore attuale, guadagno/perdita e dividendi, e la parte chiusa con il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata
+- La dashboard mostra ora un'unica tabella degli asset investiti: una riga per ciascun asset, aggregata su tutti i tuoi portafogli ed espressa nella tua valuta base, con importo investito, valore attuale e P/L %, ordinata per valore
+- Scegli la tua valuta base in Impostazioni → Profilo: la dashboard ora consolida totali e allocazioni in quella valuta
+- L'allocazione della dashboard ora mostra anche la ripartizione per classe di investimento e per singolo paese, accanto a quelle già disponibili per settore e macro-regione: i valori sono aggregati su tutti i tuoi portafogli ed espressi nella tua valuta base
+- La dashboard ora separa investimenti attivi e chiusi, a livello di vault e per singolo portafoglio: per la parte chiusa vedi il costo dei lotti venduti, l'incasso e il guadagno/perdita realizzata sul capitale; le righe dei dividendi compaiono insieme agli investimenti attivi e, una volta chiusa completamente una posizione, confluiscono nell'incasso
+- Nuovo grafico delle performance aggregato nella dashboard: un unico grafico per tutti i tuoi portafogli, nella tua valuta base, che mostra il rendimento percentuale time-weighted di ogni mese o anno (con una linea del TWR cumulativo) accanto a un grafico del capitale che confronta il denaro investito con il valore attuale, con selettore mensile/annuale. Il rendimento è misurato giorno per giorno, quindi versamenti, vendite, dividendi e commissioni non lo distorcono più e chiudere o riaprire completamente una posizione non produce più picchi assurdi; le posizioni senza prezzo di mercato sono mantenute al costo e non compaiono mai come falsa perdita
+
+### Correzioni
+- L'importazione di un portafoglio esportato da una versione precedente dell'app non fallisce più: le informazioni mancanti vengono completate con valori predefiniti sensati
+- I portafogli con sole posizioni chiuse non mostrano più un guadagno/perdita fuorviante del -100%: le posizioni chiuse non entrano nei valori attivi e gli importi non hanno più residui di arrotondamento
+
 ## v0.4.0 — 13 Set 2026
 
 ### Nuove funzionalità

@@ -199,12 +199,12 @@ h := handler.New(svc, jwtAuth)                                    // HTTP
 
 ## 6. Il database
 
-Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000016`)
+Le migrazioni (`backend/migrations/`, file numerati da `000001` a `000018`)
 costruiscono lo schema. Le tabelle principali:
 
 | Tabella | Contiene | Spiegazione |
 |---|---|---|
-| `users` | gli utenti | email, nome, hash della password, ruolo |
+| `users` | gli utenti | email, nome, hash della password, ruolo, valuta base (`base_currency`, default EUR) |
 | `assets` | i titoli | ticker, nome, tipo (azione, ETF, crypto...), classe di investimento, fonte prezzi, valuta, exchange, settore, industria |
 | `portfolios` | i portafogli | un portafoglio appartiene a un utente e ha una valuta |
 | `portfolio_shares` | la condivisione | chi altro può vedere un portafoglio (con che ruolo) |
@@ -236,8 +236,7 @@ Due idee fondamentali del database:
 ## 7. Una richiesta tipica: la dashboard
 
 Prendiamo `GET /api/v1/dashboard`, l'endpoint più ricco: serve alla pagina
-principale per mostrare tutti i portafogli, i titoli, i guadagni e la serie
-storica.
+principale per mostrare tutti i portafogli, i titoli e i guadagni.
 
 Cosa succede, passo passo:
 
@@ -247,13 +246,158 @@ Cosa succede, passo passo:
    i dati dell'utente vengono messi "nel contesto" della richiesta.
 3. **Handler**: estrae i dati dell'utente, chiama il service, e invia la
    risposta JSON.
-4. **Service `GetDashboard`**: orchestrazione — carica i portafogli
-   dell'utente, le posizioni dettagliate (con il prezzo medio di carico,
-   capitolo 8), i tassi di cambio per le valute coinvolte, e le serie
-   giornaliere salvate nel database.
+4. **Service `GetDashboard`**: orchestrazione — carica l'utente (e la sua
+   **valuta base**, vedi capitolo 10), i portafogli dell'utente, le posizioni
+   dettagliate (con il prezzo medio di carico, capitolo 8) e i tassi di cambio
+   per le valute coinvolte. La risposta espone `base_currency` e un
+   riepilogo `summary` convertito nella valuta base; `by_currency`,
+   `portfolios` e `assets` restano espressi nella propria valuta. Il
+   `summary` e ogni voce di `portfolios` dividono i numeri negli oggetti
+   annidati `active` e `closed` (EPIC I.2, vedi capitolo 8): `active` riporta
+   `invested`, `value`, `gain_loss` e `gain_loss_pct` dei lotti ancora in
+   possesso più i `dividends` delle posizioni ancora aperte (anche se
+   parzialmente vendute); le posizioni aperte di asset che non hanno alcun
+   prezzo sono escluse da `invested` e `value` (il loro costo non ha un
+   valore di mercato con cui confrontarlo, e contarlo simulerebbe una
+    perdita del -100%), mentre i loro dividendi contano comunque. `closed`
+    riporta `invested` (costo AVCO dei lotti venduti), `proceeds` (incasso
+    netto di vendita più i dividendi
+conferiti dalle posizioni completamente chiuse), `realized` (proceeds −
+     invested) e `realized_pct` (realized / invested × 100). La risposta
+     espone anche `invested_assets` (EPIC I.5): l'unico elenco consolidato
+     degli asset attualmente investiti, aggregato per asset su tutti i
+     portafogli dell'utente (lo stesso asset presente in più portafogli è una
+     sola riga) e convertito nella valuta base. Ogni riga porta `asset_id`,
+     `ticker`, `name`, `currency` (quella dell'asset), `invested` (costo della
+     quantità aperta), `value` (valore di mercato, al costo quando l'asset non
+     ha prezzo — `has_price: false` — o quando manca il suo tasso FX verso la
+     valuta base, così non compare una finta perdita), `gain_loss` e
+     `gain_loss_pct`; le righe sono ordinate per `value` decrescente e le
+     posizioni chiuse (qty ≤ 0) sono escluse.
 5. **Repository**: esegue le query SQL, per esempio la query che carica i
    portafogli con un `LEFT JOIN` sulla tabella di condivisione (in modo da
    essere già pronta per un futuro supporto alla condivisione).
+
+### Il grafico del time-weighted return (`GET /dashboard/performance`, EPIC I.3)
+
+`GET /api/v1/dashboard/performance?granularity=month|year` restituisce un
+unico grafico per l'intero vault (tutti i portafogli aggregati, convertiti
+nella valuta base dell'utente) invece di una serie per portafoglio.
+`granularity` è `month` di default; qualunque altro valore viene rifiutato
+con 400. La risposta è `{currency, granularity, buckets[]}`, dove ogni bucket
+ha `period` (`YYYY-MM` per i mesi, `YYYY` per gli anni), `return`, `twr`,
+`invested` e `value`:
+
+- il **`return`** è il **vero time-weighted return (TWR)** percentuale del
+  bucket: i rendimenti sono misurati **giornalmente** e collegati
+  geometricamente, `return = (Π (1 + r(d)) − 1) × 100` sui giorni `d` del
+  bucket, dove ogni giorno porta `r(d) = (V(d) − V(d−1) − flusso(d)) /
+  V(d−1)` quando `V(d−1) > 0` e viene saltato (fattore 1) altrimenti — il
+  primo giorno e le pause di un vault completamente liquidato non misurano
+  alcun rendimento, quindi liquidare e riaprire una posizione non distorce
+  mai il grafico. `V(d)` è **solo il valore di mercato**: `V(d) =
+  mv_priced(d) + bond_at_cost(d)`, il valore di mercato convertito in FX
+  degli asset con prezzo più il costo di quelli senza prezzo (un'obbligazione
+  mantenuta al costo finché è in portafoglio; già zero una volta venduta
+  interamente). Il realized non entra mai in `V`: è già catturato dal flusso
+  di vendita;
+- il **`twr`** è il time-weighted return cumulativo composto su tutti i
+  giorni fino alla fine del bucket: `(Π (1 + r) − 1) × 100`, cioè la stessa
+  collegatura geometrica dei rendimenti dei bucket;
+- **`invested`** è il capitale netto impiegato: la somma cumulativa dei
+  *flussi di capitale* in valuta base fino alla fine del bucket — gli stessi
+  flussi ma con i dividendi contati come 0 (le distribuzioni sono reddito,
+  non capitale; una vendita sopra costo può renderlo temporaneamente
+  negativo);
+- **`value`** è il valore di mercato `V` all'ultima data del bucket (asset
+  con prezzo al valore di mercato, asset senza prezzo al costo).
+
+I flussi di cassa esterni per transazione — collocati a **fine giornata** —
+convertiti nella valuta base al tasso FX della data della transazione (il
+flusso viene saltato se quel tasso manca): `buy → +(qty·prezzo + fee)`
+(deposito), `sell → −(qty·prezzo − fee)` (prelievo), `fee` autonoma
+`→ +importoFee` dove `importoFee = qty·prezzo`, o solo il prezzo quando la
+quantità non è impostata; `dividend → −importoDiv` (stessa regola
+dell'importo; reddito prelevato, quindi dà un contributo positivo al
+rendimento senza toccare `invested`) e `split → 0`.
+
+I punti giornalieri arrivano dalle serie materializzate per singolo asset,
+`asset_series` (via `Series.FindPortfolio`), nella valuta del portafoglio, e
+vengono convertiti nella valuta base per data attraverso lo storico FX con
+pivot USD: finché il tasso per un asset manca, il suo ultimo valore
+convertito viene ripetuto in avanti (zero prima della prima conversione
+riuscita), e ogni asset continua a portare il suo ultimo valore convertito
+nelle date in cui non ha un nuovo punto. I valori di mercato vengono
+aggregati per data in `V`, i flussi raggruppati per giorno e la passeggiata
+scorre l'unione delle date delle serie e delle date dei flussi in ordine
+crescente (la serie materializzata copre ogni giorno solare dal primo
+movimento di ogni asset, quindi in pratica i giorni dei flussi hanno sempre
+un'osservazione di mercato). I periodi dei bucket sono monotoni sulle date,
+quindi l'ultima data di ogni mese/anno sigilla il suo bucket e i bucket
+vengono emessi in ordine crescente — i bucket senza dati vengono
+semplicemente omessi. `return` e `twr` si arrotondano a 4 decimali,
+`invested` e `value` a 8.
+
+### L'elenco paginato delle transazioni (`GET /portfolios/{id}/transactions`, EPIC I.9)
+
+`GET /api/v1/portfolios/{id}/transactions?limit=&offset=` restituisce un
+involucro di paginazione — `{transactions[], total, limit, offset}` — in
+vece del semplice array che emetteva prima. `limit` ha default 20 e viene
+limitato a un massimo di 100 (un valore più grande torna come
+`limit: 100`), `offset` ha default 0; un valore non numerico per uno dei due
+parametri è un 400, e lo stesso vale per un valore negativo (espresso dal
+service come `ErrInvalidInput`). La pagina è ordinata per
+`date DESC, created_at DESC, id DESC` — un tie-break del tutto
+deterministico, quindi due transazioni con la stessa data non possono
+finire a cavallo di due pagine né ripetersi. La proprietà del portafoglio
+è verificata nel service prima di qualsiasi query: il portafoglio altrui è
+un 403 e uno inesistente un 404 (prima di questa modifica l'endpoint non
+faceva alcun controllo di proprietà). `total` è il numero completo di
+transazioni del portafoglio, non la dimensione della pagina: una pagina
+oltre la fine restituisce semplicemente un array `transactions` vuoto con
+il `total` corretto.
+
+### Il grafico TWR per singolo portafoglio (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
+
+`GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`
+applica esattamente lo stesso modello TWR giornaliero a un **singolo
+portafoglio**, espresso nella **valuta del portafoglio stesso**: stesso
+default di `granularity` (`month`, qualunque altro valore → 400) e stessa
+forma di risposta `{currency, granularity, buckets[]}` del grafico
+vault-wide. È la versione più semplice di quella della dashboard perché non
+c'è alcuna conversione in valuta base: le serie materializzate per asset sono
+già denominate nella valuta del portafoglio, quindi `V(d)` non ha bisogno di
+alcun passaggio FX. Solo i flussi di cassa — registrati nella valuta
+dell'asset — vengono convertiti nella valuta del portafoglio al tasso FX
+della data della transazione (via lo storico con pivot USD), e una
+transazione senza tasso o senza valuta nota dell'asset viene saltata,
+proprio come sulla dashboard. La proprietà del portafoglio è verificata prima
+della consultazione della cache (403 per il portafoglio altrui, 404 se non
+esiste) e il risultato è cachato sotto la chiave `pf-perf` come
+`{portfolioID}:{granularity}`.
+
+### Il riepilogo del portafoglio (`GET /portfolios/{id}/summary`, EPIC I.6)
+
+La pagina di dettaglio del portafoglio mostra la stessa card "Investimenti"
+della dashboard: accanto ai campi piatti storici, lasciati invariati per
+compatibilità (`total_cost`, `total_value`, `gain_loss`, `gain_loss_pct`,
+`realized_gl`, `unrealized_gl`), la risposta porta gli oggetti annidati
+`active` e `closed` con esattamente le stesse regole delle voci per-portfolio
+della dashboard (vedi sopra): `active` somma costo e valore di mercato dei
+lotti ancora aperti (`invested`, `value`, `gain_loss`, `gain_loss_pct`) più i
+`dividends` delle posizioni ancora aperte (anche parzialmente vendute); le
+posizioni aperte di asset senza prezzo restano fuori da
+`invested`/`value` (il loro costo non ha un valore di mercato comparabile)
+ma contano comunque i dividendi; `closed` riporta `invested` (costo AVCO dei
+lotti venduti), `proceeds` (ricavi netti di vendita più i dividendi confluati
+nelle posizioni completamente chiuse), `realized` e `realized_pct`. Tutto
+è espresso nella **valuta del portafoglio**: non si applica nessuna
+conversione nella valuta base e solo il valore di mercato passa dal fattore
+FX asset→portafoglio, quindi un valore senza tasso disponibile viene omesso e
+continua a essere segnalato dai campi di qualità dati `fx_missing_count` /
+`fx_missing_value` già esistenti. I numeri sono arrotondati dallo stesso
+helper `finalizeBreakdowns` della dashboard e la lista `holdings` resta
+invariata.
 
 Nel codice Go il pattern tipico per leggere più righe è:
 
@@ -291,14 +435,23 @@ type State struct {
     Avg      decimal.Decimal  // prezzo medio di carico
     Cost     decimal.Decimal  // totale investito
     Realized decimal.Decimal  // plus/minusvalenza già realizzata
+
+    ClosedCost decimal.Decimal // costo AVCO dei lotti venduti
+    Proceeds   decimal.Decimal // incasso netto di vendita
+    Dividends  decimal.Decimal // dividendi incassati
 }
 ```
 
 > Cos'è `struct`? In Go una `struct` è un contenitore che raggruppa più valori
 > con un nome: è come una "scheda" con più caselle. Qui la scheda "stato della
-> posizione" ha quattro caselle: quantità, prezzo medio, costo totale e
-> guadagno/perdita realizzata. `decimal.Decimal` è il tipo dei numeri (numeri
-> con virgola precisi, adatti al denaro, senza errori di arrotondamento).
+> posizione" ha le caselle dei lotti aperti (quantità, prezzo medio, costo
+> totale, guadagno/perdita realizzata) più le metriche cumulative dei lotti
+> chiusi e delle distribuzioni (costo dei venduti, incasso netto, dividendi)
+> che alimentano il riepilogo attivo/chiuso della dashboard (EPIC I.2). Ogni
+> campo cumulativo ha
+> anche un gemello `*CCY` espresso nella valuta del titolo. `decimal.Decimal`
+> è il tipo dei numeri (numeri con virgola precisi, adatti al denaro, senza
+> errori di arrotondamento).
 
 L'idea è semplice: le operazioni non modificano i dati alla rinfusa, ma
 aggiornano la scheda in modo ordinato, operazione dopo operazione.
@@ -309,12 +462,19 @@ aggiornano la scheda in modo ordinato, operazione dopo operazione.
   poi ricalcoli il prezzo medio: `Avg = Cost / nuovaQuantità`.
 - **Sell (venduto)**: il costo della parte venduta è `Avg × quantità`. Lo
   sottrai dal costo totale; la differenza tra quello e l'incasso diventa
-  `Realized` (guadagno o perdita già "incassato").
+  `Realized` (guadagno o perdita già "incassato"). Il costo dei lotti venduti
+  e l'incasso netto si accumulano anche in `ClosedCost` e `Proceeds`, così
+  una posizione parzialmente venduta tiene separata la parte chiusa dai lotti
+  ancora aperti.
 - **Split**: la quantità viene moltiplicata per il rapporto (es. 1 diventa 4),
   ma il prezzo medio viene **diviso** per lo stesso rapporto: il costo totale
   non cambia.
 - **Fee (commissione)**: si somma al costo.
-- **Dividend (dividendo)**: si somma a `Realized`.
+- **Dividend (dividendo)**: si somma a `Realized` e, separatamente, a
+  `Dividends` (la dashboard poi classifica i dividendi secondo lo stato della
+  posizione: quelli di una posizione ancora aperta, anche se parzialmente
+  venduta, entrano nel gruppo `active`, quelli di una posizione completamente
+  chiusa si sommano ai `proceeds` del gruppo `closed`).
 
 ### `Walk`
 
@@ -383,6 +543,35 @@ confrontare i valori serve convertire.
 
 Se un tasso manca, la conversione non è disponibile e l'applicazione lo segnala
 (nel modello compare il campo `fx_missing`).
+
+**La valuta base (EPIC I.1).** Ogni utente ha una valuta preferita salvata in
+`users.base_currency` (default EUR) e modificabile via `PATCH /users/me` con
+il campo `base_currency` (un valore omesso/vuoto mantiene quello salvato; un
+valore non vuoto deve essere una valuta abilitata della whitelist, capitolo
+11, altrimenti la richiesta è rifiutata con 400). Tutte le aggregazioni a
+livello di vault della dashboard sono convertite in essa: `GET /dashboard`
+restituisce `base_currency`, un riepilogo `summary` nella valuta base — gli
+oggetti annidati `active` (investito, valore, guadagno/perdita dei lotti
+ancora detenuti, più i dividendi delle posizioni aperte; le posizioni aperte
+senza prezzo restano fuori da investito/valore, vedi capitolo 7) e `closed`
+(invested = costo AVCO dei lotti venduti, proceeds = incasso di vendita +
+dividendi delle posizioni completamente chiuse, realized = proceeds −
+invested, realized_pct) — dove gli importi senza
+tasso disponibile sono esclusi dai totali e riportati da
+`fx_missing_count`/`fx_missing_value` (solo gli importi nonnulli vengono
+segnalati); `GET /dashboard/performance` mostra lo stesso rendimento
+percentuale time-weighted (TWR) del vault per bucket mensili o annuali nella
+valuta base, con le serie invested/value del capitale (capitolo 7);
+`GET /portfolios/{id}/performance/buckets` mostra gli stessi bucket per un
+singolo portafoglio, restando nella valuta del portafoglio (capitolo 7,
+EPIC I.8); anche
+`GET /dashboard/allocation` è espressa nella valuta base (prima era fissa su
+USD) e aggrega tutti i portafogli nelle ripartizioni vault-wide `classes`,
+`regions`, `countries` e `sectors` (capitolo 19). Le sezioni per-valuta
+(`by_currency`) e per-portafoglio (`portfolios`, `assets`) della dashboard
+mantengono la propria valuta. L'elenco `invested_assets` è invece espresso
+nella valuta base: le posizioni aperte dell'utente aggregate per asset su
+tutti i suoi portafogli (capitolo 7, EPIC I.5).
 
 ---
 
@@ -728,6 +917,24 @@ Un esempio di uso: l'importazione di un portafoglio in modalità "sostituisci"
 cancella e ricrea il portafoglio **atomicamente** — se un passaggio fallisce,
 il vecchio portafoglio resta intatto.
 
+### Export/import del portafoglio: versionamento e compatibilità
+
+`GET /portfolios/{id}/export` produce un documento JSON con un campo
+`version` (la versione del formato, attualmente `1`); `POST /portfolios/import`
+lo consuma. Il formato è deliberatamente **additivo**: i campi aggiunti in
+seguito — come i `price_source` e `asset_class` per asset che ora l'export
+scrive — sono opzionali (`omitempty`), quindi i documenti prodotti da versioni
+precedenti dell'app restano validi e recuperabili.
+
+Quando l'importer crea un asset il cui ticker non esiste ancora, ogni
+informazione mancante viene riempita con un default che soddisfa i vincoli del
+database: il nome ripiega sul ticker, il tipo su `stock`, la valuta su `USD`,
+`asset_class` sulla classe di default per il tipo e `price_source` su `yahoo`.
+Un `price_source` sconosciuto nel documento non fa fallire l'importazione:
+anche in questo caso si ripiega su `yahoo`. Un documento con `version` più
+recente di quella supportata dall'importer viene rifiutato con un 400 chiaro
+(`unsupported export version N`) invece di un errore generico.
+
 ---
 
 ## 16. Il ciclo dei dati completo
@@ -746,7 +953,21 @@ L'amministratore aggiunge una valuta ──► POST /settings/currencies
                             → verifica conversione su Yahoo → whitelist
 
 L'utente apre la dashboard ──► GET /dashboard:
-    posizioni (AVCO) + tassi di cambio + serie dal database → JSON al frontend
+    posizioni (AVCO) + tassi di cambio
+    → summary convertito nella valuta base dell'utente → JSON al frontend
+
+L'utente guarda il grafico dei rendimenti ──► GET /dashboard/performance?granularity=month|year:
+    punti giornalieri per asset dalle serie materializzate + FX per data
+    + flussi esterni giornalieri (asset con prezzo al valore di mercato,
+      senza prezzo al costo)
+    → vero TWR mensile/annuale (collegatura geometrica dei rendimenti
+      giornalieri) + TWR cumulativo, nella valuta base, con serie
+      invested/value → JSON al frontend
+
+L'utente guarda il grafico dei rendimenti di un portafoglio ──► GET /portfolios/{id}/performance/buckets?granularity=month|year:
+    stesso modello TWR giornaliero per un solo portafoglio, nella valuta del
+    portafoglio (serie senza conversione; solo i flussi la richiedono)
+    → JSON al frontend
 
 L'utente apre la pagina asset ──► GET /assets/{id}/quote (+ /prices?...&full=1):
     range di quota + storico prezzi dal database → JSON al frontend
@@ -791,7 +1012,7 @@ backend/
 │   ├── repository/         # query SQL (repository.go = "hub" + asset.go + exposure.go + WithTx + DBTX)
 │   ├── series/             # serie giornaliere materializzate (Recompute, LoadRates, FxFactor)
 │   └── service/            # logica di business (service.go)
-├── migrations/             # SQL versionato (000001..000016)
+├── migrations/             # SQL versionato (000001..000018)
 └── go.mod
 ```
 
@@ -863,6 +1084,32 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   `/allocation/sector` e `/dashboard/allocation`) espongono
   `covered_value`/`excluded_value` (stringhe decimali) con il valore delle
   holding ammissibili vs escluse.
+- Da EPIC I.4 `GET /dashboard/allocation` aggrega **tutti** i portafogli
+  dell'utente nella loro valuta base e, accanto a `regions` (le macro-regioni
+  canoniche + `Other`, zero-filled) e `sectors` (11 settori GICS + `Other`),
+  restituisce anche:
+  - `classes`: l'allocazione per classe d'investimento a livello di vault —
+    ogni holding prezzata con quantità positiva (qualunque sia il tipo)
+    valorizzata a mercato nella valuta base, raggruppata per `asset_class`
+    (vuoto → `other`), ordinata per valore decrescente con `weight`
+    percentuali che sommano a 100; le holding senza tasso FX verso la valuta
+    base sono saltate (stesse regole di `GET /portfolios/{id}/allocation/class`,
+    ma su tutti i portafogli);
+  - `countries`: l'esposizione equity-only per paese costruita da
+    `asset_country_weights` con la stessa macchina a somma pesata delle
+    regioni (le azioni senza esposizione salvata ricadono sul proprio
+    `country` al 100%); i bucket portano il codice ISO alpha-2 `country` e,
+    a differenza di regioni/settori, vengono restituiti solo quelli
+    **nonnulli**, ordinati per valore decrescente con `weight` che somma a
+    100.
+- Da EPIC I.7 anche `GET /portfolios/{id}/allocation/geography` restituisce
+  un array `countries` accanto a `regions`, con la stessa semantica dei
+  `countries` della dashboard ma limitato al singolo portafoglio ed espresso
+  nella sua valuta: esposizione equity-only per paese da
+  `asset_country_weights` (le azioni senza esposizione salvata ricadono sul
+  proprio `country` al 100%, con la stessa conversione FX delle regioni),
+  solo i bucket **nonnulli**, ordinati per valore decrescente con `weight`
+  che somma a 100; vuoto (non nil) quando non c'è esposizione per paese.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; da B.14 espone anche l'esposizione Morningstar
   via `GET /api/v1/etf/{isin}/morningstar-exposure` (resolver custom: bootstrap

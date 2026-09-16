@@ -34,8 +34,14 @@ export async function register(email: string, name: string, password: string): P
   await authApi.register(email, name, password)
 }
 
-export async function updateProfile(name: string, email: string): Promise<void> {
-  const user = await authApi.updateProfile({ name, email })
+export async function updateProfile(
+  name: string,
+  email: string,
+  baseCurrency?: string,
+): Promise<void> {
+  // `baseCurrency` is optional: when omitted the PATCH body simply lacks
+  // `base_currency` and the backend keeps the stored value (EPIC I.1).
+  const user = await authApi.updateProfile({ name, email, base_currency: baseCurrency })
   auth.user = user
 }
 

@@ -276,7 +276,7 @@ pause
 # --- FASE 8: transazioni buy (salta se gia presenti al rerun) ----------------------------
 note "FASE 8 — Transazioni buy (salta se gia presenti al rerun)"
 TXS=$(curl -s "$API/portfolios/$PID/transactions" -H "Authorization: Bearer $TOK")
-if [ "$(jq 'length' <<<"$TXS")" -gt 0 ]; then
+if [ "$(jq '.total' <<<"$TXS")" -gt 0 ]; then
   note "(rerun) transazioni gia presenti — creazione buy saltata per evitare accumulo"
   ok "rilevate transazioni esistenti, buy saltate"
 else

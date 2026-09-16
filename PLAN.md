@@ -196,5 +196,11 @@ primitive `ui/` e nuovo AppShell responsive), EPIC C (metric di rischio) ed EPIC
 componenti di dominio, completata in v0.4.0: dashboard, dettaglio portafoglio, assets/portafogli
 con modali, login e impostazioni a tab).
 Prossimi: **EPIC I — Dashboard & portfolio v2** (vista aggregata in valuta base, chart e tabelle)
-ed **EPIC C — metric di rischio**. Vedi STATUS.md per lo stato dettagliato.
+ed **EPIC C — metric di rischio**. **EPIC I completato** (I.1–I.9, PR #98, branch
+`feat/I.1-base-currency`): valuta base, dashboard attivo/chiuso, grafico performance TWR +
+capitale, allocazioni per classe/paese, tabella asset investiti consolidata, KPI e allocazioni
+del dettaglio portafoglio allineati alla dashboard, performance a barre, transazioni paginate.
+Prossimo candidato: **EPIC C — metric di rischio**. La gestione del capitale disponibile
+(versamenti/prelievi, conto titoli) è tracciata a parte nell'issue #101. Vedi STATUS.md
+per lo stato dettagliato.
 
