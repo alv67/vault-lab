@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (13 Set 2026)
+# VaultLab — Stato Progetto (17 Set 2026)
 
 ## Infrastruttura
 
@@ -528,6 +528,69 @@ Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investim
   `TestGetDashboard_SummaryInBaseCurrency` aggiornati alla forma annidata.
 - **Documentazione**: `docs/BACKEND-GUIDE.en/it.md` (cap. 7/8, paragrafo valuta base) e
   `docs/RELEASE-NOTES.en/it.md`.
+
+### I.3 — Dashboard: grafico performance + capitale (branch `feat/I.1-base-currency`)
+- **Backend**: nuovo `GET /dashboard/performance?granularity=month|year` → bucket
+  `{period, return, twr, invested, value}`. Rendimento **time-weighted (TWR)** puro: `V(d)` =
+  valore di mercato (asset prezzati + bond non quotati portati al costo), flussi esterni
+  `buy/sell/dividend/fee`, rendimento giornaliero composto; `invested` = capitale netto,
+  `value` = market value. Rimosso il vecchio `history` dal dashboard.
+- **Frontend**: card **Performance** (barre `return` % + linea TWR cumulata) e card **Capital
+  invested** (`invested` vs `value`), toggle Mensile/Annuale (`PerformanceChart`,
+  `CapitalChart`); rimosso `PortfolioLineChart`. Rimosse anche le righe per-valuta
+  (`by_currency`) dalla dashboard.
+- **Verifica**: `service_test.go` (TWR, liquidazione/riapertura, bond al costo, dividendi,
+  multi-valuta) + `svelte-check`/lint.
+
+### I.4 — Allocazione dashboard estesa (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /dashboard/allocation` esteso con `classes` (per asset class) e `countries`
+  (per paese, equity-only, non-zero, descending), in valuta base.
+- **Frontend**: card "Allocazione complessiva" → classi (donut, `ClassDonut`) + regioni/settori/
+  paesi a **barre orizzontali** (`ExposureBarChart`); paesi con nome completo e ~10 righe
+  visibili + scroll.
+
+### I.5 — Dashboard: tabella asset investiti consolidata (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /dashboard` espone `invested_assets` (per asset, aggregato su tutti i
+  portafogli, valuta base, sole posizioni aperte, ordinato per valore; asset senza prezzo al
+  costo con `has_price=false`).
+- **Frontend**: card **Invested assets** che sostituisce gli accordion per-portafoglio.
+
+### I.6 — Dettaglio portafoglio: KPI allineati alla dashboard (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/summary` espone `active`/`closed` (stessa forma della
+  dashboard, in valuta portafoglio).
+- **Frontend**: card condivisa **`InvestmentsTable`** (estratto) usata da dashboard e dettaglio;
+  la vecchia riga KPI Value/Realized/Open G/L/Assets è sostituita dalla card Active/Closed +
+  riga asset.
+
+### I.7 — Dettaglio portafoglio: allocazioni come la dashboard (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/allocation/geography` esteso con `countries` (equity-only,
+  descending, valuta portafoglio).
+- **Frontend**: sezione allocazione = classi (donut) + regioni/settori/paesi a barre
+  (`ClassDonut`/`ExposureBarChart`); rimossi i componenti `GeographyChart`/`SectorChart`.
+
+### I.8 — Dettaglio portafoglio: performance a barre (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/performance/buckets?granularity=month|year` (TWR, valuta
+  portafoglio, ownership + cache).
+- **Frontend**: card **Performance** (barre % + linea TWR, toggle Mensile/Annuale); il
+  `PositionChart` "Performance history" resta come vista secondaria.
+
+### I.9 — Transazioni paginate (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/transactions?limit=&offset=` → `{transactions, total,
+  limit, offset}` (default 20, max 100, ordine `date DESC, created_at DESC, id DESC`,
+  ownership check); script e2e aggiornati.
+- **Frontend**: paginatore sotto la tabella (range + prev/next), refetch della pagina corrente
+  dopo le mutazioni.
+
+### Fix nella stessa PR
+- **#99 — import export vecchi**: l'import non fallisce più se il documento non ha `price_source`
+  (default `yahoo`), export esteso con `price_source`/`asset_class`, versione documento gestita.
+- **#100 — posizioni chiuse e residui**: la riga Active non conta più il costo residuo (AVCO) di
+  posizioni chiuse; arrotondamento degli importi. Niente più P/L fittizio -100%.
+
+### EPIC I — stato
+Tutte le sub-issue **I.1–I.9 completate** nella PR #98 (branch `feat/I.1-base-currency`, non
+ancora merged). Nota: la gestione del **capitale disponibile / versamenti-prelievi** (conto
+titoli) è tracciata a parte nell'issue **#101** e sarà una PR separata.
 
 ## Fase 3 — Pianificata
 
