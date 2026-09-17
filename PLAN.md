@@ -60,6 +60,7 @@
 - [x] Follow-up B.13/B.14: fetch provider come anteprima non persistente, cache Redis (TTL + `?refresh=1`), provenienza persistita (sorgente + data), prefill settori da Morningstar, redesign modali geo/settore (paesi-first, badge sorgente) — **PR #67**
 - [x] Design system & dark mode: token semantici + tema a 3 modalità (default dark), sweep colori, primitive `ui/`, AppShell responsive con sidebar collassabile e ThemeToggle — **EPIC D (#37)**
 - [ ] Nuove asset class: bond, certificati, fondi pensione, conti deposito — **EPIC J (#113)**: prezzo manuale (J.1 #105), metadati fixed income (J.2 #106), tipi `cash`/`certificate` (J.3 #107), esposizione fixed income (J.4 #108), maturazione interessi (J.5 #109), metriche bond (J.6 #110), allocazione credito (J.7 #111), piani pensionistici (J.8 #112)
+- [ ] Redesign UX/UI completo (navigazione, layout, design system) per PC/tablet/mobile — **EPIC K**, branch isolato `feat/K-ux-redesign`: fondazioni (K.1), shell adattiva (K.2), Overview (K.3), pagine entità a tab (K.4), power layer (K.5). Spec in `docs/UX-REDESIGN.en.md` / `.it.md`
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -172,7 +173,11 @@ vault-lab/
     ├── BACKEND-GUIDE.en.md
     ├── BACKEND-GUIDE.it.md
     ├── DATABASE-GUIDE.en.md
-    └── DATABASE-GUIDE.it.md
+    ├── DATABASE-GUIDE.it.md
+    ├── FRONTEND-GUIDE.en.md
+    ├── FRONTEND-GUIDE.it.md
+    ├── UX-REDESIGN.en.md
+    └── UX-REDESIGN.it.md
 ```
 
 ---
@@ -210,4 +215,11 @@ tipi `cash`/`certificate` (J.3 #107) come prima PR consigliata, poi esposizione 
 (J.7 #111) e piani pensionistici (J.8 #112). Altro candidato: **EPIC C — metric di rischio**.
 La gestione del capitale disponibile (versamenti/prelievi, conto titoli) è tracciata a parte
 nell'issue #101. Vedi STATUS.md per lo stato dettagliato.
+
+**Redesign UX/UI — EPIC K (in corso su branch isolato `feat/K-ux-redesign`)**: analisi UX/UI
+completa basata solo sulle funzionalità attuali e proposta di un'interfaccia moderna per
+PC/tablet/mobile. La Fase 0 (specifica di design, `docs/UX-REDESIGN.en.md` / `.it.md` +
+aggiornamento STATUS/PLAN) è completata; l'implementazione procede a fasi K.1–K.5 delegate al
+subagent `frontend`. Il branch verrà mergiato solo se il risultato convince, altrimenti verrà
+scartato senza impattare `develop`.
 

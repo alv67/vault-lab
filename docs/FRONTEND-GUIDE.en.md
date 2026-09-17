@@ -7,6 +7,11 @@
 > such as components, routes and API calls are explained as we go.
 >
 > For Italian readers there is the version `docs/FRONTEND-GUIDE.it.md`.
+>
+> **Note**: this guide describes the app **as it is today**. The intended future
+> interface state (navigation, layouts, design system evolution, EPIC K) is
+> specified separately in `docs/UX-REDESIGN.en.md`; where the two differ, the
+> redesign specification describes the target.
 
 ---
 

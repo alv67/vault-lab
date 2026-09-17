@@ -644,6 +644,53 @@ un'esperienza first-class per tutte e quattro le classi.
 `structured`); policy di esposizione opt-in (`exposure_kind`) per non impattare i portafogli
 esistenti; gestione prezzo clean/dirty per i bond (MVP: prezzo inserito usato as-is).
 
+## EPIC K — Redesign UX/UI (in corso, branch separato)
+
+Bozza progettuale di revisione completa dell'interfaccia basata **solo sulle funzionalità**
+attuali (l'implementazione visiva è considerata sostituibile), per un'interfaccia moderna
+usabile su PC, tablet e mobile. **Spec completa**: `docs/UX-REDESIGN.en.md` / `.it.md`
+(chapter 1–12, wireframe ASCII, diagrammi mermaid, token, componenti, roadmap).
+
+> **Branch isolato `feat/K-ux-redesign`**: tutto il redesign vive qui e verrà mergiato solo
+> se il risultato convince; in caso contrario il branch si scarta senza impattare `develop`.
+
+**Fase 0 — ✅ completata (questo branch)**: stesura della specifica di design + aggiornamento
+STATUS/PLAN. Nessuna modifica al codice UI.
+
+**Decisioni registrate** (D1–D11, riflesse in tutta la spec):
+
+| # | Tema | Decisione |
+|---|------|-----------|
+| D1 | Lingua UI | i18n leggero IT+EN, **default IT**, fallback EN (introdotto in K.1) |
+| D2 | Nav mobile | **Bottom nav** (4) + **FAB** + "More" sheet; hamburger declassato |
+| D3 | Scope switcher | **Naviga** tra `/` (vault) e `/portfolios/:id` (non filtra) |
+| D4 | Ispezione righe | **Drawer** destro ≥ `lg`, **bottom sheet** < `lg` |
+| D5 | Font | **Inter + mono** self-hosted (`@fontsource`, no CDN) |
+| D6 | P/L a11y | Segno + ▲▼ sempre **+** toggle palette **CVD** (blu/arancio) in Preferenze |
+| D7 | Health prezzi | Voce separata "Data & Sync" ora; in futuro spostabile nel menu **Amministrazione** (admin, debug/log) |
+| D8 | Primo avvio | **Checklist guidata** portafoglio → asset → transazione |
+| D9 | Tema | **Default = segui sistema** (non più dark forzato); light/dark pari |
+| D10 | Range hero | **Bucket-driven** (mensile/annuale) ora; serie giornaliera vault come fast-follow |
+| D11 | Undo | **Toast ⟲ Undo** (5s) sul delete transazione |
+
+**Fasi di implementazione** (da delegare a `frontend`, richieste backend a `backend`):
+
+| Fase | Contenuto | Backend ask |
+|------|-----------|-------------|
+| **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
+| **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@md, header condensante, ScopeSwitcher (D3), FreshnessStamp, entry "Data & Sync" relocabile (D7) | — |
+| **K.3 Overview** | Hero + zone A–E, chip bucket-driven (D10), digest allocazioni, sparkline card portafogli, DataQualityStrip, checklist first-run (D8) | serie giornaliera vault (fast-follow), sparkline portafoglio |
+| **K.4 Entità → tab** | Sotto-route portfolio/asset (Overview/Positions/Activity/Allocation/Data), filtri+sheet edit, undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
+| **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
+
+**Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
+J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di
+rischio) in una card **Insights** su Overview/portafoglio; Fase 3 (sharing/ruoli) nel
+ScopeSwitcher ("Shared with me") e in Settings → Members.
+
+**Rinviato / slot riservati**: Activity consolidata cross-portafoglio (slot in "More"),
+benchmark overlay (EPIC C), density toggle (fuori MVP), passkey/2FA (solo slot).
+
 ## Fase 3 — Pianificata
 
 - Multi-tenancy familiare (portfolio_shares)

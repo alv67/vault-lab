@@ -8,6 +8,11 @@
 >
 > Per i lettori di lingua inglese esiste la versione
 > `docs/FRONTEND-GUIDE.en.md`.
+>
+> **Nota**: questa guida descrive l'app **così com'è oggi**. Lo stato futuro
+> dell'interfaccia (navigazione, layout, evoluzione del design system, EPIC K)
+> è specificato a parte in `docs/UX-REDESIGN.it.md`; dove i due documenti
+> differiscono, è la specifica di redesign a descrivere l'obiettivo.
 
 ---
 
