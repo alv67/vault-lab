@@ -598,6 +598,35 @@ Tutte le sub-issue **I.1–I.9 completate** e rilasciate in **v0.5.0** (PR #98 m
 `develop`/`main`). Nota: la gestione del **capitale disponibile / versamenti-prelievi** (conto
 titoli) è tracciata a parte nell'issue **#101** e sarà una PR separata.
 
+## EPIC J — Nuove asset class: bond, certificati, fondi pensione, conti deposito (#113) — pianificata
+
+Estendere VaultLab agli **investimenti a reddito fisso e non quotati**: obbligazioni (tipo, cedola,
+scadenza, esposizione geo/settoriale), certificati d'investimento (prodotti strutturati), piani
+pensionistici complementari (fondi pensione/PIP) e conti deposito. L'analisi finanziaria
+(30 Ago 2026) ha verificato che le quattro classi sono già tracciabili con il modello attuale
+(`price_source` `manual`/`none`, TWR al costo), a patto di colmare due gap trasversali:
+**inserimento prezzo manuale in UI** (assente) e tipo **`cash`** non selezionabile nel form di
+creazione.
+
+| Issue | Titolo | Componente | Priorità |
+|-------|--------|------------|----------|
+| #105 | J.1 — Inserimento prezzo manuale (endpoint + UI) | Backend + Frontend | MVP (sblocca tutte le classi) |
+| #106 | J.2 — Metadati asset fixed income (scadenza, emittente, `attributes` JSONB) | Backend + Frontend | MVP |
+| #107 | J.3 — Tipo `cash` in UI + nuovo tipo `certificate` | Backend + Frontend | MVP |
+| #108 | J.4 — Esposizione geo/settoriale per fixed income (opt-in `exposure_kind`) | Backend | Post-MVP |
+| #109 | J.5 — Maturazione interessi conti deposito | Backend + Frontend | Post-MVP |
+| #110 | J.6 — Metriche bond: duration, YTM, current yield | Backend | Post-MVP |
+| #111 | J.7 — Allocazione per merito di credito (`asset_credit_weights`) | Backend + Frontend | Post-MVP |
+| #112 | J.8 — Wrapper piani pensionistici (comparti/sub-fondi) | Backend + Frontend | Post-MVP (bassa) |
+
+**Prima PR consigliata**: J.1 + J.2 + J.3 insieme — set minimale e non regressivo che abilita
+un'esperienza first-class per tutte e quattro le classi.
+
+**Decisioni aperte** (da risolvere in implementazione): cedola vs dividendo come tipo a sé
+(MVP: `coupon` = `TxDividend` + note); `asset_class` dei certificati (`other` vs nuovo
+`structured`); policy di esposizione opt-in (`exposure_kind`) per non impattare i portafogli
+esistenti; gestione prezzo clean/dirty per i bond (MVP: prezzo inserito usato as-is).
+
 ## Fase 3 — Pianificata
 
 - Multi-tenancy familiare (portfolio_shares)
