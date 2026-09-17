@@ -37,6 +37,8 @@ export interface User {
   email: string
   name: string
   role: string
+  /** User's base currency for consolidated views (EPIC I.1, default "EUR"). */
+  base_currency: string
   created_at: string
 }
 
@@ -172,6 +174,17 @@ export interface Transaction {
   notes: string
 }
 
+/** Envelope of the paginated `GET /portfolios/{id}/transactions` (EPIC I.9,
+ * #88): one page of transactions (newest first), the portfolio-wide total
+ * count and the `limit`/`offset` the backend actually applied (default
+ * limit 20, clamped to a max of 100). */
+export interface TransactionPage {
+  transactions: Transaction[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface AssetHolding {
   asset_id: string
   ticker: string
@@ -195,6 +208,11 @@ export interface AssetHolding {
 export interface PortfolioSummary {
   portfolio_id: string
   portfolio_name: string
+  /** Active/closed roll-ups in the PORTFOLIO currency (EPIC I.6, #85): the
+   * same nested shape the dashboard summary exposes, so both pages can share
+   * the `InvestmentsTable` component. */
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
   total_value: string
   total_cost: string
   gain_loss: string
@@ -236,9 +254,22 @@ export interface SectorAllocation {
   weight: string
 }
 
+/** One country bucket of the vault-wide country exposure (EPIC I.4).
+ * `country` is an ISO alpha-2 code. */
+export interface CountryAllocation {
+  country: string
+  value: string
+  weight: string
+}
+
 export interface PortfolioGeographyAllocation {
   currency: string
   regions: RegionAllocation[]
+  /** Equity-only per-country exposure of this portfolio (EPIC I.7, #86),
+   * with the same semantics as the dashboard's `countries`: ISO alpha-2
+   * codes, non-zero buckets only, sorted by descending value. Values in the
+   * portfolio currency. */
+  countries: CountryAllocation[]
   covered_value?: string
   excluded_value?: string
 }
@@ -250,9 +281,17 @@ export interface PortfolioSectorAllocation {
   excluded_value?: string
 }
 
+/** Vault-wide allocation across all portfolios, converted to the user's base
+ * currency (EPIC I.4): asset classes over every holding, plus the equity-only
+ * breakdown by macro-region, country (ISO alpha-2, non-zero rows only) and
+ * GICS sector. `classes`/`regions`/`countries`/`sectors` come back sorted by
+ * descending value; `covered_value`/`excluded_value` split the total between
+ * the equity universe and the non-equity holdings excluded from it. */
 export interface DashboardAllocation {
   currency: string
+  classes: AssetClassSlice[]
   regions: RegionAllocation[]
+  countries: CountryAllocation[]
   sectors: SectorAllocation[]
   covered_value?: string
   excluded_value?: string
@@ -281,15 +320,33 @@ export interface CurrencyPerformance {
   realized: string
 }
 
-export interface PortfolioPerformanceSummary {
-  portfolio_id: string
-  portfolio_name: string
-  currency: string
+/** Roll-up of the open (still held) lot portions (EPIC I.2); `dividends`
+ * are those received on still-open positions. */
+export interface ActiveBreakdown {
   invested: string
   value: string
   gain_loss: string
   gain_loss_pct: string
-  realized_gl: string
+  dividends: string
+}
+
+/** Roll-up of the closed (already sold) lot portions (EPIC I.2): `invested`
+ * is the cost of the sold lots, `proceeds` the net sale proceeds plus the
+ * dividends of fully-closed positions, `realized` = proceeds − invested
+ * (so dividends are already folded into the capital figures). */
+export interface ClosedBreakdown {
+  invested: string
+  proceeds: string
+  realized: string
+  realized_pct: string
+}
+
+export interface PortfolioPerformanceSummary {
+  portfolio_id: string
+  portfolio_name: string
+  currency: string
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
   asset_count: number
   fx_missing: number
 }
@@ -317,11 +374,29 @@ export interface PortfolioAssets {
   assets: AssetPerformance[]
 }
 
-export interface DashboardHistory {
-  portfolio_id: string
-  portfolio_name: string
+/** One month or year bucket of the performance charts (EPIC I.3):
+ * `period` is "YYYY-MM" (monthly) or "YYYY" (annual), `return` the
+ * time-weighted return % generated inside the bucket (bars), `twr` the cumulative
+ * time-weighted return % up to the bucket's last date (line), `invested` the
+ * net invested capital and `value` the market value at the bucket's end, both
+ * in the payload's currency. Buckets come back ascending; empty ones are
+ * omitted. */
+export interface PerformanceBucket {
+  period: string
+  return: string
+  twr: string
+  invested: string
+  value: string
+}
+
+/** Return/capital chart bucketed by month or year: vault-wide in the user's
+ * base currency (`/dashboard/performance`, EPIC I.3) or — since EPIC I.8
+ * (#87) — of a single portfolio in the portfolio's own currency
+ * (`/portfolios/{id}/performance/buckets`). Same shape for both endpoints. */
+export interface DashboardPerformance {
   currency: string
-  series: PortfolioPerformance[]
+  granularity: 'month' | 'year'
+  buckets: PerformanceBucket[]
 }
 
 export interface PositionPoint {
@@ -381,11 +456,48 @@ export interface PortfolioExportDocument {
   }[]
 }
 
+/** Aggregated dashboard totals converted into the user's base currency
+ * (EPIC I.1), split into the nested `active`/`closed` breakdowns of
+ * EPIC I.2. Decimal fields are JSON strings, like the rest of the API. */
+export interface DashboardSummary {
+  currency: string
+  active: ActiveBreakdown
+  closed: ClosedBreakdown
+  /** Number of holdings whose FX rate was missing in the conversion. */
+  fx_missing_count: number
+  /** Value of those holdings (decimal string), i.e. what the count refers to. */
+  fx_missing_value: string
+}
+
+/** One open asset aggregated across all the user's portfolios, expressed in
+ * the base currency (EPIC I.5): `invested` is the cost of the open quantity,
+ * `value` the market value — carried at cost when `has_price` is false, so
+ * such rows show a zero P/L. Sorted by descending value. */
+export interface InvestedAsset {
+  asset_id: string
+  ticker: string
+  name: string
+  currency: string
+  invested: string
+  value: string
+  gain_loss: string
+  gain_loss_pct: string
+  has_price: boolean
+}
+
 export interface Dashboard {
   by_currency: CurrencyPerformance[]
   portfolios: PortfolioPerformanceSummary[]
   assets: PortfolioAssets[]
-  history: DashboardHistory[]
+  /** Consolidated invested-assets table (EPIC I.5): open positions merged
+   * across portfolios in `base_currency`, sorted by value descending. */
+  invested_assets: InvestedAsset[]
+  /** User's base currency: the consolidated `summary` (and the separate
+   * `/dashboard/performance` endpoint) are expressed in it. The old `history`
+   * series was removed in EPIC I.3, superseded by `dashboardPerformance`. */
+  base_currency: string
+  /** Consolidated totals in `base_currency`; absent on older backends. */
+  summary?: DashboardSummary
 }
 
 export interface FetchIssue {
@@ -535,7 +647,9 @@ export const authApi = {
   register: (email: string, name: string, password: string) =>
     request<User>('/auth/register', { method: 'POST', body: { email, name, password } }),
   me: () => request<User>('/users/me'),
-  updateProfile: (data: { name: string; email: string }) =>
+  // `base_currency` is sent only when provided (JSON.stringify drops the
+  // undefined key): the backend keeps the existing value when omitted.
+  updateProfile: (data: { name: string; email: string; base_currency?: string }) =>
     request<User>('/users/me', { method: 'PATCH', body: data }),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<void>('/users/me/password', { method: 'POST', body: data }),
@@ -558,6 +672,14 @@ export const portfolioApi = {
   sectorAllocation: (id: string) =>
     request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
   dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
+  // EPIC I.3: vault-wide P/L buckets in the user's base currency, monthly or
+  // yearly (`period` = "YYYY-MM" / "YYYY", ascending, empty buckets omitted).
+  dashboardPerformance: (granularity: 'month' | 'year') =>
+    request<DashboardPerformance>('/dashboard/performance', { params: { granularity } }),
+  // EPIC I.8 (#87): the same monthly/yearly TWR buckets for a SINGLE portfolio,
+  // in the portfolio's own currency (same `DashboardPerformance` shape).
+  performanceBuckets: (id: string, granularity: 'month' | 'year') =>
+    request<DashboardPerformance>(`/portfolios/${id}/performance/buckets`, { params: { granularity } }),
   performance: (id: string) => request<PortfolioPerformance[]>(`/portfolios/${id}/performance`),
   roi: (id: string) => request<AssetROI[]>(`/portfolios/${id}/roi`),
   history: (id: string) => request<PortfolioHistory>(`/portfolios/${id}/history`),
@@ -607,7 +729,18 @@ export const assetApi = {
 }
 
 export const transactionApi = {
-  list: (portfolioId: string) => request<Transaction[]>(`/portfolios/${portfolioId}/transactions`),
+  // EPIC I.9 (#88): paginated list returning the `TransactionPage` envelope.
+  // `limit`/`offset` are only appended when provided; without them the
+  // backend serves its default first page (limit 20, order date desc).
+  list: (
+    portfolioId: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<TransactionPage> => {
+    const query: Record<string, string> = {}
+    if (params?.limit !== undefined) query.limit = String(params.limit)
+    if (params?.offset !== undefined) query.offset = String(params.offset)
+    return request<TransactionPage>(`/portfolios/${portfolioId}/transactions`, { params: query })
+  },
   create: (portfolioId: string, data: Partial<Transaction>) =>
     request<Transaction>(`/portfolios/${portfolioId}/transactions`, { method: 'POST', body: data }),
   update: (id: string, data: Partial<Transaction>) =>

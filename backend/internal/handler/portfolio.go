@@ -2,7 +2,9 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -227,6 +229,12 @@ func (h *Handler) DeleteTransaction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id := chi.URLParam(r, "id")
 	portfolioID, err := parseUUID(id)
 	if err != nil {
@@ -234,14 +242,44 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	txs, err := h.svc.ListTransactions(r.Context(), portfolioID)
+	limit := 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = v
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid offset")
+			return
+		}
+		offset = v
+	}
+
+	page, err := h.svc.ListTransactionsPaged(r.Context(), portfolioID, claims.UserID, limit, offset)
 	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "invalid pagination parameters")
+			return
+		case errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, "portfolio not found")
+			return
+		}
 		log.Error().Err(err).Msg("list transactions failed")
 		respondError(w, http.StatusInternalServerError, "list failed")
 		return
 	}
 
-	respond(w, http.StatusOK, txs)
+	respond(w, http.StatusOK, page)
 }
 
 func (h *Handler) GetPortfolioSummary(w http.ResponseWriter, r *http.Request) {
@@ -442,6 +480,46 @@ func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request
 	respond(w, http.StatusOK, performance)
 }
 
+func (h *Handler) GetPortfolioPerformanceBuckets(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	granularity := "month"
+	if query := r.URL.Query(); query.Has("granularity") {
+		granularity = query.Get("granularity")
+	}
+
+	perf, err := h.svc.GetPortfolioPerformanceBuckets(r.Context(), portfolioID, claims.UserID, granularity)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "granularity must be month or year")
+			return
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		case errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, "portfolio not found")
+			return
+		}
+		log.Error().Err(err).Msg("get portfolio performance buckets failed")
+		respondError(w, http.StatusInternalServerError, "portfolio performance buckets failed")
+		return
+	}
+
+	respond(w, http.StatusOK, perf)
+}
+
 func (h *Handler) GetPortfolioROI(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -559,6 +637,32 @@ func (h *Handler) GetDashboardAllocation(w http.ResponseWriter, r *http.Request)
 	}
 
 	respond(w, http.StatusOK, dashAlloc)
+}
+
+func (h *Handler) GetDashboardPerformance(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	granularity := "month"
+	if query := r.URL.Query(); query.Has("granularity") {
+		granularity = query.Get("granularity")
+	}
+
+	perf, err := h.svc.GetDashboardPerformance(r.Context(), claims.UserID, granularity)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidInput) {
+			respondError(w, http.StatusBadRequest, "granularity must be month or year")
+			return
+		}
+		log.Error().Err(err).Msg("get dashboard performance failed")
+		respondError(w, http.StatusInternalServerError, "dashboard performance failed")
+		return
+	}
+
+	respond(w, http.StatusOK, perf)
 }
 
 func (h *Handler) RefreshPrices(w http.ResponseWriter, r *http.Request) {

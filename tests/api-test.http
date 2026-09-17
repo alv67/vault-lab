@@ -260,6 +260,15 @@ Content-Type: application/json
   "date": "2024-01-15T00:00:00Z"
 }
 
+### 14bis. NEW (I.9) — List transactions, paginated: envelope
+### {transactions[], total, limit, offset}. limit defaults to 20 and is clamped
+### to 100, offset defaults to 0; non-numeric or negative params → 400. Stable
+### ordering date DESC, created_at DESC, id DESC. Ownership enforced: 403 on
+### someone else's portfolio, 404 on a missing one.
+# @name listTransactions
+GET {{baseUrl}}/portfolios/{{portfolioId}}/transactions?limit=10&offset=0
+Authorization: Bearer {{token}}
+
 ### 15. Portfolio class allocation (baseline to reconcile with geography/sector).
 ### Cost basis: SMEA.MI 1000 EUR + SXR8.DE 1500 EUR = 2500 EUR, all FX-ok. Without
 ### the price seed the weights are all 0 — run tests/seed-prices.sql first to see

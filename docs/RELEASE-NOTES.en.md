@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.5.0 — 17 Sep 2026
+
+### Features
+- The portfolio transactions list is now paginated: it comes back page by page (20 at a time by default, up to 100) in a stable newest-first order, together with the total count, so long histories stay fast and predictable
+- The portfolio detail now has its own monthly/annual percentage performance chart: the same time-weighted return the dashboard shows, measured for that single portfolio in its own currency, with the invested-versus-value capital series next to it
+- The portfolio detail allocation section now mirrors the dashboard's "Allocazione complessiva" card: an asset-class donut plus descending region, sector and country bars, all in the portfolio's currency (equity-only, ordered by value)
+- The portfolio detail page now shows the same active vs closed investments breakdown as the dashboard, in the portfolio's own currency: open positions with invested, current value, gain/loss and dividends, and the closed part with the cost of the sold lots, the proceeds and the realized gain/loss
+- The dashboard now shows a single invested-assets table: one row per asset aggregated across all your portfolios, in your base currency, with invested amount, current value and P/L %, ordered by value
+- Choose your base currency in Settings → Profile: the dashboard now consolidates your totals and allocations into that currency
+- The dashboard allocation now breaks your whole vault down also by asset class (donut data) and by individual country, alongside the existing sector and macro-region views — all aggregated across your portfolios and expressed in your base currency
+- The dashboard now separates active and closed investments at vault and per-portfolio level: for the closed part you see the cost of the sold lots, the proceeds and the realized capital gain/loss; dividend rows are shown with the active investments and, once a position is fully closed, they are included in the proceeds
+- New aggregate performance chart on the dashboard: one chart for all your portfolios, in your base currency, showing the percentage time-weighted return of each month or year (with a cumulative TWR line) next to a capital chart of the money invested versus the current value, switchable between Monthly and Annual views. The return is measured day by day, so deposits, sales, dividends and fees no longer distort it and fully closing or reopening a position never produces absurd spikes; positions without a market price are carried at cost and never show up as a fake loss
+
+### Fixes
+- Importing a portfolio exported by an older version of the app no longer fails: missing information is filled with sensible defaults
+- Portfolios with only closed positions no longer show a misleading -100% gain/loss: closed positions are kept out of the active figures and the amounts no longer carry rounding residues
+
 ## v0.4.0 — 13 Sep 2026
 
 ### Features

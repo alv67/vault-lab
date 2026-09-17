@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (13 Set 2026)
+# VaultLab — Stato Progetto (17 Set 2026)
 
 ## Infrastruttura
 
@@ -24,7 +24,13 @@ dell'esposizione per-paese con fonte Morningstar/JustETF, cache e provenienza.
 rebuild delle pagine e dei componenti di dominio (EPIC E: asset/portafogli/modali/login/
 impostazioni a tab), dashboard e dettaglio portafoglio rinnovati, Health più chiaro
 (periodo Today/24h/100, paginazione, fix N/A) e CI GitHub Actions.
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0` su `main`.
+**v0.5.0** — quinta release su `main` (17 Set 2026): **EPIC I completa** (dashboard & portfolio
+v2) — valuta base utente con aggregazione FX, riepilogo attivo/chiuso, grafico performance
+time-weighted (barre mensili/annuali + linea cumulata) e grafico del capitale, allocazioni per
+classe/settore/paese/macro-regione, tabella asset investiti consolidata, KPI e allocazioni del
+dettaglio portafoglio allineati alla dashboard, performance a barre e transazioni paginate;
+inclusi i fix import di export vecchi (#99) e P/L fittizio -100% sulle posizioni chiuse (#100).
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 
@@ -473,6 +479,124 @@ Branch unico `feat/D-design-system`, 5 commit:
 - E.1 (#18) — Dashboard ridisegnata: KPI `ui/StatCard` per valuta, `AllocationDonut` per portafoglio, portafogli come card cliccabili, `PositionTable` condiviso nell'accordion, `EmptyState`/`Spinner`. Backend: `finished_at` in `RefreshReport`, mostrato nell'header come "Prices updated".
 - E.2 (#19) — Dettaglio portafoglio: `AssetCombobox`, `TransactionTable`, `AddTransactionModal` (form + validazione inline + totale live + delete con ConfirmDialog). KPI con `StatCard`, posizioni con `PositionTable` condiviso (con colonna Price), azioni in header sticky; refetch post-mutation (E.9) preservato.
 - E.4 (#21) — Settings divisa in tab via subroute (`/settings` Profile, `/settings/password`, `/settings/currencies`, `/settings/health`) con `SettingsTabs`; cambio password con validazione inline e mappatura errori `401`/`400` sui campi. Sweep a11y/numerico: `ui/Th` con `scope="col"`, tabelle assets/health/valute con primitive `ui/Table`, `aria-label` sui bottoni icona, `tabular-nums`/allineamento a destra sui numeri.
+
+### I.1 — Valuta base utente + aggregazione FX (branch `feat/I.1-base-currency`)
+Enabler di EPIC I (sblocca I.2–I.5). La dashboard e le sue viste aggregate esprimono i
+totali nella **valuta base dell'utente** (default `EUR`).
+- **Backend**:
+  - Migrazione `000018_users_base_currency`: colonna `users.base_currency` (default `EUR`).
+  - `model.User`/`repository/user.go`: `base_currency` in SELECT/RETURNING/Update.
+  - `UpdateProfile` accetta `base_currency` (opzionale, validata contro la whitelist
+    `supported_currencies` enabled via `EnabledByCodes`; vuota = mantiene il valore).
+  - `PATCH /users/me` accetta il campo `base_currency` (400 se non è una valuta abilitata).
+  - `GET /dashboard` risponde ora `base_currency` + `summary` aggregato in valuta base
+    (`invested`/`value`/`gain_loss`/`gain_loss_pct`/`realized`/`fx_missing_count`/
+    `fx_missing_value`); le serie `history` sono convertite per-data in valuta base
+    (`series.LoadDateRates` + `dateRates.Factor`, punti senza FX scartati). `by_currency`,
+    `portfolios`, `assets` restano invariati (serviranno a I.2/I.5).
+  - `GET /dashboard/allocation` ora esprime geo/settori nella valuta base (prima USD).
+  - `series.LoadRates` esteso (variadic `extra ...string`) per includere le valute dei
+    portafogli oltre a quelle degli asset + base + USD.
+  - FX mancante gestito esplicitamente (escluso dai totali + conteggiato), coerente con
+    `GetPortfolioSummary` (EPIC A).
+- **Frontend**:
+  - `api.ts`: `User.base_currency`, `Dashboard.base_currency`/`summary` (`DashboardSummary`),
+    `authApi.updateProfile` con `base_currency?`.
+  - `auth.svelte.ts`: `updateProfile(name, email, baseCurrency?)`.
+  - Settings → Profile: `CurrencySelect` "Base currency" (popolata da
+    `settingsApi.listCurrencies()`), salvata con `PATCH /users/me`.
+  - Dashboard: KPI primari in valuta base (`summary`), ripartizione per-valuta mostrata
+    solo quando ci sono più valute; donut "Allocation by portfolio" in valuta base.
+- **Verifica**: Go build/vet/test green (7 nuovi test service: `UpdateProfile` base currency,
+  `GetDashboard` summary multi-valuta + FX mancante + conversione history, `GetDashboardAllocation`
+  in valuta base); `svelte-check`/eslint clean.
+
+### I.2 — Dashboard attivo vs chiuso (branch `feat/I.1-base-currency`)
+Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investimento
+**attive** da quelle **chiuse**, in valuta base a livello vault.
+- **Backend**:
+  - `position.State`: aggiunti i cumulati dei lotti chiusi `ClosedCost`/`ClosedCostCCY`
+    (costo AVCO dei venduto), `Proceeds`/`ProceedsCCY` (incasso netto) e
+    `Dividends`/`DividendsCCY`; `TxSell` e `TxDividend` li accumulano senza toccare la
+    logica `Realized` esistente.
+  - `model.Holding`: propagati i sei campi da `HoldingsDetailed`.
+  - `model`: nuovi `ActiveBreakdown` (`invested`/`value`/`gain_loss`/`gain_loss_pct`) e
+    `ClosedBreakdown` (`invested`/`proceeds`/`realized` = proceeds − invested, `dividends`
+    separate dal capitale). `DashboardSummary` e `PortfolioPerformanceSummary` sostituiscono
+    i campi flat I.1 con gli oggetti annidati `active`/`closed` (breaking per la UI, frontend
+    da adeguare); `by_currency` e `assets` invariati.
+  - `GetDashboard`: granularità per porzione di lotto (quantità vendute → chiuso, quantità
+    residue → attivo); conversione per-importo con gli stessi criteri FX-missing di I.1
+    (importo non convertibile escluso dai totali e contato in `fx_missing_count`/
+    `fx_missing_value`, solo importi nonnulli).
+- **Verifica**: Go build/vet/test green; nuovo `position_test.go` (venduto totale/parziale,
+  dividendi separati, `Walk`) + test service `TestGetDashboard_ActiveClosedBreakdown` e
+  `TestGetDashboard_SummaryInBaseCurrency` aggiornati alla forma annidata.
+- **Documentazione**: `docs/BACKEND-GUIDE.en/it.md` (cap. 7/8, paragrafo valuta base) e
+  `docs/RELEASE-NOTES.en/it.md`.
+
+### I.3 — Dashboard: grafico performance + capitale (branch `feat/I.1-base-currency`)
+- **Backend**: nuovo `GET /dashboard/performance?granularity=month|year` → bucket
+  `{period, return, twr, invested, value}`. Rendimento **time-weighted (TWR)** puro: `V(d)` =
+  valore di mercato (asset prezzati + bond non quotati portati al costo), flussi esterni
+  `buy/sell/dividend/fee`, rendimento giornaliero composto; `invested` = capitale netto,
+  `value` = market value. Rimosso il vecchio `history` dal dashboard.
+- **Frontend**: card **Performance** (barre `return` % + linea TWR cumulata) e card **Capital
+  invested** (`invested` vs `value`), toggle Mensile/Annuale (`PerformanceChart`,
+  `CapitalChart`); rimosso `PortfolioLineChart`. Rimosse anche le righe per-valuta
+  (`by_currency`) dalla dashboard.
+- **Verifica**: `service_test.go` (TWR, liquidazione/riapertura, bond al costo, dividendi,
+  multi-valuta) + `svelte-check`/lint.
+
+### I.4 — Allocazione dashboard estesa (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /dashboard/allocation` esteso con `classes` (per asset class) e `countries`
+  (per paese, equity-only, non-zero, descending), in valuta base.
+- **Frontend**: card "Allocazione complessiva" → classi (donut, `ClassDonut`) + regioni/settori/
+  paesi a **barre orizzontali** (`ExposureBarChart`); paesi con nome completo e ~10 righe
+  visibili + scroll.
+
+### I.5 — Dashboard: tabella asset investiti consolidata (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /dashboard` espone `invested_assets` (per asset, aggregato su tutti i
+  portafogli, valuta base, sole posizioni aperte, ordinato per valore; asset senza prezzo al
+  costo con `has_price=false`).
+- **Frontend**: card **Invested assets** che sostituisce gli accordion per-portafoglio.
+
+### I.6 — Dettaglio portafoglio: KPI allineati alla dashboard (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/summary` espone `active`/`closed` (stessa forma della
+  dashboard, in valuta portafoglio).
+- **Frontend**: card condivisa **`InvestmentsTable`** (estratto) usata da dashboard e dettaglio;
+  la vecchia riga KPI Value/Realized/Open G/L/Assets è sostituita dalla card Active/Closed +
+  riga asset.
+
+### I.7 — Dettaglio portafoglio: allocazioni come la dashboard (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/allocation/geography` esteso con `countries` (equity-only,
+  descending, valuta portafoglio).
+- **Frontend**: sezione allocazione = classi (donut) + regioni/settori/paesi a barre
+  (`ClassDonut`/`ExposureBarChart`); rimossi i componenti `GeographyChart`/`SectorChart`.
+
+### I.8 — Dettaglio portafoglio: performance a barre (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/performance/buckets?granularity=month|year` (TWR, valuta
+  portafoglio, ownership + cache).
+- **Frontend**: card **Performance** (barre % + linea TWR, toggle Mensile/Annuale); il
+  `PositionChart` "Performance history" resta come vista secondaria.
+
+### I.9 — Transazioni paginate (branch `feat/I.1-base-currency`)
+- **Backend**: `GET /portfolios/{id}/transactions?limit=&offset=` → `{transactions, total,
+  limit, offset}` (default 20, max 100, ordine `date DESC, created_at DESC, id DESC`,
+  ownership check); script e2e aggiornati.
+- **Frontend**: paginatore sotto la tabella (range + prev/next), refetch della pagina corrente
+  dopo le mutazioni.
+
+### Fix nella stessa PR
+- **#99 — import export vecchi**: l'import non fallisce più se il documento non ha `price_source`
+  (default `yahoo`), export esteso con `price_source`/`asset_class`, versione documento gestita.
+- **#100 — posizioni chiuse e residui**: la riga Active non conta più il costo residuo (AVCO) di
+  posizioni chiuse; arrotondamento degli importi. Niente più P/L fittizio -100%.
+
+### EPIC I — stato
+Tutte le sub-issue **I.1–I.9 completate** e rilasciate in **v0.5.0** (PR #98 mergiata su
+`develop`/`main`). Nota: la gestione del **capitale disponibile / versamenti-prelievi** (conto
+titoli) è tracciata a parte nell'issue **#101** e sarà una PR separata.
 
 ## Fase 3 — Pianificata
 

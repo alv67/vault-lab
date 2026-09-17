@@ -12,6 +12,8 @@ import (
 type TransactionRepository interface {
 	Create(ctx context.Context, tx *model.Transaction) (*model.Transaction, error)
 	FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error)
+	FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, limit, offset int) ([]model.TransactionWithAsset, error)
+	CountByPortfolio(ctx context.Context, portfolioID uuid.UUID) (int64, error)
 	FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error)
 	MinDateByAsset(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]time.Time, error)
 	MinDateByCurrency(ctx context.Context) (map[string]time.Time, error)
@@ -158,6 +160,50 @@ func (r *transactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.
 		txs = append(txs, tx)
 	}
 	return txs, nil
+}
+
+// FindByPortfolioPage returns one page of a portfolio's transactions with the
+// same projection as FindByPortfolio. The ordering is fully deterministic
+// (date, then creation time, then id — all DESC) so pages never overlap or
+// skip rows when two transactions share a date.
+func (r *transactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, limit, offset int) ([]model.TransactionWithAsset, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT t.id, t.portfolio_id, t.asset_id, a.ticker, a.name, t.type,
+		        t.quantity, t.price, t.fees, t.date, t.notes, t.created_at
+		 FROM transactions t
+		 JOIN assets a ON a.id = t.asset_id
+		 WHERE t.portfolio_id = $1
+		 ORDER BY t.date DESC, t.created_at DESC, t.id DESC
+		 LIMIT $2 OFFSET $3`,
+		portfolioID, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var txs []model.TransactionWithAsset
+	for rows.Next() {
+		var tx model.TransactionWithAsset
+		if err := rows.Scan(
+			&tx.ID, &tx.PortfolioID, &tx.AssetID,
+			&tx.AssetTicker, &tx.AssetName, &tx.Type,
+			&tx.Quantity, &tx.Price, &tx.Fees, &tx.Date, &tx.Notes, &tx.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+	return txs, rows.Err()
+}
+
+func (r *transactionRepo) CountByPortfolio(ctx context.Context, portfolioID uuid.UUID) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM transactions WHERE portfolio_id = $1`,
+		portfolioID,
+	).Scan(&count)
+	return count, err
 }
 
 func (r *transactionRepo) FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error) {

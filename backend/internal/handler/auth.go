@@ -145,22 +145,23 @@ func (h *Handler) UpdateCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		Name         string `json:"name"`
+		Email        string `json:"email"`
+		BaseCurrency string `json:"base_currency"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	user, err := h.svc.UpdateProfile(r.Context(), claims.UserID, req.Name, req.Email)
+	user, err := h.svc.UpdateProfile(r.Context(), claims.UserID, req.Name, req.Email, req.BaseCurrency)
 	if err != nil {
-		switch err {
-		case service.ErrInvalidInput:
-			respondError(w, http.StatusBadRequest, "invalid name or email")
-		case service.ErrEmailExists:
+		switch {
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "invalid name, email or base currency")
+		case errors.Is(err, service.ErrEmailExists):
 			respondError(w, http.StatusConflict, "email already registered")
-		case service.ErrNotFound:
+		case errors.Is(err, service.ErrNotFound):
 			respondError(w, http.StatusNotFound, "user not found")
 		default:
 			log.Error().Err(err).Msg("update profile failed")

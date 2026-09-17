@@ -19,6 +19,13 @@ type State struct {
 	CostCCY     decimal.Decimal
 	Realized    decimal.Decimal
 	RealizedCCY decimal.Decimal
+
+	ClosedCost    decimal.Decimal // AVCO cost of sold lots, portfolio currency
+	ClosedCostCCY decimal.Decimal // AVCO cost of sold lots, asset currency
+	Proceeds      decimal.Decimal // net sale proceeds, portfolio currency
+	ProceedsCCY   decimal.Decimal // net sale proceeds, asset currency
+	Dividends     decimal.Decimal // dividends, portfolio currency
+	DividendsCCY  decimal.Decimal // dividends, asset currency
 }
 
 func Apply(s *State, tx model.TransactionWithAsset) {
@@ -41,6 +48,10 @@ func Apply(s *State, tx model.TransactionWithAsset) {
 		proceedsCCY := tx.Quantity.Mul(tx.Price)
 		s.Realized = s.Realized.Add(proceedsPF.Sub(costSold))
 		s.RealizedCCY = s.RealizedCCY.Add(proceedsCCY.Sub(costSoldCCY))
+		s.ClosedCost = s.ClosedCost.Add(costSold)
+		s.ClosedCostCCY = s.ClosedCostCCY.Add(costSoldCCY)
+		s.Proceeds = s.Proceeds.Add(proceedsPF)
+		s.ProceedsCCY = s.ProceedsCCY.Add(proceedsCCY)
 		s.Qty = s.Qty.Sub(tx.Quantity)
 		s.Cost = s.Cost.Sub(costSold)
 		s.CostCCY = s.CostCCY.Sub(costSoldCCY)
@@ -76,6 +87,8 @@ func Apply(s *State, tx model.TransactionWithAsset) {
 		}
 		s.Realized = s.Realized.Add(divPF)
 		s.RealizedCCY = s.RealizedCCY.Add(divCCY)
+		s.Dividends = s.Dividends.Add(divPF)
+		s.DividendsCCY = s.DividendsCCY.Add(divCCY)
 	}
 }
 

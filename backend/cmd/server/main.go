@@ -198,6 +198,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 
 			r.Get("/portfolios/{id}/summary", h.GetPortfolioSummary)
 			r.Get("/portfolios/{id}/performance", h.GetPortfolioPerformance)
+			r.Get("/portfolios/{id}/performance/buckets", h.GetPortfolioPerformanceBuckets)
 			r.Get("/portfolios/{id}/allocation", h.GetPortfolioAllocation)
 			r.Get("/portfolios/{id}/allocation/class", h.GetPortfolioClassAllocation)
 			r.Get("/portfolios/{id}/allocation/geography", h.GetPortfolioGeographyAllocation)
@@ -207,6 +208,7 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 
 			r.Get("/dashboard", h.GetDashboard)
 			r.Get("/dashboard/allocation", h.GetDashboardAllocation)
+			r.Get("/dashboard/performance", h.GetDashboardPerformance)
 
 			r.Get("/settings/currencies", h.ListCurrencies)
 			r.Post("/settings/currencies", h.CreateCurrency)
