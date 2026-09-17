@@ -24,7 +24,13 @@ dell'esposizione per-paese con fonte Morningstar/JustETF, cache e provenienza.
 rebuild delle pagine e dei componenti di dominio (EPIC E: asset/portafogli/modali/login/
 impostazioni a tab), dashboard e dettaglio portafoglio rinnovati, Health più chiaro
 (periodo Today/24h/100, paginazione, fix N/A) e CI GitHub Actions.
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0` su `main`.
+**v0.5.0** — quinta release su `main` (17 Set 2026): **EPIC I completa** (dashboard & portfolio
+v2) — valuta base utente con aggregazione FX, riepilogo attivo/chiuso, grafico performance
+time-weighted (barre mensili/annuali + linea cumulata) e grafico del capitale, allocazioni per
+classe/settore/paese/macro-regione, tabella asset investiti consolidata, KPI e allocazioni del
+dettaglio portafoglio allineati alla dashboard, performance a barre e transazioni paginate;
+inclusi i fix import di export vecchi (#99) e P/L fittizio -100% sulle posizioni chiuse (#100).
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 
@@ -588,8 +594,8 @@ Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investim
   posizioni chiuse; arrotondamento degli importi. Niente più P/L fittizio -100%.
 
 ### EPIC I — stato
-Tutte le sub-issue **I.1–I.9 completate** nella PR #98 (branch `feat/I.1-base-currency`, non
-ancora merged). Nota: la gestione del **capitale disponibile / versamenti-prelievi** (conto
+Tutte le sub-issue **I.1–I.9 completate** e rilasciate in **v0.5.0** (PR #98 mergiata su
+`develop`/`main`). Nota: la gestione del **capitale disponibile / versamenti-prelievi** (conto
 titoli) è tracciata a parte nell'issue **#101** e sarà una PR separata.
 
 ## Fase 3 — Pianificata

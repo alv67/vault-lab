@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v0.5.0 — 17 Sep 2026
 
 ### Features
 - The portfolio transactions list is now paginated: it comes back page by page (20 at a time by default, up to 100) in a stable newest-first order, together with the total count, so long histories stay fast and predictable

@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v0.5.0 — 17 Set 2026
 
 ### Nuove funzionalità
 - L'elenco delle transazioni del portafoglio ora è paginato: viene restituito pagina per pagina (di default 20 alla volta, fino a 100) in un ordine stabile dalla più recente, insieme al conteggio totale, così le storici lunghi restano rapidi e prevedibili
