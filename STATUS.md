@@ -348,6 +348,23 @@ e Morningstar permette di cercare sul mercato esatto.
   al secondo crash risponde 502 con messaggio chiaro ("Chrome headless could not
   start in the sandbox; try again in a few seconds"). pytest aggiornato a 62
   test, tutti verdi.
+- **Fallback multi-listing Morningstar (fix #76)**: il resolver usava solo il
+  **primo** securityID restituito da `/api/v2/search`; se quel listing non ha
+  dati SAL (risposta `206`/`Can't get SecurityInfo`, es. la quotazione XAMS di
+  `IE00B5L8K969`/CSEMAS) il JSON non era decodificabile e il caso veniva
+  scambiato per challenge WAF → re-bootstrap del browser (con processi Chromium
+  orfani lasciati indietro) e 502 fuorviante "WAF challenge could not be
+  passed", nonostante gli altri listing dello stesso ISIN avessero dati validi.
+  Ora `_search_security_ids` restituisce **tutti** i securityID dei fondi che
+  matchano l'ISIN (in ordine di ricerca, deduplicati) e `_fetch_exposure_once`
+  li prova in sequenza fermandosi al primo con paesi validi; il nuovo errore
+  non ritentabile `MorningstarSecurityUnavailable` fa passare al candidato
+  successivo **senza** re-bootstrap, e se nessun listing ha dati l'errore è un
+  chiaro `MorningstarDataError` ("No SAL data found for ISIN … on any of N
+  Morningstar listings"), mai `MorningstarWafError`. Solo una pagina HTML di
+  challenge (JSON non decodificabile senza marcatore missing-data) resta
+  soggetta al retry con sessione fresca. pytest aggiornato a 70 test, tutti
+  verdi.
 - **Cache esposizione provider (post-B.14)**: `FetchETFExposure` e
   `FetchMorningstarExposure` cachano il payload grezzo del provider in Redis
   (chiave `vl:lookup:exposure:<source>:<ISIN>`, TTL `VAULT_EXPOSURE_CACHE_TTL`

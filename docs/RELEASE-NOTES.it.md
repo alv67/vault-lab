@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+### Correzioni
+- Il recupero dell'esposizione di un asset da Morningstar ora funziona anche per i fondi quotati su più mercati: se la quotazione di un mercato non ha dati, viene usata automaticamente la quotazione successiva dello stesso ISIN
+
 ## v0.5.0 — 17 Set 2026
 
 ### Nuove funzionalità

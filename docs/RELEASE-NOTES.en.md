@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+### Fixes
+- Fetching an asset's exposure from Morningstar now also works for funds quoted on multiple markets: if one market's quotation carries no data, the next quotation of the same ISIN is used automatically
+
 ## v0.5.0 — 17 Sep 2026
 
 ### Features
