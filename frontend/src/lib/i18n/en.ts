@@ -97,6 +97,66 @@ export const en = {
     themeHint: 'Light, dark, or follow the device setting (System).',
     languageHint: 'Applied immediately and remembered on this device.',
   },
+  /**
+   * Vault Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The
+   * `Investments`/`Performance` card copy that predates the dictionary stays
+   * hardcoded until the dashboard sweep (progressive migration, D1).
+   */
+  hero: {
+    netValue: 'Net value',
+    allTime: 'all-time',
+    /** Headline of the value-vs-invested chart next to the hero number. */
+    valueVsInvested: 'Value vs invested',
+    /** Progressive disclosure wrapping the Active/Closed table. */
+    breakdown: 'Breakdown',
+    realized: 'Realized',
+    dividends: 'Dividends',
+    invested: 'Invested',
+  },
+  /** Period chips on the hero chart (decision D10: bucket-driven ranges). */
+  period: {
+    oneYear: '1Y',
+    threeYears: '3Y',
+    all: 'ALL',
+    group: 'Chart period',
+  },
+  /**
+   * Data-quality strip chips (spec §6.1/§8.5). Each chip is a link to the
+   * fixing surface, so labels name the problem, not the destination.
+   */
+  quality: {
+    fxMissing: '{amount} excluded — missing FX ({count} holdings)',
+    rateLimited: 'Some prices not updated (Yahoo rate limit)',
+    refreshIssues: '{count} price updates failed',
+    refreshFailed: 'Price refresh failed — values may be stale',
+  },
+  /** Freshness stamp near the hero (spec §8.5), from the session refresh. */
+  freshness: {
+    asOf: 'Prices as of {time}',
+    refreshing: 'Refreshing prices…',
+    /** Plain-text tooltip on the completed stamp. */
+    hint: 'Consolidated values use these prices',
+    partialHint: 'Prices as of {time} — some updates failed or were rate-limited',
+  },
+  /** First-run checklist replacing the empty-vault EmptyState (D8). */
+  checklist: {
+    title: 'Set up your vault',
+    intro: 'Three steps to start tracking your investments.',
+    stepPortfolio: 'Create a portfolio',
+    stepPortfolioHint: 'Group investments by goal or account.',
+    stepAsset: 'Add an asset',
+    stepAssetHint: 'Search Yahoo and register what you own.',
+    stepTransaction: 'Record a transaction',
+    stepTransactionHint: 'Open a portfolio and log a buy.',
+    done: 'Done',
+    current: 'Current step',
+    pending: 'Not started',
+  },
+  /** Vault ⇄ portfolio scope switcher in the Overview header (D3). */
+  scope: {
+    label: 'Scope',
+    all: 'All portfolios (Vault)',
+  },
 }
 
 /** Canonical dictionary shape derived from the English source of truth. */

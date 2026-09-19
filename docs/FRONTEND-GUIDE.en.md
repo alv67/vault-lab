@@ -293,7 +293,7 @@ sale proceeds + dividends of fully-closed positions, realized = proceeds −
 invested, realized %) objects — the flat fields are gone. Since EPIC I.3
 `Dashboard` no longer carries the per-portfolio `history` series: the new
 `DashboardPerformance` / `PerformanceBucket` types feed the dashboard
-"Performance" and "Capital invested" charts through
+"Performance" chart and the hero value-vs-invested chart (EPIC K.3a) through
 `dashboardPerformance(granularity)`
 (`GET /dashboard/performance?granularity=month|year`, buckets `YYYY-MM` or
 `YYYY` in the user's base currency). Since EPIC I.8 (#87) the **same**
@@ -347,11 +347,14 @@ the backend class keys themselves), and the asset detail "Classe" selector.
 There is no dedicated metrics module: each page computes its derived values
 inline with Svelte 5 **`$derived`** runes. The main ones:
 
-- **Dashboard** (`routes/+page.svelte`): the Performance + Capital invested
-  cards state (EPIC I.3) is a `granularity` `$state` ('month' by default) plus
-  a single `perf` `$state` (one `dashboardPerformance(granularity)` fetch feeds
-  **both** charts) refetched by a `$effect` on every toggle change (a monotonic
-  request id discards stale responses); `hasMultipleCurrencies` drives the
+- **Dashboard** (`routes/+page.svelte`): the Performance card + hero capital
+  chart state (EPIC I.3, hero since K.3a) is a `granularity` `$state` ('month'
+  by default) plus a single `perf` `$state` (one `dashboardPerformance(granularity)`
+  fetch feeds **both** charts) refetched by a `$effect` on every toggle change
+  (a monotonic request id discards stale responses); the hero chart is then
+  windowed client-side by a bucket-driven `heroPeriod` `$state` (D10: 1Y =
+  last 12 / 3Y = last 36 / ALL monthly buckets, persisted in
+  `localStorage['vaultlab-hero-period']`); `hasMultipleCurrencies` drives the
   "Allocation by portfolio" donut (raw values are hidden and a mixed-currency
   note is shown when portfolios use different currencies — EPIC I.1);
   `glClass` picks the green/red text class for a gain/loss.
@@ -441,11 +444,11 @@ in white).
 | `PriceChart.svelte` | single **line** (close prices), time x-axis, `inside` + `slider` dataZoom | the **asset detail** page (B.10): historical price with the 1M/3M/1Y/YTD/MAX selector. Always loads the full history: the selectors apply an **in-place zoom** (a `start`/`end` percentage pair, `end`=100) without re-fetching; a manual zoom/pan **deselects** the active button and preserves the view. **Splits** are drawn as a dashed purple `markLine` labelled with the ratio (`Split 4:1`), like in `PositionChart`. Empty state → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **three lines**: cost basis (gray, stepped), market value (green, smooth), realized (amber) + dashed split markers | the **portfolio detail** "Performance history" card, kept as the **secondary view** below the EPIC I.8 percentage "Performance" card (#87): a dropdown switches between the whole portfolio and a single asset. Split events are drawn as a vertical dashed `markLine` on the market-value line labelled with the ratio (`7:1`, `4:1`) |
 | `PerformanceChart.svelte` (`lib/components/domain/`) | **percentage bar + line combo** on a **category** x-axis (EPIC I.3): one green/red `return` bar per bucket (per-bucket true TWR return %, colored by sign via semantic `positive`/`negative` per-bar `itemStyle`), a `twr` cumulative time-weighted-return line in the semantic amber, `%`-formatted y-axis and `+3.42%`-style tooltip (`formatSignedPercent` — no currency), period labels formatted per granularity (`Jun 2025` / `2025`), `inside` + `slider` dataZoom, legend `Gain/Loss` / `Cumulative`, "No data" empty state | the **dashboard** "Performance" card, fed by `dashboardPerformance(granularity)` (`GET /dashboard/performance`, monthly/annual toggle via the card's `SegmentedControl`), and — since EPIC I.8 (#87) — the **portfolio detail** "Performance" card, fed by `performanceBuckets(id, granularity)` (`GET /portfolios/{id}/performance/buckets`, its own monthly/annual toggle, in the portfolio currency). Bars show the return generated inside each month/year, the line the cumulative TWR — both pure percentages, so the chart no longer needs the base `currency` prop |
-| `CapitalChart.svelte` (`lib/components/domain/`) | **two-line** chart on the **same** category buckets: `invested` (net invested capital, stepped `end` line in the semantic grey `costBasis`) and `value` (market value, smooth line in the semantic green `marketValue`), currency tooltip via `formatCurrency(value, currency)`, `inside` + `slider` dataZoom, legend `Invested` / `Value`, theme-aware re-init (`{#key}`), "No data" empty state | the **dashboard** "Capital invested" card, fed by the **same** `dashboardPerformance(granularity)` fetch and buckets as `PerformanceChart` (amounts in the user's **base currency**, `currency` from the payload) and following the same monthly/annual toggle |
+| `CapitalChart.svelte` (`lib/components/domain/`) | **two-line** chart on the **same** category buckets: `invested` (net invested capital, stepped `end` line in the semantic grey `costBasis`) and `value` (market value, smooth line in the semantic green `marketValue`), currency tooltip via `formatCurrency(value, currency)`, `inside` + `slider` dataZoom (or inside-only zoom and a 240px canvas with the `compact` prop), legend `Invested` / `Value`, theme-aware re-init (`{#key}`), "No data" empty state | the **dashboard hero** value-vs-invested chart since EPIC K.3a (the standalone "Capital invested" card was folded into the hero), fed by the **same** `dashboardPerformance(granularity)` fetch and buckets as `PerformanceChart` (amounts in the user's **base currency**, `currency` from the payload) and following the same monthly/annual toggle; the hero passes `compact` and windows the buckets client-side with the bucket-driven period chips (decision D10) |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out; `complete={false}` renders the donut **open** when the rows sum to < 100 (a transparent residual slice keeps the angles truthful — no gray "Other" slice) | asset detail page (regions donut with `complete={false}` and the sectors donut) and the two exposure modals (`mute` mode: regions in `ExposureGeoModal`, sectors in `ExposureSectorModal`). Countries are shown as bar lists (page card and geo modal), never as a pie. Accepts `ExposureRow[]` (`{name, weight}`). No longer used by the portfolio detail (its class donut/table and the `GeographyChart`/`SectorChart` cards were replaced by `ClassDonut` + `ExposureBarChart` in EPIC I.7, #86) |
 | `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the asset classes (EPIC I.4, same radius/palette/label style as `ExposurePie`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `ASSET_CLASS_LABELS` for friendly slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole vault, base currency), and — since EPIC I.7 (#86) — the **portfolio detail** class panel, fed by `classAllocation(id).classes` (portfolio currency) |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | reusable **horizontal bar chart** (EPIC I.4) over generic `{name, value, weight}[]` rows (`ExposureBarRow`): bars sorted **descending by value** (defensively re-sorted and non-positive rows dropped in the component; the category axis is `inverse`d so the biggest bar sits on top), weight % printed at the bar end, tooltip with amount (`formatCurrency(value, currency)`) and weight (`formatPercent`), hidden value axis (the bars only need to be comparable), canvas height grows with the row count, `colorFor?: (name) => string` per-row colour override (else the resolved `resolvePalette` palette by index), `labelFor?: (name) => string` axis-label mapping (the axis shows the friendly name — e.g. ISO code → full country name via `countryDisplayName` — and the tooltip appends the raw name in parentheses when it differs, "United States (US)"; the axis label column also widens to 140px for mapped labels), `maxVisibleRows?: number` caps the visible area to that many rows with an `overflow-y-auto` viewport while the canvas keeps its full height (all rows scrollable), optional `label` heading and muted `note` caption, "No data" empty state, theme-aware re-init (`{#key}`) | the region, sector and country panels of the **dashboard** "Allocazione complessiva" card, fed by `dashboardAllocation().regions` / `.sectors` / `.countries`, and — since EPIC I.7 (#86) — of the **portfolio detail** "Allocazione" section, fed by `geographyAllocation(id).regions` / `sectorAllocation(id).sectors` / `geographyAllocation(id).countries` (in the portfolio currency); callers map `RegionAllocation`/`SectorAllocation`/`CountryAllocation` onto `ExposureBarRow`; countries carry ISO alpha-2 codes rendered with `labelFor={countryDisplayName}` and `maxVisibleRows={10}` on both pages — the ~10 biggest bars are visible, the rest scroll vertically; the region and sector panels pass neither, so their labels stay verbatim and all rows stay visible — the ~10 macro-regions never need the cap |
-| `InvestmentsTable.svelte` (`lib/components/domain/`) | shared **active/closed** table (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, optional `title`): columns Invested / Value-Proceeds / Gain-Loss / % / Dividends, rows Active and Closed, signed P/L colored with `pnlColorClass`, amounts via `formatCurrency` | the **dashboard** "Investments" card (base currency, EPIC I.2) and the **portfolio detail** KPI card (portfolio currency, EPIC I.6 #85) |
+| `InvestmentsTable.svelte` (`lib/components/domain/`) | shared **active/closed** table (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, optional `title`): columns Invested / Value-Proceeds / Gain-Loss / % / Dividends, rows Active and Closed, signed P/L colored with `pnlColorClass`, amounts via `formatCurrency` | the **dashboard** hero "Breakdown" disclosure (base currency, EPIC I.2, moved into a `<details>` under the hero number in EPIC K.3a) and the **portfolio detail** KPI card (portfolio currency, EPIC I.6 #85) |
 | `PositionTable.svelte` (`lib/components/domain/`) | generic positions table over the `PositionRow` type (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` toggle the optional columns, `showPrice` adds a Price column (before Qty, formatted with `priceCurrency`, shown even for closed rows), `linkAssets` links the ticker to the asset page; closed rows dash out every cell except realized | the **portfolio detail** Positions table (E.2) — the dashboard positions accordion (E.1) was replaced by the consolidated "Invested assets" table in EPIC I.5 (#82) and no longer uses this component |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | theme-aware donut of `{name, value}[]` shares (weights recomputed on the positive total); `showValue={false}` hides the value in the tooltip (mixed-currency donut) | the **dashboard** "Allocation by portfolio" (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
@@ -490,8 +493,10 @@ Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
   into a muted "Universo azionario: X% del
   portafoglio" caption (`note` prop, shown only when something was excluded).
 - **Dashboard** — `PerformanceChart` (percentage return: bars + cumulative
-  TWR line) and `CapitalChart` (invested vs value) both fed by a **single**
-  `dashboardPerformance(granularity)` fetch (EPIC I.3, monthly/annual toggle),
+  TWR line) on the zone-B card and `CapitalChart` (invested vs value, compact
+  hero variant since EPIC K.3a) in the hero, both fed by a **single**
+  `dashboardPerformance(granularity)` fetch (EPIC I.3, monthly/annual toggle;
+  the hero additionally windows the buckets client-side, decision D10),
   plus the I.4 "Allocazione complessiva" widgets (class donut, region/sector/
   country bars).
 - **Portfolio detail** — the same shared `PerformanceChart` in the
@@ -625,9 +630,10 @@ JS state and CSS never disagree.
   `/admin/health` unchanged) so it can later be relocated into an
   Administration menu without a sweep.
 
-`ScopeSwitcher` and `FreshnessStamp` (originally listed under K.2 in the spec)
-ship together with the Overview hero in K.3. The whole shell replaced the old
-fixed `Layout.svelte`.
+`ScopeSwitcher` and `FreshnessStamp` (originally listed under K.2 in the
+spec) shipped with the Overview hero in **K.3a**, as `domain/` components —
+they consume the dashboard payload, not shell state. The whole shell replaced
+the old fixed `Layout.svelte`.
 
 ### Icons, toasts and language
 
@@ -732,8 +738,12 @@ drives toast warnings:
 - otherwise `issues.length > 0` → "N aggiornamenti prezzi non riusciti
   (Yahoo)".
 
-The dashboard additionally keeps `finished_at` from the report to show the
-"Prices updated: …" line in its header.
+The dashboard additionally keeps `finished_at`, `rate_limited` and
+`issues.length` from the report: `finished_at` drives the **`FreshnessStamp`**
+("Prices as of HH:MM") next to the hero value, and the rate-limit/issues
+outcome feeds an actionable chip in the **`DataQualityStrip`** (EPIC K.3a,
+spec §8.5). The "Prices updated: …" header line that used to carry the
+timestamp was folded into the freshness stamp.
 
 This keeps the UI working when it is opened as a deep link without passing
 through the dashboard.
@@ -747,40 +757,78 @@ through the dashboard.
 Called endpoints: `portfolioApi.dashboard()` and
 `portfolioApi.dashboardPerformance(granularity)`, then the session
 `pricesApi.refresh()` + a fresh dashboard and a performance refetch (one
-fetch feeding both the Performance and Capital invested cards).
+fetch feeding both the hero value-vs-invested chart and the Performance
+card). No extra requests: the scope switcher and the first-run checklist are
+both built from data already carried by the `dashboard()` payload.
 
-- **Investments card** (EPIC I.1, active/closed split since EPIC I.2): when
-  the response carries `summary`, the top block shows the consolidated totals
-  converted into the user's **base currency** (`base_currency` from the
-  payload) through the shared `InvestmentsTable` component (also reused by the
-  portfolio detail, EPIC I.6 #85): a single `Card` titled **Investments**
-  containing one table with
-  a shared header and one row per breakdown group: **Active** (Invested /
-  Value / Gain/Loss + % / Dividends, from `summary.active` — the dividends of
-  still-open positions) and **Closed** (Invested / Proceeds / Realized + %,
-  from `summary.closed` — the dividends of fully-closed positions are already
-  folded into `proceeds` by the backend, so the Dividends cell shows an
-  em-dash). Amounts go through `formatCurrency`, percentages through
-  `formatPercent`; every signed P/L cell (gain/loss, realized and the two %
-  columns) is colored with `pnlColorClass`. The table reuses the
-  `Table`/`Th`/`Td` primitives with right-aligned, `tabular-nums` numeric
-  columns.
-- **Performance** card (EPIC I.3, replaces the old "Portfolio History"): a
-  header row with the title and a `SegmentedControl` ("Monthly" / "Annual")
-  bound to the `granularity` state, and a `PerformanceChart` fed by
+**Rebuilt around the hero model in EPIC K.3a** (redesign spec §6.1 zones
+A–B, decisions D3/D8/D10); zones C–E (portfolio cards, overall allocation,
+invested assets) keep their EPIC I structure and data.
+
+- **Header**: the "Dashboard" title plus the **`ScopeSwitcher`**
+  (decision D3, `domain/ScopeSwitcher.svelte`): a native `<select>` built on
+  the `ui/Select` recipe listing "All portfolios (Vault)" (empty value, the
+  current page) followed by one option per portfolio from the payload.
+  Choosing a portfolio **navigates** — `goto()` to `/portfolios/{id}`, the
+  same analytics at portfolio scope — it is tier-2 scope navigation, not a
+  data filter on this page. Rendered only when the vault has portfolios.
+- **`DataQualityStrip`** (new, `domain/DataQualityStrip.svelte`; spec
+  §6.1/§8.5): a thin row of warning-toned **link chips** above the hero,
+  rendered only when something is actionable. Today it consumes
+  `summary.fx_missing_count` / `summary.fx_missing_value` —
+  "{amount} excluded — missing FX ({count} holdings)", linking to
+  `/settings/currencies` — plus the session price-refresh outcome
+  (rate-limited / N failed updates / refresh failed, each linking to
+  `/admin/health`). The missing-sector / missing-country / stale-count chips
+  sketched in the spec are **deliberately not rendered** — those counters
+  are not on the `Dashboard` type; a code comment in the component marks
+  them for a future backend field.
+- **Zone A — hero card** (replaces the old top Investments table): when the
+  response carries `summary`, the page opens with **one hero number** —
+  `summary.active.value` (net market value of the open positions) via
+  `formatCurrency` in the user's **base currency**, rendered with the K.1a
+  `text-hero` type token and `tabular-nums` — over it a muted "Net value"
+  label, under it the signed P/L line built from two K.1c `PnlValue`s
+  (`summary.active.gain_loss` as currency + `gain_loss_pct` as percent;
+  sign + ▲▼ + colour, D6) with an "all-time" caption. A muted secondary
+  chip row follows: **Realized** (`summary.closed.realized`, via
+  `PnlValue`), **Dividends** (`summary.active.dividends`) and **Invested**
+  (`summary.active.invested`). The old header "Prices updated: …" line is
+  replaced by the compact **`FreshnessStamp`** (new,
+  `domain/FreshnessStamp.svelte`) under the chips: "Prices as of HH:MM"
+  from the session refresh's `finished_at`, muted normally and `--info`-
+  tinted when the outcome was partial (rate-limit / failed fetches keep
+  their toasts and also surface in the quality strip); while the refresh is
+  in flight it shows a spinning glyph (`role="status"`). The once-per-
+  session refresh semantics are unchanged. Finally the shared
+  **`InvestmentsTable`** (unchanged component and data: Active/Closed rows
+  in the base currency) moved into a progressive-disclosure **Breakdown
+  `<details>`** under the chips, so the roll-up stays reachable without
+  dominating the fold.
+- **Hero chart** (right column on desktop, stacked under the number on
+  phones): the **value vs invested** series — `CapitalChart` fed by the
+  **same** `dashboardPerformance` buckets as the Performance card, using a
+  new opt-in `compact` variant (240px canvas, wheel/drag zoom without the
+  slider; the standalone card geometry is untouched when `compact` is
+  off). A `PeriodChips` row (K.1c) **windows the buckets client-side** per
+  decision **D10**: with monthly buckets it offers `1Y` (last 12 buckets) /
+  `3Y` (last 36) / `ALL`; with annual buckets only `ALL` applies and the
+  chip row hides itself. The options derive from the payload's actual
+  `granularity` (never from the toggle state), and the last-used period
+  persists in `localStorage['vaultlab-hero-period']` (§8.2). True daily
+  1M/3M ranges stay a K.3 fast-follow (daily vault-series backend ask).
+- **Zone B — Performance** card (EPIC I.3, kept): a header row with the
+  title and a `SegmentedControl` ("Monthly" / "Annual") bound to the
+  `granularity` state, and a `PerformanceChart` fed by
   `dashboardPerformance(granularity)`: one green/red `return` bar per bucket
   (period TWR %) plus the cumulative `twr` line, both formatted as
   percentages (`+3.42%`). The data fetch is isolated (a failed endpoint just
   shows the charts' "No data" empty state), is refetched on every toggle
-  change, and **also drives the Capital invested card below** — one
-  `dashboardPerformance` request feeds both. A `Spinner` shows while loading.
-- **Capital invested** card: a plain-title header (no control — it follows the
-  same `granularity` state as Performance) and a `CapitalChart` fed by the
-  **same** `perf.buckets`: `invested` (stepped grey) vs `value` (smooth green)
-  lines in the user's **base currency** (`formatCurrency` in tooltips). It
-  shows the same loading `Spinner`. The two cards (Performance + Capital
-  invested) fill the 2-column grid; the "Allocation by portfolio" donut now
-  drops to its own full-width row underneath.
+  change, and **also drives the hero chart** — one `dashboardPerformance`
+  request feeds both. A `Spinner` shows while loading. The card now pairs
+  with the "Allocation by portfolio" donut in the `lg` 2-column grid; the
+  former standalone **Capital invested card was removed** (its content
+  lives in the hero).
 - **Allocazione complessiva** card (EPIC I.4 layout): a `lg:grid-cols-2` grid
   of four panels fed by `dashboardAllocation()`
   (`GET /dashboard/allocation`, aggregated in the user's base currency across
@@ -808,7 +856,8 @@ fetch feeding both the Performance and Capital invested cards).
   "Allocazione non disponibile" (the call is isolated, it does not block the
   page).
 - **Allocation by portfolio** donut (`AllocationDonut`), labelled in the base
-  currency when available.
+  currency when available; since K.3a it shares zone B's 2-column grid with
+  the Performance card.
 - **Portfolios** cards (name, currency, active value + gain/loss colored with
   `pnlColorClass`, asset count) from `portfolios[].active`; since EPIC I.2 a
   compact secondary line adds the per-portfolio closed breakdown ("Closed:
@@ -823,14 +872,25 @@ fetch feeding both the Performance and Capital invested cards).
   (ticker linked to `/assets/{id}` with the name on a second muted line),
   **Invested**, **Value**, **Gain/Loss**, **P/L %**; numeric columns are
   right-aligned `tabular-nums` (`Th`/`Td align="right"`, same primitives and
-  style as the Investments card), signed P/L cells are colored with
+  style as the Investments table), signed P/L cells are colored with
   `pnlColorClass`, and rows keep the backend order (descending value, no
   client re-sort). Assets without a price (`has_price: false`) carry their
   value at cost — they show a small muted **no price** `Badge` next to the
   ticker whose tooltip explains that the P/L is 0 because no price is
   available. An empty payload renders a dashed `EmptyState` ("No invested
   assets yet").
-- Empty state: "Create your first portfolio" → `/portfolios`.
+- **Empty vault**: the plain "No portfolios yet" `EmptyState` was replaced in
+  K.3a by the guided **first-run checklist** (decision D8, new
+  `domain/FirstRunChecklist.svelte`): a single `Card` whose accessible
+  **ordered list** walks ① create a portfolio → ② add an asset → ③ record a
+  transaction, each step linking to the page where the action happens
+  (`/portfolios`, `/assets`, `/portfolios` — transactions live inside a
+  portfolio; the mobile FAB sheet covers the ≤2-tap path). Steps carry
+  done/current/pending states (accent badge, ✓ badge, sr-only status text),
+  derived **only** from the dashboard payload (portfolio / invested-asset /
+  per-portfolio invested amounts — no extra call). The card auto-hides as
+  soon as the vault has portfolios, because the normal dashboard branch
+  requires them.
 
 ### `/login` — Sign in / Register (`routes/login/+page.svelte`)
 

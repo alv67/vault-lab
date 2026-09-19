@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Features
+- The dashboard now opens with your net value as a single headline figure, a value-vs-invested chart with 1Y/3Y/ALL ranges, a breakdown you can expand on demand, a "prices as of" freshness stamp, and a data-quality note when something needs attention (like holdings excluded for a missing exchange rate)
+- On a fresh vault the dashboard shows a guided first-run checklist: create a portfolio, add an asset, record a transaction — each step links straight to the right page
+- You can now switch between the whole vault and a single portfolio from the dashboard header
 - New adaptive navigation: on phones a bottom bar (Overview, Portfolios, Assets, More) plus a ⊕ button with quick actions (add transaction, add asset, refresh prices), on tablets a slim icon rail, and on desktop the familiar expandable sidebar — with a compact header that shrinks while you scroll
 - The price-sync health page is now called Data & Sync
 - The app now follows your system theme by default: light and dark are both first-class, and you can still pin your preferred one from the header

@@ -15,6 +15,7 @@
   import { chartSemanticColors } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
+  import { cx } from '$lib/components/ui/utils'
 
   use([
     LineChart,
@@ -36,6 +37,11 @@
     buckets = [] as PerformanceBucket[],
     currency = 'USD',
     granularity = 'month' as 'month' | 'year',
+    /**
+     * Hero variant (EPIC K.3a): a shorter canvas with no slider dataZoom for
+     * the 2-up hero card; `false` keeps the exact standalone-card geometry.
+     */
+    compact = false,
   } = $props()
 
   // Line colors come from the semantic chart tokens (grey cost basis for the
@@ -78,12 +84,16 @@
         data: ['Invested', 'Value'],
         top: 0,
       },
-      grid: { left: 48, right: 16, top: 40, bottom: 52 },
-      // Long monthly ranges stay usable: wheel/drag zoom plus the slider.
-      dataZoom: [
-        { type: 'inside', xAxisIndex: 0 },
-        { type: 'slider', xAxisIndex: 0, bottom: 0 },
-      ],
+      grid: { left: 48, right: 16, top: 40, bottom: compact ? 24 : 52 },
+      // Long monthly ranges stay usable: wheel/drag zoom plus the slider; the
+      // compact hero variant drops the slider (the period chips already scope
+      // the range) but keeps wheel/drag zoom.
+      dataZoom: compact
+        ? [{ type: 'inside', xAxisIndex: 0 }]
+        : [
+            { type: 'inside', xAxisIndex: 0 },
+            { type: 'slider', xAxisIndex: 0, bottom: 0 },
+          ],
       xAxis: {
         type: 'category',
         data: rows.map((b) => formatPeriod(b.period)),
@@ -122,11 +132,11 @@
 </script>
 
 {#if (buckets ?? []).length === 0}
-  <div class="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
+  <div class={cx('flex w-full items-center justify-center text-sm text-muted-foreground', compact ? 'h-[240px]' : 'h-[340px]')}>
     No data
   </div>
 {:else}
-  <div class="h-[340px] w-full">
+  <div class={cx('w-full', compact ? 'h-[240px]' : 'h-[340px]')}>
     <!-- {#key} re-inits the chart when the theme flips so the ECharts theme
          object passed below is picked up (svelte-echarts only reads `theme`
          at init time). -->

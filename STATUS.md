@@ -679,7 +679,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 |------|-----------|-------------|
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
-| **K.3 Overview** | Hero + zone A–E, chip bucket-driven (D10), digest allocazioni, sparkline card portafogli, DataQualityStrip, checklist first-run (D8) | serie giornaliera vault (fast-follow), sparkline portafoglio |
+| **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp).* Restano in K.3: digest allocazioni (zone B sotto il hero), sparkline card portafogli, card-ificazione tabelle (K.3b/K.4/K.5) | serie giornaliera vault (fast-follow), sparkline portafoglio |
 | **K.4 Entità → tab** | Sotto-route portfolio/asset (Overview/Positions/Activity/Allocation/Data), filtri+sheet edit, undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
@@ -762,6 +762,43 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > dell'hamburger (`header.openMenu`/`closeMenu`, `nav.drawer`, `nav.health`).
 > **Rinviati a K.3** (come da task): `ScopeSwitcher`, `FreshnessStamp`,
 > `DataTable`/`KpiStrip` e i form globali di creazione/transazione.
+
+> **K.3a — Hero dell'Overview — ✅ completata (questo branch)**: la
+> dashboard (`routes/+page.svelte`) è ricostruita attorno al modello hero
+> (spec §6.1 zone A–B, decisioni D3/D8/D10) senza nuovi endpoint né dipendenze.
+> **Zona A**: numero unico — valore netto `summary.active.value` in
+> `base_currency` con il token `text-hero` + `tabular-nums` — riga P/L firmata
+> con due `PnlValue` (importo + % dell'active breakdown), chip secondari muted
+> (Realizzato via `PnlValue`, Dividendi, Investito) e **`FreshnessStamp`**
+> ("Prezzi alle HH:MM" da `finished_at` del refresh di sessione, tono
+> `--info`/muted, stato "in aggiornamento"; toast e semantica
+> una-volta-per-sessione invariati). A destra (stacked su telefono) il grafico
+> **valore vs investito**: `CapitalChart` nella nuova variante opt-in
+> `compact` (canvas 240px, niente slider dataZoom) alimentato dagli **stessi**
+> bucket `dashboardPerformance`; **chip periodo guidati dai bucket (D10)**:
+> `PeriodChips` finestre i bucket lato client — mensili → 1Y (ultimi 12) /
+> 3Y (ultimi 36) / TUTTO, annuali → solo TUTTO con chip nascosti; opzioni
+> derivate dalla `granularity` del payload, scelta persistita in
+> `localStorage['vaultlab-hero-period']`. L'`InvestmentsTable` Active/Closed
+> si apre in un `<details>` "Dettaglio" a divulgazione progressiva; la vecchia
+> card "Capital invested" è assorbita nell'hero. **Zona B**: card Performance
+> invariata (toggle Monthly/Annual che guida anche l'hero) ora in griglia
+> 2-colonne con il donut "Allocation by portfolio"; **strip qualità**
+> (`DataQualityStrip`, chip-link solo quando azionabile: FX mancante da
+> `summary.fx_missing_count/value` → `/settings/currencies`, esito refresh
+> rate-limit/issues/failed → `/admin/health`; i contatori missing-sector/
+> country/stale sono rinviati perché non esistono sul tipo `Dashboard` —
+> richiesta backend futura); **checklist primo avvio** (`FirstRunChecklist`,
+> D8: `<ol>` accessibile ①portafoglio ②asset ③transazione con stati
+> done/current/pending derivati solo dal payload, sparisce con portafogli
+> presenti); **`ScopeSwitcher`** (D3: `<select>` nativa da `dash.portfolios`,
+> "Tutti i portafogli (Vault)" + i portafogli, selezionarli **naviga** a
+> `/portfolios/{id}`). Zone C–E (card portafogli, Allocazione complessiva,
+> Invested assets) invariate; nessuna posizione fissa aggiunta (compatibile
+> con la bottom nav K.2). Nuove chiavi i18n EN/IT (shape identici): `hero.*`,
+> `period.*`, `quality.*`, `freshness.*`, `checklist.*`, `scope.*`. **Rinviati
+> a K.3b+**: sparkline nei card portafoglio, digest allocazione, tabelle in
+> card, `DataTable`/`KpiStrip`, skeletons `AsyncCard` per card.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

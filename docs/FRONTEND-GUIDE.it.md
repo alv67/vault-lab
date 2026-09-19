@@ -305,8 +305,8 @@ ricavi = ricavi netti di vendita + dividendi delle posizioni completamente
 chiuse, realizzato = ricavi − investito, realizzato %) — i campi piatti sono
 spariti. Da EPIC I.3 `Dashboard` non porta più le serie `history` per
 portafoglio: i nuovi tipi `DashboardPerformance` / `PerformanceBucket`
-alimentano i grafici "Performance" e "Capital invested" della dashboard
-tramite `dashboardPerformance(granularity)` (`GET /dashboard/performance?granularity=month|year`,
+alimentano il grafico "Performance" e il grafico "valore vs investito"
+dell'hero (EPIC K.3a) nella dashboard tramite `dashboardPerformance(granularity)` (`GET /dashboard/performance?granularity=month|year`,
 bucket `YYYY-MM` o `YYYY` nella valuta base dell'utente). Da EPIC I.8 (#87) la
 **stessa** forma `DashboardPerformance` alimenta anche la card "Performance"
 del dettaglio portafoglio tramite `performanceBuckets(id, granularity)`
@@ -358,13 +358,16 @@ nel dettaglio asset.
 Non esiste un modulo dedicato alle metriche: ogni pagina calcola i propri
 valori derivati inline con le rune **`$derived`** di Svelte 5. I principali:
 
-- **Dashboard** (`routes/+page.svelte`): lo stato delle card Performance +
-  Capital invested (EPIC I.3) è un `$state` `granularity` (default 'month')
-  più un singolo `$state` `perf` (una sola chiamata
+- **Dashboard** (`routes/+page.svelte`): lo stato della card Performance +
+  del grafico dell'hero (EPIC I.3, hero da K.3a) è un `$state` `granularity`
+  (default 'month') più un singolo `$state` `perf` (una sola chiamata
   `dashboardPerformance(granularity)` alimenta **entrambi** i grafici)
   ricaricato da un `$effect` a ogni cambio del selettore (un id di
-  richiesta monotònico scarta le risposte obsolete); `hasMultipleCurrencies`
-  pilota il donut "Allocation by portfolio" (valori grezzi nascosti e nota
+  richiesta monotònico scarta le risposte obsolete); il grafico dell'hero è
+  inoltre finesttrato lato client da un `$state` `heroPeriod` bucket-driven
+  (D10: 1Y = ultimi 12 / 3Y = ultimi 36 / TUTTO sui bucket mensili,
+  persistito in `localStorage['vaultlab-hero-period']`);
+  `hasMultipleCurrencies` pilota il donut "Allocation by portfolio" (valori grezzi nascosti e nota
   "valute miste" quando i portafogli usano valute diverse — EPIC I.1);
   `glClass` sceglie la classe testo verde/rosso per un guadagno o una perdita.
 - **Dettaglio portafoglio** (`routes/portfolios/[id]/+page.svelte`): lo stato
@@ -455,11 +458,11 @@ scuro contornato di bianco).
 | `PriceChart.svelte` | **line** singola (prezzi di chiusura), asse x temporale, dataZoom `inside` + `slider` | la pagina **dettaglio asset** (B.10): storico prezzi con selettore 1M/3M/1Y/YTD/MAX. Carica sempre tutto lo storico: i selettori fanno uno **zoom in-place** (coppia `start`/`end` percentuali, `end`=100) senza ricaricare dati; uno zoom/spostamento manuale **deseleziona** il pulsante attivo e preserva la vista. Gli **split** sono disegnati come `markLine` tratteggiata viola etichettata con il rapporto (`Split 4:1`), come in `PositionChart`. Stato vuoto → "Nessun dato prezzi disponibile" |
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la card "Performance history" del **dettaglio portafoglio**, mantenuta come **vista secondaria** sotto la nuova card percentuale "Performance" dell'EPIC I.8 (#87): un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
 | `PerformanceChart.svelte` (`lib/components/domain/`) | **combo barre + linea in percentuale** su asse x a **categorie** (EPIC I.3): una barra `return` per bucket (rendimento TWR % del periodo) colorata verde/rosso secondo il segno (semantici `positive`/`negative`, `itemStyle` per barra), linea `twr` (rendimento time-weighted cumulato %) nell'ambra semantica, asse y formattato in % e tooltip `+3,42%` (`formatSignedPercent`, niente valuta), etichette dei periodi formate per granularità (`giu 2025` / `2025`), dataZoom `inside` + `slider`, legenda `Gain/Loss` / `Cumulative`, stato vuoto "No data" | la card "Performance" della **dashboard**, alimentata da `dashboardPerformance(granularity)` (`GET /dashboard/performance`, selettore mensile/annuale con `SegmentedControl` nell'intestazione della card), e — da EPIC I.8 (#87) — la card "Performance" del **dettaglio portafoglio**, alimentata da `performanceBuckets(id, granularity)` (`GET /portfolios/{id}/performance/buckets`, proprio selettore mensile/annuale, nella valuta del portafoglio). Le barre mostrano il rendimento generato dentro ogni mese/anno, la linea il TWR cumulato — sono percentuali pure, quindi il componente non riceve più la prop `currency` |
-| `CapitalChart.svelte` (`lib/components/domain/`) | **due linee** sugli **stessi** bucket a categorie: `invested` (capitale netto investito, linea a scalini `end` nel grigio semantico `costBasis`) e `value` (valore di mercato, linea liscia nel verde semantico `marketValue`), tooltip in valuta con `formatCurrency(value, currency)`, dataZoom `inside` + `slider`, legenda `Invested` / `Value`, re-init theme-aware (`{#key}`), stato vuoto "No data" | la card "Capital invested" della **dashboard**, alimentata dalla **stessa** chiamata `dashboardPerformance(granularity)` e dagli stessi bucket di `PerformanceChart` (importi nella **valuta base** dell'utente, `currency` del payload) e con lo stesso selettore mensile/annuale |
+| `CapitalChart.svelte` (`lib/components/domain/`) | **due linee** sugli **stessi** bucket a categorie: `invested` (capitale netto investito, linea a scalini `end` nel grigio semantico `costBasis`) e `value` (valore di mercato, linea liscia nel verde semantico `marketValue`), tooltip in valuta con `formatCurrency(value, currency)`, dataZoom `inside` + `slider` (o solo `inside` e canvas da 240px con la prop `compact`), legenda `Invested` / `Value`, re-init theme-aware (`{#key}`), stato vuoto "No data" | il grafico valore-vs-investito dell'**hero** della dashboard da EPIC K.3a (la card autonoma "Capital invested" è stata assorbita dall'hero), alimentato dalla **stessa** chiamata `dashboardPerformance(granularity)` e dagli stessi bucket di `PerformanceChart` (importi nella **valuta base** dell'utente, `currency` del payload) e con lo stesso selettore mensile/annuale; l'hero passa `compact` e finestra i bucket lato client con i chip periodo bucket-driven (decisione D10) |
 | `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate; `complete={false}` la rende **aperta** quando le righe sommano < 100 (una fetta residua trasparente tiene veritieri gli angoli — niente fetta grigia "Other") | pagina dettaglio asset (donut regioni con `complete={false}` e donut settori) e le due modali esposizione (in modalità `mute`: regioni in `ExposureGeoModal`, settori in `ExposureSectorModal`). I paesi (pagina e modale geografica) sono liste a barre, mai una pie. Accetta `ExposureRow[]` (`{name, weight}`). Non è più usata nel dettaglio portafoglio: la card classi con tabella e le card `GeographyChart`/`SectorChart` sono state sostituite da `ClassDonut` + `ExposureBarChart` nell'EPIC I.7 (#86) |
 | `ClassDonut.svelte` (`lib/components/domain/`) | **ciambella** delle classi di asset (EPIC I.4, stesso stile radius/palette/etichette di `ExposurePie`): righe `AssetClassSlice[]` (`{class, value, weight}`) mappate con `ASSET_CLASS_LABELS` per i nomi in chiaro, tooltip con importo (`formatCurrency`) e peso (`formatPercent`), fetta `other` in grigio spento, righe a peso zero scartate, stato vuoto "Nessuna allocazione per classi"; prop `label` opzionale per l'intestazione sopra il grafico | il pannello classi della card "Allocazione complessiva" della **dashboard**, alimentato da `dashboardAllocation().classes` (vault intero, valuta base), e — da EPIC I.7 (#86) — il pannello classi della sezione "Allocazione" del **dettaglio portafoglio**, alimentato da `classAllocation(id).classes` (valuta del portafoglio) |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | **barre orizzontali** riutilizzabili (EPIC I.4) su righe generiche `{name, value, weight}[]` (`ExposureBarRow`): barre ordinate **per valore decrescente** (risortese in modo difensivo nel componente, righe non positive scartate; asse categorie `inverse`, quindi la barra più grande sta in alto), peso % stampato a fine barra, tooltip con importo (`formatCurrency(value, currency)`) e peso (`formatPercent`), asse dei valori nascosto (le barre servono solo a confrontarsi tra loro), altezza del canvas proporzionale al numero di righe, `colorFor?: (name) => string` per colore per-riga (altrimenti palette `resolvePalette` per indice), `labelFor?: (name) => string` per mappare le etichette dell'asse (l'asse mostra il nome leggibile — es. codice ISO → nome completo del paese via `countryDisplayName` — e il tooltip aggiunge il nome grezzo tra parentesi quando differisce, "United States (US)"; la colonna delle etichette si allarga a 140px quando `labelFor` è attivo), `maxVisibleRows?: number` limita l'area visibile a quel numero di righe con un viewport `overflow-y-auto` mentre il canvas mantiene l'altezza completa (tutte le righe scorrevoli), `label` e `note` (didascalia muted) opzionali, stato vuoto "No data", re-init theme-aware (`{#key}`) | i pannelli regioni, settori e paesi della card "Allocazione complessiva" della **dashboard**, alimentati da `dashboardAllocation().regions` / `.sectors` / `.countries`, e — da EPIC I.7 (#86) — gli stessi tre pannelli della sezione "Allocazione" del **dettaglio portafoglio**, alimentati da `geographyAllocation(id).regions` / `sectorAllocation(id).sectors` / `geographyAllocation(id).countries` (in valuta del portafoglio); i chiamanti mappano `RegionAllocation`/`SectorAllocation`/`CountryAllocation` su `ExposureBarRow`; i paesi portano codici ISO alpha-2 renderizzati con `labelFor={countryDisplayName}` e `maxVisibleRows={10}` su entrambe le pagine — si vedono le ~10 barre maggiori, le altre scorrono in verticale; i pannelli regioni e settori non passano nulla: etichette invariate e tutte le righe visibili — le ~10 macro-regioni non hanno mai bisogno del cap |
-| `InvestmentsTable.svelte` (`lib/components/domain/`) | tabella **active/closed** condivisa (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, `title` opzionale): colonne Investito / Valore-Ricavi / Gain-Loss / % / Dividendi, righe Active e Closed, P/L firmato colorato con `pnlColorClass`, importi via `formatCurrency` | la card **Investments** della **dashboard** (valuta base, EPIC I.2) e la card KPI del **dettaglio portafoglio** (valuta portafoglio, EPIC I.6 #85) |
+| `InvestmentsTable.svelte` (`lib/components/domain/`) | tabella **active/closed** condivisa (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, `title` opzionale): colonne Investito / Valore-Ricavi / Gain-Loss / % / Dividendi, righe Active e Closed, P/L firmato colorato con `pnlColorClass`, importi via `formatCurrency` | il disclosure "Dettaglio" dell'hero nella **dashboard** (valuta base, EPIC I.2, spostato in un `<details>` sotto il numero hero in EPIC K.3a) e la card KPI del **dettaglio portafoglio** (valuta portafoglio, EPIC I.6 #85) |
 | `PositionTable.svelte` (`lib/components/domain/`) | tabella posizioni generica sul tipo `PositionRow` (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` mostrano le colonne opzionali, `showPrice` aggiunge la colonna Price (prima di Qty, formattata con `priceCurrency`, visibile anche sulle righe chiuse), `linkAssets` collega il ticker alla pagina asset; le righe chiuse mostrano `-` su tutte le celle tranne il realizzato | la tabella Positions del **dettaglio portafoglio** (E.2) — l'accordion posizioni della **dashboard** (E.1) è stato sostituito dalla tabella consolidata "Invested assets" nell'EPIC I.5 (#82) e non usa più questo componente |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | ciambella theme-aware di quote `{name, value}[]` (pesi ricalcolati sul totale positivo); `showValue={false}` nasconde il valore nel tooltip (donut multi-valuta) | la card "Allocation by portfolio" della **dashboard** (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
@@ -507,10 +510,12 @@ date con `new Date(...).toLocaleDateString()`.
   "Universo azionario: X% del portafoglio" (mostrata solo quando qualcosa è
   stato escluso).
 - **Dashboard** — `PerformanceChart` (rendimento in %: barre + linea TWR
-  cumulata) e `CapitalChart` (investito vs valore) alimentati da una **singola**
-  chiamata `dashboardPerformance(granularity)` (EPIC I.3, selettore
-  mensile/annuale), più i widget I.4 della card "Allocazione complessiva"
-  (donut classi, barre regioni/settori/paesi).
+  cumulata) sulla card di zona B e `CapitalChart` (investito vs valore,
+  variante compatta dell'hero da EPIC K.3a) nell'hero, entrambi alimentati da
+  una **singola** chiamata `dashboardPerformance(granularity)` (EPIC I.3,
+  selettore mensile/annuale; l'hero inoltre finestra i bucket lato
+  client, decisione D10), più i widget I.4 della card "Allocazione
+  complessiva" (donut classi, barre regioni/settori/paesi).
 - **Dettaglio portafoglio** — il medesimo `PerformanceChart` condiviso nella
   card "Performance" (EPIC I.8, #87), alimentato da
   `performanceBuckets(id, granularity)` con un proprio selettore
@@ -653,9 +658,10 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   `SidebarNav` (la route `/admin/health` non cambia), così potrà essere
   spostata in un menu Amministrazione senza una revisione diffusa.
 
-`ScopeSwitcher` e `FreshnessStamp` (elencati nella spec sotto K.2) arrivano con
-l'hero dell'Overview in K.3. L'intera shell ha sostituito il vecchio
-`Layout.svelte` fisso.
+`ScopeSwitcher` e `FreshnessStamp` (elencati nella spec sotto K.2) sono arrivati
+con l'hero dell'Overview in **K.3a**, come componenti `domain/`: consumano il
+payload della dashboard, non lo stato della shell. L'intera shell ha
+sostituito il vecchio `Layout.svelte` fisso.
 
 ### Icone, toast e lingua
 
@@ -766,8 +772,12 @@ sessione**, `pricesApi.refresh()` e poi rifare il fetch dei dati. Il
 - altrimenti, se `issues.length > 0` → "N aggiornamenti prezzi non riusciti
   (Yahoo)".
 
-La dashboard conserva inoltre `finished_at` dal report per mostrare la riga
-"Prices updated: …" nell'header.
+La dashboard conserva inoltre `finished_at`, `rate_limited` e
+`issues.length` dal report: `finished_at` guida lo **`FreshnessStamp`**
+("Prezzi alle HH:MM") accanto al valore dell'hero, e l'esito rate-limit/issues
+alimenta un chip azionabile nella **`DataQualityStrip`** (EPIC K.3a, spec
+§8.5). La riga "Prices updated: …" dell'header che mostrava il timestamp è
+stata assorbita nello freshness stamp.
 
 Questo mantiene l'UI funzionante quando viene aperta come deep-link senza
 passare dalla dashboard.
@@ -781,42 +791,82 @@ passare dalla dashboard.
 Endpoint chiamati: `portfolioApi.dashboard()` e
 `portfolioApi.dashboardPerformance(granularity)`, poi il `pricesApi.refresh()`
 di sessione + una dashboard fresca e un refill delle performance (una sola
-chiamata che alimenta sia la card Performance sia la card Capital invested).
+chiamata che alimenta sia il grafico "valore vs investito" dell'hero sia la
+card Performance). Nessuna chiamata aggiuntiva: lo scope switcher e la
+checklist di primo avvio usano dati già presenti nel payload di
+`dashboard()`.
 
-- **Card Investments** (EPIC I.1, split active/closed da EPIC I.2): quando la
-  risposta porta `summary`, il blocco in cima mostra i totali consolidati
-  convertiti nella **valuta base** dell'utente (`base_currency` del payload)
-  tramite il componente condiviso `InvestmentsTable` (riusato anche dal
-  dettaglio portafoglio, EPIC I.6 #85): un'unica `Card` intitolata
-  **Investments** che contiene una tabella con
-  header condiviso e una riga per gruppo di breakdown: **Active** (Investito /
-  Valore / Gain/Loss + % / Dividendi, da `summary.active` — i dividendi delle
-  posizioni ancora aperte) e **Closed** (Investito / Ricavi / Realizzato + %,
-  da `summary.closed` — i dividendi delle posizioni completamente chiuse sono
-  già ricompresi nei `proceeds` dal backend, quindi la cella Dividendi mostra
-  un trattino lungo). Gli importi passano da `formatCurrency`, le percentuali
-  da `formatPercent`; ogni cella P/L firmata (gain/loss, realizzato e le due
-  colonne %) è colorata con `pnlColorClass`. La tabella riusa le primitive
-  `Table`/`Th`/`Td` con colonne numeriche allineate a destra in
-  `tabular-nums`.
-- Card **Performance** (EPIC I.3, sostituisce la vecchia "Portfolio History"):
-  riga di intestazione con titolo e `SegmentedControl` ("Monthly" / "Annual")
-  legato allo stato `granularity`, e sotto `PerformanceChart` alimentato da
-  `dashboardPerformance(granularity)`: una barra `return` verde/rosso per bucket
-  (rendimento TWR % del periodo) più la linea `twr` cumulativa,
+**Ricostruita attorno al modello hero in EPIC K.3a** (spec di ridisegno
+§6.1 zone A–B, decisioni D3/D8/D10); le zone C–E (card portafogli,
+allocazione complessiva, asset investiti) mantengono struttura e dati
+dell'EPIC I.
+
+- **Header**: titolo "Dashboard" e **`ScopeSwitcher`** (decisione D3,
+  `domain/ScopeSwitcher.svelte`): un `<select>` nativo costruito sulla
+  ricetta `ui/Select` che elenca "Tutti i portafogli (Vault)" (valore vuoto,
+  la pagina corrente) e una opzione per portafoglio prese dal payload.
+  Selezionare un portafoglio **naviga** — `goto()` verso `/portfolios/{id}`,
+  la stessa analisi a scope portafoglio — è navigazione di secondo livello,
+  non un filtro sui dati di questa pagina. Renderizzato solo quando il vault
+  ha portafogli.
+- **`DataQualityStrip`** (nuovo, `domain/DataQualityStrip.svelte`; spec
+  §6.1/§8.5): sottile riga di chip-link su fondo warning sopra l'hero,
+  renderizzata solo quando qualcosa è azionabile. Oggi consuma
+  `summary.fx_missing_count` / `summary.fx_missing_value` — "{amount}
+  esclusi — cambio mancante ({count} posizioni)", con link a
+  `/settings/currencies` — più l'esito del refresh prezzi di sessione
+  (rate-limit / N aggiornamenti falliti / refresh fallito, tutti con link a
+  `/admin/health`). I chip "settori/paesi mancanti" e "prezzi obsoleti"
+  abbozzati nella spec **non sono renderizzati deliberatamente**: quei
+  contatori non fanno parte del tipo `Dashboard`; un commento nel componente
+  li segna come futura richiesta al backend.
+- **Zona A — card hero** (sostituisce la vecchia tabella Investments in
+  cima): quando la risposta porta `summary`, la pagina si apre con **un solo
+  numero hero** — `summary.active.value` (valore di mercato netto delle
+  posizioni aperte) via `formatCurrency` nella **valuta base** dell'utente,
+  renderizzato con il token tipografico `text-hero` di K.1a e
+  `tabular-nums` — sotto un'unica riga P/L firmata costruita con due
+  `PnlValue` di K.1c (`summary.active.gain_loss` come valuta +
+  `gain_loss_pct` come percentuale; segno + ▲▼ + colore, D6) con didascalia
+  "complessivo". Seguono i chip secondari muted: **Realizzato**
+  (`summary.closed.realized`, via `PnlValue`), **Dividendi**
+  (`summary.active.dividends`) e **Investito** (`summary.active.invested`).
+  La vecchia riga "Prices updated: …" dell'header è sostituita dal compatto
+  **`FreshnessStamp`** (nuovo, `domain/FreshnessStamp.svelte`) sotto i chip:
+  "Prezzi alle HH:MM" dal `finished_at` del refresh di sessione, in tono
+  muted normale e colorato di `--info` quando l'esito è parziale (rate-limit
+  e fetch fallite mantengono i toast e compaiono anche nella strip qualità);
+  mentre il refresh è in volo mostra una glifo rotante (`role="status"`). La
+  semantica del refresh una-volta-per-sessione resta invariata. Infine la
+  condivisa **`InvestmentsTable`** (componente e dati invariati: righe
+  Active/Closed in valuta base) è spostata in un **`<details>` "Dettaglio"**
+  a divulgazione progressiva sotto i chip, così il riepilogo resta
+  raggiungibile senza dominare la pagina.
+- **Grafico hero** (colonna di destra su desktop, impilato sotto il numero
+  sui telefoni): le serie **valore vs investito** — `CapitalChart` alimentato
+  dagli **stessi** bucket `dashboardPerformance` della card Performance, nella
+  nuova variante opt-in `compact` (canvas da 240px, zoom rotella/trascina
+  senza slider; la geometria delle card autonome resta invariata senza
+  `compact`). Una riga di `PeriodChips` (K.1c) **finestra i bucket lato
+  client** secondo la decisione **D10**: con bucket mensili offre `1Y`
+  (ultimi 12 bucket) / `3Y` (ultimi 36) / `TUTTO`; con bucket annuali vale
+  solo `TUTTO` e la riga di chip si nasconde da sola. Le opzioni derivano
+  dalla `granularity` effettiva del payload (non dallo stato del selettore) e
+  il periodo usato resta in `localStorage['vaultlab-hero-period']` (§8.2). I
+  range giornalieri veri 1M/3M restano un fast-follow di K.3 (serie
+  giornaliera del vault, richiesta backend).
+- **Zona B — card Performance** (EPIC I.3, mantenuta): riga di intestazione
+  con titolo e `SegmentedControl` ("Monthly" / "Annual") legato allo stato
+  `granularity`, e sotto `PerformanceChart` alimentato da
+  `dashboardPerformance(granularity)`: una barra `return` verde/rosso per
+  bucket (rendimento TWR % del periodo) più la linea `twr` cumulativa,
   entrambe formattate in percentuale (`+3,42%`). La chiamata è isolata (se
   fallisce resta lo stato vuoto "No data"), viene ricaricata a ogni cambio di
-  selettore e **alimenta anche la card Capital invested** sotto — un'unica
-  richiesta `dashboardPerformance` guida entrambi i grafici. In caricamento
-  mostra uno `Spinner`.
-- Card **Capital invested**: intestazione con solo il titolo (nessun
-  controllo — segue il medesimo stato `granularity` della card Performance) e
-  `CapitalChart` alimentato dagli **stessi** `perf.buckets`: linea `invested`
-  (grigia a scalini) contro `value` (verde liscia) nella **valuta base**
-  dell'utente (`formatCurrency` nei tooltip). Mostra lo stesso `Spinner` di
-  caricamento. Le due card (Performance + Capital invested) occupano la griglia
-  a 2 colonne; la donut "Allocation by portfolio" scende ora su una riga a
-  larghezza intera sotto di esse.
+  selettore e **alimenta anche il grafico hero** — un'unica richiesta
+  `dashboardPerformance` guida entrambi i grafici. In caricamento mostra uno
+  `Spinner`. La card condivide ora la griglia a 2 colonne `lg` con il donut
+  "Allocation by portfolio"; la vecchia card autonoma **Capital invested è
+  stata rimossa** (il suo contenuto vive nell'hero).
 - Card **Allocazione complessiva** (layout EPIC I.4): una griglia
   `lg:grid-cols-2` di quattro pannelli alimentata da `dashboardAllocation()`
   (`GET /dashboard/allocation`, aggregato nella valuta base dell'utente su
@@ -843,7 +893,8 @@ chiamata che alimenta sia la card Performance sia la card Capital invested).
   l'endpoint fallisce la card mostra "Allocazione non
   disponibile" (la chiamata è isolata, non blocca la pagina).
 - Donut **Allocation by portfolio** (`AllocationDonut`), etichettata nella
-  valuta base quando disponibile.
+  valuta base quando disponibile; da K.3a condivide la griglia a 2 colonne di
+  zona B con la card Performance.
 - Card **Portfolios** (nome, valuta, valore attivo + gain/loss colorato con
   `pnlColorClass`, numero di asset) da `portfolios[].active`; da EPIC I.2 una
   seconda riga compatta aggiunge il breakdown closed del singolo portafoglio
@@ -859,14 +910,25 @@ chiamata che alimenta sia la card Performance sia la card Capital invested).
   dell'utente. Colonne: **Asset** (ticker collegato a `/assets/{id}` con nome
   su una seconda riga muted), **Investito**, **Valore**, **Gain/Loss**,
   **P/L %**; colonne numeriche allineate a destra in `tabular-nums`
-  (`Th`/`Td align="right"`, stesse primitive e stile della card Investments),
+  (`Th`/`Td align="right"`, stesse primitive e stile della tabella Investments),
   celle P/L firmate colorate con `pnlColorClass` e righe nell'ordine del
   backend (valore decrescente, nessun riordino lato client). Gli asset senza
   prezzo (`has_price: false`) portano il valore al costo — mostrano un piccolo
   badge muted **no price** accanto al ticker il cui tooltip spiega che il P/L
   è 0 perché non c'è prezzo disponibile. Con payload vuoto la card renderizza
   un `EmptyState` tratteggiato ("No invested assets yet").
-- Stato vuoto: "Create your first portfolio" → `/portfolios`.
+- **Vault vuoto**: il semplice `EmptyState` "No portfolios yet" è sostituito
+  in K.3a dalla **checklist guidata di primo avvio** (decisione D8, nuovo
+  `domain/FirstRunChecklist.svelte`): un'unica `Card` la cui **lista
+  ordinata** accessibile accompagna ① crea un portafoglio → ② aggiungi un
+  asset → ③ registra una transazione, ogni passo collegato alla pagina dove
+  avviene l'azione (`/portfolios`, `/assets`, `/portfolios` — le
+  transazioni vivono dentro un portafoglio; la sheet FAB copre il percorso
+  ≤2 tocchi su mobile). I passi mostrano lo stato done/current/pending
+  (badge accento, ✓, testo sr-only), derivato **solo** dal payload della
+  dashboard (portafogli / asset investiti / importi investiti per
+  portafoglio — nessuna chiamata extra). La card scompare da sola appena il
+  vault ha portafogli, perché il branch del dashboard normale li richiede.
 
 ### `/login` — Sign in / Register (`routes/login/+page.svelte`)
 

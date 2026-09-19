@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- La dashboard ora si apre con il tuo valore netto come numero principale, un grafico valore contro investito con intervalli 1Y/3Y/TUTTO, un dettaglio attivo/chiuso apribile su richiesta, l'orario di aggiornamento dei prezzi e una nota sulla qualità dei dati quando qualcosa richiede attenzione (ad esempio posizioni escluse per il cambio mancante)
+- Su un vault nuovo la dashboard mostra una checklist guidata di primo avvio: crea un portafoglio, aggiungi un asset, registra una transazione — ogni passo rimanda direttamente alla pagina giusta
+- Dalla header della dashboard puoi ora passare tra l'intero vault e un singolo portafoglio
 - Nuova navigazione adattiva: sul telefono una barra in basso (Panoramica, Portafogli, Asset, Altro) più un pulsante ⊕ con le azioni rapide (aggiungi transazione, aggiungi asset, aggiorna prezzi), sul tablet una sottile rail di icone e sul desktop la familiare barra laterale espandibile — con un header compatto che si restringe durante lo scroll
 - La pagina di stato della sincronizzazione prezzi ora si chiama "Dati e sincronizzazione"
 - L'app ora segue di default il tema del sistema: chiaro e scuro sono entrambi di prima classe, e puoi comunque fissare il tuo preferito dall'header
