@@ -170,9 +170,10 @@ frontend/
     ├── app.css             # @tailwind + semantic tokens (:root / .dark) + base layer
     ├── app.d.ts            # SvelteKit App namespace (placeholders)
     ├── lib/                # shared code (the "meat")
-    │   ├── components/     # ui/ primitives, layout/ (AppShell), Toaster + the ECharts wrappers
+    │   ├── components/     # ui/ primitives, layout/ (AppShell + adaptive chrome), Toaster + the ECharts wrappers
     │   ├── services/api.ts # the single API client (chapter 5)
-    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts, theme.svelte.ts (Svelte 5 runes)
+    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts, theme.svelte.ts, viewport.svelte.ts (Svelte 5 runes)
+    │   ├── i18n/           # en.ts/it.ts dictionaries + reactive locale store (decision D1)
     │   ├── chartPalette.ts # series palette + runtime token resolution (dark-aware)
     │   ├── chartTheme.ts   # registered ECharts themes for light/dark
     │   └── format.ts       # formatters + asset-class labels (chapter 6)
@@ -186,7 +187,7 @@ frontend/
         ├── portfolios/     # portfolios list + CRUD + import
         ├── portfolios/[id]/ # portfolio detail (transactions, charts)
         ├── settings/       # profile, password, currency whitelist
-        └── admin/health/   # price-sync health dashboard (admin area)
+        └── admin/health/   # price-sync health dashboard — "Data & Sync" (D7)
 ```
 
 > There is **no separate `/register` page**: the login page contains a
@@ -589,13 +590,44 @@ extracted as `ui/focus-trap.ts` and `ui/transitions.ts` (existing
 
 ### The app shell
 
-`src/lib/components/layout/` holds the responsive shell: `AppShell` (the root,
-`h-dvh` + skip-link), `Sidebar` (collapsible to an icon rail; the state is
-persisted in `localStorage['vaultlab-sidebar']`), `SidebarNav` (active item
-derived from the URL), `AppHeader` (sticky, with the theme selector and the
-user menu), `UserMenu`, `ThemeToggle` and `MobileDrawer` (below `lg`: off-canvas
-with overlay, focus trap and restore). It replaced the old fixed
-`Layout.svelte`.
+`src/lib/components/layout/` holds the **adaptive shell** (EPIC D.3, restructured
+by EPIC K.2 per UX-redesign spec §5.1–5.2). The three device classes are driven
+by `lib/stores/viewport.svelte.ts`, a tiny reactive `matchMedia` store exposing
+`isPhone` (< 640), `isTablet` (640–1023) and `isDesktop` (≥ 1024); the shell's
+CSS classes use Tailwind's own `sm`/`lg` boundaries (the same 640/1024px), so
+JS state and CSS never disagree.
+
+- **Desktop (≥ `lg`)** — unchanged: `AppShell` (root, `h-dvh` + skip-link)
+  renders the expandable `Sidebar` (240px ⇄ 64px icon rail, state persisted in
+  `localStorage['vaultlab-sidebar']`), the sticky `AppHeader` with the collapse
+  toggle, and the `UserMenu` in the sidebar footer.
+- **Tablet (`sm`–`lg`)** — the same sidebar forced to the **64px icon rail**
+  (`AppShell` passes `collapsed={true}` there; the persisted expand preference
+  applies at `lg`+ only). No hamburger and no bottom bar: navigation (main,
+  Data & Sync, Settings) and the rail-footer user menu stay reachable through
+  the rail; the header keeps only the theme toggle.
+- **Phone (< `sm`)** — no sidebar: a fixed `BottomNav` (Overview · Portfolios ·
+  Assets · More, decision D2) plus a `Fab` anchored above it that opens the
+  `QuickActionSheet` (Add transaction → the single portfolio when unambiguous
+  else `/portfolios`; Add asset → `/assets`; Refresh prices →
+  `POST /prices/refresh` with toast feedback; *Enter price* is a disabled EPIC
+  J.1 reserved slot showing "Coming soon"). The "More" item opens the
+  repurposed `MobileDrawer` (focus trap + Esc/backdrop + close-on-navigation
+  kept), which still renders the `Sidebar` navigation; theme and account stay
+  in the header. `<main>` carries an extra bottom clearance and the bar
+  respects `env(safe-area-inset-bottom)`; every tap target is ≥ 44px.
+- **Condensing header** (all sizes): the shell measures scroll on the main
+  scroll container and flips a `condensed` prop past a 16px threshold; the
+  sticky `AppHeader` shrinks 56px → 44px via a CSS height transition, which the
+  global `prefers-reduced-motion` rule neutralises.
+- The Admin entry is labelled **"Data & Sync"** (`nav.dataSync`, decision D7).
+  It lives in a single `adminItems` config point in `SidebarNav` (route
+  `/admin/health` unchanged) so it can later be relocated into an
+  Administration menu without a sweep.
+
+`ScopeSwitcher` and `FreshnessStamp` (originally listed under K.2 in the spec)
+ship together with the Overview hero in K.3. The whole shell replaced the old
+fixed `Layout.svelte`.
 
 ### Icons, toasts and language
 
@@ -614,8 +646,9 @@ with overlay, focus trap and restore). It replaced the old fixed
 - **Responsive / mobile-first**: flex/grid classes adapt by breakpoint
   (`flex flex-col gap-4 md:flex-row`, `grid grid-cols-2 md:grid-cols-4`,
   `sm:grid-cols-2 lg:grid-cols-3`, `md:grid-cols-3 lg:grid-cols-6`), long
-  tables are wrapped in `overflow-x-auto`, and the shell becomes a mobile
-  drawer below `lg`.
+  tables are wrapped in `overflow-x-auto`, and the shell is adaptive: icon
+  rail on tablets, bottom nav + quick-actions Fab on phones (see "The app
+  shell" above).
 - **App-wide**: `app.html` ships `lang="it"` (the i18n default — see the
   language note below — and updated at runtime from the persisted locale),
   the favicon `/vault.svg`, the light/dark `theme-color` metas, and the
@@ -1100,6 +1133,9 @@ are translated through the i18n layer (chapter 8).
   (409 = in use or protected). Symbols rendered with `currencySymbol()`.
 
 ### `/admin/health` — Price Sync Health (`routes/admin/health/+page.svelte`)
+
+> Since EPIC K.2 (decision D7) the navigation entry is labelled **Data &
+> Sync**; the route and the page itself are unchanged.
 
 The only page that uses the **generic client**: `api.get('/health/prices?period=today|24h|100')`
 (same-origin `/api/v1/health/prices`). A period selector (Today / Last 24h /

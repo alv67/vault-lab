@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- Nuova navigazione adattiva: sul telefono una barra in basso (Panoramica, Portafogli, Asset, Altro) più un pulsante ⊕ con le azioni rapide (aggiungi transazione, aggiungi asset, aggiorna prezzi), sul tablet una sottile rail di icone e sul desktop la familiare barra laterale espandibile — con un header compatto che si restringe durante lo scroll
+- La pagina di stato della sincronizzazione prezzi ora si chiama "Dati e sincronizzazione"
 - L'app ora segue di default il tema del sistema: chiaro e scuro sono entrambi di prima classe, e puoi comunque fissare il tuo preferito dall'header
 - Nuovo font per l'interfaccia (Inter) e un font monospazio dedicato per ticker e codici — entrambi incorporati nell'app, nulla viene scaricato da servizi di terzi
 - Nuova pagina Impostazioni → Preferenze: scegli il tema (Chiaro/Scuro/Sistema) e la lingua dell'interfaccia (Italiano/Inglese); l'app ora usa di default il tema del sistema e la lingua italiana, e ricorda le tue scelte su questo dispositivo

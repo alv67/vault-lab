@@ -678,7 +678,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | Fase | Contenuto | Backend ask |
 |------|-----------|-------------|
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
-| **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@md, header condensante, ScopeSwitcher (D3), FreshnessStamp, entry "Data & Sync" relocabile (D7) | — |
+| **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | Hero + zone A–E, chip bucket-driven (D10), digest allocazioni, sparkline card portafogli, DataQualityStrip, checklist first-run (D8) | serie giornaliera vault (fast-follow), sparkline portafoglio |
 | **K.4 Entità → tab** | Sotto-route portfolio/asset (Overview/Positions/Activity/Allocation/Data), filtri+sheet edit, undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
@@ -731,6 +731,37 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > deliberatamente a K.4**, dove verranno progettate attorno ai reali call
 > site. In K.1 resta solo la palette CVD (il toggle è pianificato per K.5);
 > i18n (D1) è completata in K.1b.
+
+> **K.2 — Shell adattiva — ✅ completata (questo branch)**: la shell
+> (`frontend/src/lib/components/layout/`) ora è davvero adattiva sulle tre
+> classi di dispositivi della spec §5.1–5.2, con desktop invariato. Nuovo
+> helper reattivo `lib/stores/viewport.svelte.ts` (`matchMedia` su 640/1024,
+> `isPhone`/`isTablet`/`isDesktop`, SSR-safe via `browser` + feature check,
+> fallback desktop). **Tablet `sm`–`lg`**: la sidebar è forzata a rail di
+> icone da 64px (`collapsed` forzato dalla shell; la preferenza persistita
+> `vaultlab-sidebar` vale solo da `lg` in su), niente hamburger né bottom
+> nav; menu utente nel footer del rail (in header resta solo il tema).
+> **Telefono < `sm`**: nessuna sidebar — `BottomNav` fissa con 4 destinazioni
+> (Panoramica · Portafogli · Asset · Altro, decisione D2, target ≥ 44px,
+> `env(safe-area-inset-bottom)`, stato attivo con la regola del prefisso più
+> lungo di `SidebarNav`) + `Fab` che apre la `QuickActionSheet` sul `ui/Sheet`
+> K.1c (Aggiungi transazione → portfolio picker via `portfolioApi.list()`,
+> Aggiungi asset → `/assets`, Aggiorna prezzi → `pricesApi.refresh()` con
+> toast, *Inserisci prezzo* disabilitato "In arrivo" finché non arriva J.1).
+> Il `MobileDrawer` è declassato a sheet "Altro" (focus trap/Esc/chiusura alla
+> navigazione intatti, ora rende la navigazione `Sidebar`); padding inferiore
+> extra in `<main>` sui telefoni. **Header condensante** (tutte le misure):
+> prop `condensed` misurata sulla scroll container della shell (soglia 16px,
+> listener passivo), altezza 56→44px con transizione CSS rispettosa di
+> `prefers-reduced-motion`. **D7**: la voce Admin "Health" diventa **"Dati e
+> sincronizzazione"** (`nav.dataSync`), definita in un unico punto di config
+> (`adminItems` di `SidebarNav`), route `/admin/health` invariata. Nuove
+> chiavi i18n EN/IT (shapes identici): `nav.overview`, `nav.more`,
+> `nav.bottomNav`, `nav.dataSync`, `fab.open`, il gruppo `quickActions.*`
+> (etichette, hint, "In arrivo", toast di refresh); rimosse le chiavi morte
+> dell'hamburger (`header.openMenu`/`closeMenu`, `nav.drawer`, `nav.health`).
+> **Rinviati a K.3** (come da task): `ScopeSwitcher`, `FreshnessStamp`,
+> `DataTable`/`KpiStrip` e i form globali di creazione/transazione.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

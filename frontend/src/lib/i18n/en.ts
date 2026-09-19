@@ -21,22 +21,51 @@ export const en = {
     /** Accessible name of the sidebar/drawer `<nav>` landmark. */
     main: 'Main',
     dashboard: 'Dashboard',
+    /** Phone bottom-nav destination for `/` (EPIC K.2, decision D2). */
+    overview: 'Overview',
     portfolios: 'Portfolios',
     assets: 'Assets',
-    health: 'Health',
+    /** Bottom-nav item that opens the off-canvas "More" sheet (D2). */
+    more: 'More',
+    /** Accessible name of the fixed phone bottom navigation landmark. */
+    bottomNav: 'Primary navigation',
+    /**
+     * Price-sync health page (decision D7). Referenced once, from the
+     * `adminItems` config in `SidebarNav.svelte`, so the whole entry —
+     * label included — can be relocated to an Administration menu later.
+     */
+    dataSync: 'Data & Sync',
     settings: 'Settings',
     /** Sidebar section headers (visible only when the sidebar is expanded). */
     sectionAdmin: 'Admin',
     sectionSettings: 'Settings',
-    /** Accessible name of the off-canvas drawer dialog. */
-    drawer: 'Navigation',
     skipToContent: 'Skip to content',
   },
   header: {
-    openMenu: 'Open navigation menu',
-    closeMenu: 'Close navigation menu',
     expandSidebar: 'Expand sidebar',
     collapseSidebar: 'Collapse sidebar',
+  },
+  fab: {
+    /** Accessible name of the phone-only quick-actions floating button. */
+    open: 'Open quick actions',
+  },
+  quickActions: {
+    /** Title of the sheet opened by the Fab (decision D2). */
+    title: 'Quick actions',
+    addTransaction: 'Add transaction',
+    addTransactionHint: 'Record a buy, sell or dividend',
+    addAsset: 'Add asset',
+    addAssetHint: 'Search Yahoo and register it',
+    refreshPrices: 'Refresh prices',
+    refreshPricesHint: 'Fetch the latest quotes now',
+    /** Reserved slot until EPIC J.1 ships: rendered disabled. */
+    enterPrice: 'Enter price',
+    comingSoon: 'Coming soon',
+    /** Fab refresh feedback (toasts). */
+    refreshSuccess: 'Prices updated',
+    refreshError: 'Price refresh failed',
+    refreshRateLimited: 'Yahoo Finance is rate-limiting requests: some prices may be stale',
+    refreshIssues: '{count} price updates failed (Yahoo)',
   },
   user: {
     /** Compact icon-only trigger (rail / mobile header). */

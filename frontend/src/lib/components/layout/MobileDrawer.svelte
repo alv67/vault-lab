@@ -5,13 +5,18 @@
   import { t } from '$lib/i18n/index.svelte'
 
   /**
-   * Off-canvas navigation drawer below `lg` (EPIC D.3): the same `Sidebar`
-   * the desktop rail shows, rendered over a dimmed backdrop on the drawer
-   * tier (z-30) of the z-index scale (../ui/utils.ts).
+   * Off-canvas "More" sheet (EPIC D.3 as the mobile drawer, repurposed by
+   * EPIC K.2 / decision D2): the same `Sidebar` the rail shows — main,
+   * Data & Sync and Settings — rendered over a dimmed backdrop on the
+   * drawer tier (z-30) of the z-index scale (../ui/utils.ts). Its only
+   * trigger is now the "More" item of the phone `BottomNav` (the hamburger
+   * was demoted); user menu and theme live in the header instead. The
+   * `lg:hidden` on the backdrop keeps it out of the desktop/tablet chrome
+   * even if the viewport grows while it is open.
    *
    * Follows the focus recipe established by ui/Modal.svelte: focus moves
    * into the panel on open, Tab is trapped inside it, and focus returns to
-   * the hamburger on close — except when the close was caused by a route
+   * the "More" button on close — except when the close was caused by a route
    * change (the user clicked a nav link, so the new page should own focus).
    * Esc and backdrop clicks also close it; `open` is `$bindable`.
    */
@@ -68,7 +73,7 @@
   }
 
   // Route change (nav link clicked inside the drawer): close without
-  // restoring focus to the hamburger — see `suppressRestore` above.
+  // restoring focus to the More trigger — see `suppressRestore` above.
   afterNavigate(() => {
     if (!open) return
     suppressRestore = true
@@ -95,7 +100,7 @@
     class="fixed inset-0 z-30 bg-overlay/50 lg:hidden"
     role="dialog"
     aria-modal="true"
-    aria-label={t('nav.drawer')}
+    aria-label={t('nav.more')}
     tabindex="-1"
     transition:fade={{ duration: 150 }}
     onclick={handleBackdropClick}

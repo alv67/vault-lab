@@ -179,9 +179,10 @@ frontend/
     ├── app.css             # @tailwind + token semantici (:root / .dark) + base layer
     ├── app.d.ts            # namespace App di SvelteKit (segnaposto)
     ├── lib/                # codice condiviso (la "parte interessante")
-    │   ├── components/     # primitive ui/, layout/ (AppShell), Toaster + wrapper ECharts
+    │   ├── components/     # primitive ui/, layout/ (AppShell + chrome adattivo), Toaster + wrapper ECharts
     │   ├── services/api.ts # l'unico client API (capitolo 5)
-    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts, theme.svelte.ts (rune Svelte 5)
+    │   ├── stores/         # auth.svelte.ts, toast.svelte.ts, theme.svelte.ts, viewport.svelte.ts (rune Svelte 5)
+    │   ├── i18n/           # dizionari en.ts/it.ts + store del locale reattivo (decisione D1)
     │   ├── chartPalette.ts # palette serie + risoluzione token a runtime (dark-aware)
     │   ├── chartTheme.ts   # temi ECharts registrati per light/dark
     │   └── format.ts       # formattatori + etichette classi (capitolo 6)
@@ -195,7 +196,7 @@ frontend/
         ├── portfolios/     # elenco portafogli + CRUD + import
         ├── portfolios/[id]/ # dettaglio portafoglio (transazioni, grafici)
         ├── settings/       # profilo, password, whitelist valute
-        └── admin/health/   # health dashboard dei prezzi (area admin)
+        └── admin/health/   # health dashboard dei prezzi — "Dati e sincronizzazione" (D7)
 ```
 
 > **Non esiste una pagina `/register` separata**: la pagina di login contiene un
@@ -614,13 +615,47 @@ mantengono per ora le loro ricette inline, a zero regressioni).
 
 ### La shell dell'app
 
-`src/lib/components/layout/` contiene la shell responsive: `AppShell` (la
-radice, `h-dvh` + skip-link), `Sidebar` (collassabile a rail di sole icone; lo
-stato è persistito in `localStorage['vaultlab-sidebar']`), `SidebarNav` (voce
-attiva derivata dall'URL), `AppHeader` (sticky, con selettore tema e menu
-utente), `UserMenu`, `ThemeToggle` e `MobileDrawer` (sotto `lg`: off-canvas con
-overlay, focus trap e ripristino). Ha sostituito il vecchio `Layout.svelte`
-fisso.
+`src/lib/components/layout/` contiene la **shell adattiva** (EPIC D.3,
+ristrutturata in EPIC K.2 secondo la spec UX §5.1–5.2). Le tre classi di
+dispositivi sono guidate da `lib/stores/viewport.svelte.ts`, un piccolo store
+reattivo su `matchMedia` che espone `isPhone` (< 640), `isTablet` (640–1023) e
+`isDesktop` (≥ 1024); le classi CSS della shell usano i confini `sm`/`lg` di
+Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
+
+- **Desktop (≥ `lg`)** — invariata: `AppShell` (radice, `h-dvh` + skip-link)
+  rende la `Sidebar` espandibile (240px ⇄ rail di icone da 64px, stato
+  persistito in `localStorage['vaultlab-sidebar']`), l'`AppHeader` sticky con il
+  toggle di collassamento e lo `UserMenu` nel footer della sidebar.
+- **Tablet (`sm`–`lg`)** — la stessa sidebar forzata a **rail di icone da
+  64px** (`AppShell` passa `collapsed={true}`; la preferenza di espansione
+  persistita vale solo da `lg` in su). Nessun hamburger e nessuna barra
+  inferiore: la navigazione (main, Dati e sincronizzazione, Impostazioni) e il
+  menu utente nel footer del rail restano raggiungibili attraverso il rail;
+  l'header conserva solo il selettore tema.
+- **Telefono (< `sm`)** — nessuna sidebar: una `BottomNav` fissa (Panoramica ·
+  Portafogli · Asset · Altro, decisione D2) più un `Fab` ancorato sopra di essa
+  che apre la `QuickActionSheet` (Aggiungi transazione → al portafoglio unico
+  quando è univoco, altrimenti a `/portfolios`; Aggiungi asset → `/assets`;
+  Aggiorna prezzi → `POST /prices/refresh` con toast di esito; *Inserisci
+  prezzo* è lo slot riservato di EPIC J.1, disabilitato con "In arrivo"). La
+  voce "Altro" apre il `MobileDrawer` riconvertito (focus trap + Esc/backdrop +
+  chiusura alla navigazione, tutti mantenuti), che rende ancora la navigazione
+  `Sidebar`; tema e account restano nell'header. A `<main>` viene riservato uno
+  spazio extra in basso e la barra rispetta `env(safe-area-inset-bottom)`;
+  ogni target di tocco è ≥ 44px.
+- **Header condensante** (tutte le misure): la shell misura lo scroll del
+  contenitore scrollabile principale e commuta la prop `condensed` oltre una
+  soglia di 16px; l'`AppHeader` sticky si restringe da 56px a 44px con una
+  transizione CSS sull'altezza, neutralizzata dalla regola globale
+  `prefers-reduced-motion` in `app.css`.
+- La voce Admin si chiama **"Dati e sincronizzazione"** (`nav.dataSync`,
+  decisione D7) e vive in un unico punto di configurazione `adminItems` dentro
+  `SidebarNav` (la route `/admin/health` non cambia), così potrà essere
+  spostata in un menu Amministrazione senza una revisione diffusa.
+
+`ScopeSwitcher` e `FreshnessStamp` (elencati nella spec sotto K.2) arrivano con
+l'hero dell'Overview in K.3. L'intera shell ha sostituito il vecchio
+`Layout.svelte` fisso.
 
 ### Icone, toast e lingua
 
@@ -639,8 +674,9 @@ fisso.
 - **Responsive / mobile-first**: flex e grid si adattano per breakpoint
   (`flex flex-col gap-4 md:flex-row`, `grid grid-cols-2 md:grid-cols-4`,
   `sm:grid-cols-2 lg:grid-cols-3`, `md:grid-cols-3 lg:grid-cols-6`), le tabelle
-  lunghe sono avvolte in `overflow-x-auto`, e sotto `lg` la shell diventa un
-  drawer mobile.
+  lunghe sono avvolte in `overflow-x-auto`, e la shell è adattiva: rail di
+  icone sui tablet, bottom nav + Fab per le azioni rapide sui telefoni (vedi
+  "La shell dell'app" sopra).
 - **App-wide**: `app.html` parte con `lang="it"` (il default dell'i18n —
   vedi la nota lingua sotto — e aggiornato a runtime dal locale
   persistito), la favicon `/vault.svg`, i meta `theme-color` chiaro/scuro
@@ -1141,6 +1177,9 @@ sono tradotte tramite il layer i18n (capitolo 8).
   con `currencySymbol()`.
 
 ### `/admin/health` — Price Sync Health (`routes/admin/health/+page.svelte`)
+
+> Dalla EPIC K.2 (decisione D7) la voce di navigazione si chiama **Dati e
+> sincronizzazione**; la route e la pagina restano invariate.
 
 L'unica pagina che usa il **client generico**: `api.get('/health/prices?period=today|24h|100')`
 (stessa origine `/api/v1/health/prices`). Un selettore di periodo (Today / Last

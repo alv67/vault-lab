@@ -6,10 +6,13 @@
   import { cx } from '../ui/utils'
 
   /**
-   * Navigation inside the sidebar (EPIC D.3): main section on top, Admin and
-   * Settings sections pinned to the bottom. `collapsed` renders the icon-rail
-   * variant (64px): labels disappear, so each link carries an
-   * `aria-label`/`title`.
+   * Navigation inside the sidebar (EPIC D.3, adaptive in K.2): main section
+   * on top, Admin and Settings sections pinned to the bottom. `collapsed`
+   * renders the icon-rail variant (64px): labels disappear, so each link
+   * carries an `aria-label`/`title`. The shell uses the three surfaces of
+   * this one component: desktop expandable sidebar, tablet forced rail and
+   * the phone More sheet (drawer) — below `lg` every item grows to a 44px
+   * minimum touch target.
    *
    * Labels are translated with `t()` (EPIC K.1b, decision D1): the items
    * carry `labelKey`s and every render (text + collapsed aria/title) reads
@@ -17,7 +20,7 @@
    *
    * The active entry is the item whose path is the *longest* prefix of the
    * current URL (with `/` matching exactly): only one link ever gets
-   * `aria-current="page"`, so `/admin/health` highlights Health alone
+   * `aria-current="page"`, so `/admin/health` highlights Data & Sync alone
    * and `/settings` alone highlights Settings.
    */
   type IconType = typeof LayoutDashboard
@@ -33,8 +36,12 @@
     { to: '/assets', labelKey: 'nav.assets', icon: Banknote as IconType },
   ] as const
 
+  // Decision D7: this is the *single* config point for the "Data & Sync"
+  // (ex "Health") entry — route, label key and icon live only here, so the
+  // entry can be relocated into an Administration menu later without a
+  // sweep. `BottomNav` mirrors the route when highlighting its "More" item.
   const adminItems = [
-    { to: '/admin/health', labelKey: 'nav.health', icon: Activity as IconType },
+    { to: '/admin/health', labelKey: 'nav.dataSync', icon: Activity as IconType },
   ] as const
 
   const settingsItems = [
@@ -61,7 +68,9 @@
 
   function itemClasses(to: string): string {
     return cx(
-      'focus-ring flex items-center gap-3 rounded-control py-2 text-sm transition-colors',
+      // `max-lg:min-h-11`: 44px tap targets on touch devices (tablet rail,
+      // phone More sheet); the desktop sidebar keeps its compact density.
+      'focus-ring flex items-center gap-3 rounded-control py-2 text-sm transition-colors max-lg:min-h-11',
       collapsed ? 'justify-center px-0' : 'px-3',
       to === activeTo
         ? 'bg-accent/10 font-medium text-accent-text'

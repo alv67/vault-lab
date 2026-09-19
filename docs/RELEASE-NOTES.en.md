@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Features
+- New adaptive navigation: on phones a bottom bar (Overview, Portfolios, Assets, More) plus a ⊕ button with quick actions (add transaction, add asset, refresh prices), on tablets a slim icon rail, and on desktop the familiar expandable sidebar — with a compact header that shrinks while you scroll
+- The price-sync health page is now called Data & Sync
 - The app now follows your system theme by default: light and dark are both first-class, and you can still pin your preferred one from the header
 - New interface font (Inter) plus a dedicated monospace font for tickers and codes — both bundled with the app, nothing is downloaded from third-party services
 - New Settings → Preferences page: choose theme (Light/Dark/System) and interface language (Italian/English); the app now defaults to the system theme and to Italian, and remembers your choices on this device
