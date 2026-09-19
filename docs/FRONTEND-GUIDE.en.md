@@ -508,31 +508,59 @@ The UI is built on a small internal design system introduced in **EPIC D**.
 ### Semantic tokens
 
 Colors are no longer hardcoded in the pages. `tailwind.config.js` defines a set
-of **semantic** color tokens — `background`, `foreground`, `surface`,
-`surface-raised`, `muted`, `muted-foreground`, `border`, `input`, `ring`,
-`accent` (+ `accent-hover`/`accent-foreground`/`accent-text`), `positive`,
-`negative`, `warning`, `overlay`, `chart-1..12`, `chart-muted` — mapped to CSS
-custom properties defined in `app.css` (`:root` and `.dark`). Because the
-values are HSL triples composed through `hsl(var(--token) / <alpha-value>)`,
-opacity modifiers work (`bg-accent/10`).
+of **semantic** color tokens — `background`, `foreground`, the **surface
+ladder** `surface-0..3` (+ the legacy aliases `surface` = `surface-1` and
+`surface-raised` = `surface-2`), `muted`, `muted-foreground`, `border`,
+`input`, `ring`, `accent` (+ `accent-hover`/`accent-foreground`/`accent-text`),
+`positive`, `negative`, `warning`, `info` (+ `info-foreground`, used for
+price-freshness/informational affordances), `overlay`, `chart-1..12`,
+`chart-muted`, `chart-grid` — mapped to CSS custom properties defined in
+`app.css` (`:root` and `.dark`). Because the values are HSL triples composed
+through `hsl(var(--token) / <alpha-value>)`, opacity modifiers work
+(`bg-accent/10`).
 
+- **Elevation ladder (EPIC K.1a)**: four semantic surfaces — `surface-0` (app
+  background), `surface-1` (cards), `surface-2` (raised/drawers), `surface-3`
+  (popovers/tooltips). Dark mode separates them with a lightness ladder of
+  ~6–8 points per step (future components add `border-white/6` hairlines);
+  light mode keeps steps 1–3 white and lets the shadow ramp do the work.
 - Radii: `rounded-card` / `rounded-control`; elevation: `shadow-card` /
-  `shadow-raised`; consistent focus outline: the `.focus-ring` class.
+  `shadow-raised` / `shadow-popover`; consistent focus outline: the
+  `.focus-ring` class.
+- **Motion tokens (K.1a)**: durations `duration-fast` (120 ms),
+  `duration-base` (200 ms), `duration-slow` (320 ms) and a single ease-out
+  curve `ease-standard`; `app.css` neutralises all transitions/animations
+  under `prefers-reduced-motion: reduce`.
+- **Type scale (K.1a)**: Tailwind defaults plus the named steps `text-hero`
+  (40 px semibold, for overview KPIs) and `text-micro` (11 px labels).
+- **Fonts (decision D5)**: **Inter** (UI) and **JetBrains Mono** (tickers,
+  ISINs, codes) are **self-hosted** via `@fontsource/inter` (400/500/600/700)
+  and `@fontsource/jetbrains-mono` (400/500), imported in
+  `routes/+layout.svelte` — no CDN, `font-display: swap`. `fontFamily.sans`
+  leads with Inter and `fontFamily.mono` with JetBrains Mono (system
+  fallbacks kept), so `font-mono` applies everywhere the mono stack is used.
 - Tailwind is loaded through `app.css` (the three `@tailwind` directives) and
   PostCSS (`postcss.config.js`: `tailwindcss` + `autoprefixer`).
+- `lib/chartTheme.ts` mirrors the tokens for the canvas (ECharts cannot
+  resolve CSS variables), including `--chart-grid`: axis split lines are
+  painted with that ink at ~8% opacity so data stays the brightest element.
 - `lib/ui-colors.ts` centralizes the P&L text colors (`pnlColorClass`,
   `totalColorClass`), previously duplicated in four pages.
 
 ### Dark mode
 
-- **Dark is the default**; the user can choose **Light**, **Dark** or
-  **System** (follow the OS) from the theme selector in the header.
+- **The default is System (follow the OS, decision D9, since K.1a)**; light
+  and dark are first-class, equally-designed themes. The user can override
+  with **Light**, **Dark** or **System** from the theme selector in the
+  header.
 - The choice is stored in `localStorage` (`vaultlab-theme`) and handled by
-  `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`); it is
-  also synced across tabs and follows OS changes while in `system` mode.
+  `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`,
+  `DEFAULT_MODE = 'system'`); it is also synced across tabs and follows OS
+  changes while in `system` mode.
 - An inline script in `app.html` sets the `.dark` class **before the first
-  paint**, so a dark reload never flashes white (no FOUC). `darkMode: 'class'`
-  in the Tailwind config makes a single class flip every token.
+  paint**, resolving the OS `prefers-color-scheme` when nothing valid is
+  stored, so a reload never flashes the wrong theme (no FOUC). `darkMode:
+  'class'` in the Tailwind config makes a single class flip every token.
 
 ### UI primitives
 
@@ -544,6 +572,20 @@ primitives (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` and
 `StatCard`. Pages and the shell reuse them instead of duplicating markup.
 Destructive actions use `ConfirmDialog` instead of the browser's native
 `confirm()`.
+
+**EPIC K.1c foundations (UX redesign)** add six primitives, built on the same
+tokens but not adopted by any page yet (they arrive with K.2–K.5): `PnlValue`
+(the canonical gain/loss renderer — explicit sign + ▲▼ glyph + semantic color,
+neutral zero, sr-only "positive/negative"; decision D6), `AsyncCard` (per-card
+loading/error/empty/data states with a shape-matched skeleton and an isolated
+one-line error + Retry), `PeriodChips` (compact radiogroup period selector
+with arrow-key navigation, meant to sit on the chart), `Drawer` (right-side
+inspection drawer, focus-trap + Esc/backdrop + restore; D4 at ≥ `lg`), `Sheet`
+(bottom sheet with drag-handle affordance, same API; D4 at < `lg`) and `Tabs`
+(route-linked `<a>`-based ARIA tablist with roving focus, for the K.4 entity
+sub-pages). The overlay trap and the motion-token transitions they share are
+extracted as `ui/focus-trap.ts` and `ui/transitions.ts` (existing
+`Modal`/`MobileDrawer` keep their inline recipes for now, zero-regression).
 
 ### The app shell
 
@@ -574,14 +616,31 @@ with overlay, focus trap and restore). It replaced the old fixed
   `sm:grid-cols-2 lg:grid-cols-3`, `md:grid-cols-3 lg:grid-cols-6`), long
   tables are wrapped in `overflow-x-auto`, and the shell becomes a mobile
   drawer below `lg`.
-- **App-wide**: `app.html` keeps `lang="en"` and the favicon `/vault.svg`, sets
-  the light/dark `theme-color` metas, and runs the pre-paint theme bootstrap;
-  the body background/foreground now come from the tokens via `app.css`.
-- **Language note**: the UI is intentionally mixed English/Italian — most
-  headings are English, while several labels, empty states and toast messages
-  are Italian ("cambio mancante", "Nessuna allocazione per classi", "Aggiorna
-  da Yahoo", "Salva modifiche", ...). This reflects the current product
-  language; the formatters in chapter 6 follow the same mix.
+- **App-wide**: `app.html` ships `lang="it"` (the i18n default — see the
+  language note below — and updated at runtime from the persisted locale),
+  the favicon `/vault.svg`, the light/dark `theme-color` metas, and the
+  pre-paint theme bootstrap; the body background/foreground now come from
+  the tokens via `app.css`.
+- **Language note (i18n since EPIC K.1b, decision D1)**: translations run on
+  a tiny dependency-free layer in `src/lib/i18n/`. The rune store
+  `index.svelte.ts` exports `SUPPORTED_LOCALES` (`['it', 'en']`),
+  `DEFAULT_LOCALE = 'it'`, the reactive `locale` (`locale.current`),
+  `setLocale()` (validates, persists to `localStorage['vaultlab-locale']`,
+  syncs `<html lang>`, cross-tab listener — mirroring the theme store) and
+  `t(key, params)` which reads the reactive locale so components re-render
+  on change; `{name}` placeholders are interpolated from `params`. The
+  dictionaries are two-level nested objects — `en.ts` is the canonical shape
+  (`Dictionary`), `it.ts` is checked with `satisfies Dictionary` so any
+  missing/extra key fails the build; keys are flattened to dot-joined
+  lookups (`nav.dashboard`) and typed as the `MessageKey` union, so `t()`
+  call sites are typo-checked too. Lookup order: active locale → English
+  (fallback) → the key itself, with a console warning only in dev (never a
+  throw). **Migration is progressive**: K.1b translated the shell navigation
+  (`SidebarNav`, `AppHeader`/`UserMenu`/`ThemeToggle` labels, `SettingsTabs`,
+  `MobileDrawer`, the skip link) plus the new **Settings → Preferences**
+  page; the other pages keep their historical mixed English/Italian copy
+  ("cambio mancante", "Aggiorna da Yahoo", … — the chapter 6 formatters
+  follow the same mix) until each one gets its own sweep in a later phase.
 
 ---
 
@@ -1015,7 +1074,9 @@ quote/prices.
 ### `/settings` — Settings (`routes/settings/+page.svelte`)
 
 Called endpoints: `settingsApi.listCurrencies()`, `updateProfile()`,
-`authApi.changePassword()`.
+`authApi.changePassword()`. The `SettingsTabs` bar navigates the four
+sections (Profile · Password · **Preferences** · Currencies) and its labels
+are translated through the i18n layer (chapter 8).
 
 - **Profile** (name/email/**base currency**) and **Change password**
   (`POST /users/me/password` with `current_password` + `new_password`,
@@ -1025,6 +1086,14 @@ Called endpoints: `settingsApi.listCurrencies()`, `updateProfile()`,
   `auth.user.base_currency` (fallback `EUR`) and saved through
   `updateProfile(name, email, baseCurrency)`; it drives the dashboard
   summary/history conversion (chapter 10).
+- **Preferences** (`routes/settings/preferences/+page.svelte`, EPIC K.1b):
+  the first fully translated page. Theme **Light/Dark/System** via a
+  `SegmentedControl` bound to the theme store (default System, decision D9)
+  and interface **language** (Italiano/English, default Italian, decision
+  D1) via a `Select` bound to `setLocale` in `lib/i18n/`. Both apply
+  immediately and persist in `localStorage` (no save button); switching the
+  language re-renders the shell navigation in place. The tab sits between
+  Password (= Security) and Currencies, per the UX-redesign section order.
 - **Valute gestite**: the currency whitelist CRUD — add a 3-letter code (a
   422 from the backend means Yahoo has no USD→code conversion and the frontend
   shows a specific message; 409 means already present), delete with confirm

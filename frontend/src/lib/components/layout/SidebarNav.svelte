@@ -2,6 +2,7 @@
   import { Activity, Banknote, Briefcase, LayoutDashboard, Settings } from 'lucide-svelte'
   import { page } from '$app/state'
   import { resolve } from '$app/paths'
+  import { t } from '$lib/i18n/index.svelte'
   import { cx } from '../ui/utils'
 
   /**
@@ -9,6 +10,10 @@
    * Settings sections pinned to the bottom. `collapsed` renders the icon-rail
    * variant (64px): labels disappear, so each link carries an
    * `aria-label`/`title`.
+   *
+   * Labels are translated with `t()` (EPIC K.1b, decision D1): the items
+   * carry `labelKey`s and every render (text + collapsed aria/title) reads
+   * the reactive locale, so switching language re-renders the nav in place.
    *
    * The active entry is the item whose path is the *longest* prefix of the
    * current URL (with `/` matching exactly): only one link ever gets
@@ -20,19 +25,20 @@
   let { collapsed = false }: { collapsed?: boolean } = $props()
 
   // `as const` keeps `to` as literal route types so the typed `resolve()`
-  // accepts them; the icon cast unifies the component type per list.
+  // accepts them (and the label keys against the `MessageKey` union); the
+  // icon cast unifies the component type per list.
   const mainItems = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard as IconType },
-    { to: '/portfolios', label: 'Portfolios', icon: Briefcase as IconType },
-    { to: '/assets', label: 'Assets', icon: Banknote as IconType },
+    { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard as IconType },
+    { to: '/portfolios', labelKey: 'nav.portfolios', icon: Briefcase as IconType },
+    { to: '/assets', labelKey: 'nav.assets', icon: Banknote as IconType },
   ] as const
 
   const adminItems = [
-    { to: '/admin/health', label: 'Health', icon: Activity as IconType },
+    { to: '/admin/health', labelKey: 'nav.health', icon: Activity as IconType },
   ] as const
 
   const settingsItems = [
-    { to: '/settings', label: 'Settings', icon: Settings as IconType },
+    { to: '/settings', labelKey: 'nav.settings', icon: Settings as IconType },
   ] as const
 
   function matches(to: string, pathname: string): boolean {
@@ -64,7 +70,7 @@
   }
 </script>
 
-<nav aria-label="Main" class="flex min-h-0 flex-1 flex-col">
+<nav aria-label={t('nav.main')} class="flex min-h-0 flex-1 flex-col">
   <div class="flex-1 space-y-1 overflow-y-auto p-3">
     {#each mainItems as item (item.to)}
       {@const Icon = item.icon}
@@ -72,11 +78,11 @@
         href={resolve(item.to)}
         class={itemClasses(item.to)}
         aria-current={item.to === activeTo ? 'page' : undefined}
-        aria-label={collapsed ? item.label : undefined}
-        title={collapsed ? item.label : undefined}
+        aria-label={collapsed ? t(item.labelKey) : undefined}
+        title={collapsed ? t(item.labelKey) : undefined}
       >
         <Icon class="h-5 w-5 shrink-0" />
-        {#if !collapsed}{item.label}{/if}
+        {#if !collapsed}{t(item.labelKey)}{/if}
       </a>
     {/each}
   </div>
@@ -84,7 +90,7 @@
   <div class="border-t border-border p-3">
     {#if !collapsed}
       <div class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Admin
+        {t('nav.sectionAdmin')}
       </div>
     {/if}
     <div class="space-y-1">
@@ -94,11 +100,11 @@
           href={resolve(item.to)}
           class={itemClasses(item.to)}
           aria-current={item.to === activeTo ? 'page' : undefined}
-          aria-label={collapsed ? item.label : undefined}
-          title={collapsed ? item.label : undefined}
+          aria-label={collapsed ? t(item.labelKey) : undefined}
+          title={collapsed ? t(item.labelKey) : undefined}
         >
           <Icon class="h-5 w-5 shrink-0" />
-          {#if !collapsed}{item.label}{/if}
+          {#if !collapsed}{t(item.labelKey)}{/if}
         </a>
       {/each}
     </div>
@@ -107,7 +113,7 @@
   <div class="border-t border-border p-3">
     {#if !collapsed}
       <div class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Settings
+        {t('nav.sectionSettings')}
       </div>
     {/if}
     <div class="space-y-1">
@@ -117,11 +123,11 @@
           href={resolve(item.to)}
           class={itemClasses(item.to)}
           aria-current={item.to === activeTo ? 'page' : undefined}
-          aria-label={collapsed ? item.label : undefined}
-          title={collapsed ? item.label : undefined}
+          aria-label={collapsed ? t(item.labelKey) : undefined}
+          title={collapsed ? t(item.labelKey) : undefined}
         >
           <Icon class="h-5 w-5 shrink-0" />
-          {#if !collapsed}{item.label}{/if}
+          {#if !collapsed}{t(item.labelKey)}{/if}
         </a>
       {/each}
     </div>

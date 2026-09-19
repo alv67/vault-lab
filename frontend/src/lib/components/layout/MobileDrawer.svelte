@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import { afterNavigate } from '$app/navigation'
   import { fade, slide } from 'svelte/transition'
+  import { t } from '$lib/i18n/index.svelte'
 
   /**
    * Off-canvas navigation drawer below `lg` (EPIC D.3): the same `Sidebar`
@@ -94,7 +95,7 @@
     class="fixed inset-0 z-30 bg-overlay/50 lg:hidden"
     role="dialog"
     aria-modal="true"
-    aria-label="Navigation"
+    aria-label={t('nav.drawer')}
     tabindex="-1"
     transition:fade={{ duration: 150 }}
     onclick={handleBackdropClick}

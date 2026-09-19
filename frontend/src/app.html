@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- Static lang ships the i18n default (Italian, decision D1) and is updated
+     at runtime by src/lib/i18n/index.svelte.ts from the persisted locale —
+     keep the two in sync with DEFAULT_LOCALE. -->
+<html lang="it">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vault.svg" />
@@ -8,15 +11,17 @@
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#020617" />
     <title>VaultLab</title>
     <script>
-      // Pre-paint theme bootstrap (EPIC D). Runs before CSS is applied so the
-      // first frame never flashes the wrong background. Keep the storage key,
-      // the validation and the 'dark' fallback in sync with
+      // Pre-paint theme bootstrap (EPIC D / K.1a). Runs before CSS is applied
+      // so the first frame never flashes the wrong background. Without a
+      // stored preference the `system` mode resolves the OS
+      // prefers-color-scheme (dark only on systems configured dark). Keep the
+      // storage key, the validation and the 'system' fallback in sync with
       // src/lib/stores/theme.svelte.ts (DEFAULT_MODE).
       (function () {
         try {
           var stored = localStorage.getItem('vaultlab-theme');
           var mode =
-            stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'dark';
+            stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
           var dark =
             mode === 'dark' ||
             (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);

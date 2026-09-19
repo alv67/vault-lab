@@ -683,6 +683,55 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.4 Entità → tab** | Sotto-route portfolio/asset (Overview/Positions/Activity/Allocation/Data), filtri+sheet edit, undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
+> **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
+> di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
+> `--surface-raised` mappati per compatibilità zero-regression), token
+> semantico `--info`, `--chart-grid` cablato sulle griglie ECharts a ~8% di
+> opacità (mirror in `chartTheme.ts`), gradini tipografici `text-hero`/
+> `text-micro`, token di motion (`duration-fast/base/slow`, `ease-standard`,
+> neutralizzazione `prefers-reduced-motion`), font self-hosted **Inter +
+> JetBrains Mono** via `@fontsource` (D5) e **tema di default → system** (D9).
+> Nessun markup di componente toccato: restano da fare il resto di K.1
+> (primitive → completate in K.1c, i18n D1 → K.1b, palette CVD).
+
+> **K.1b — Livello i18n (D1) + pagina Preferenze — ✅ completata (questo branch)**:
+> layer i18n leggero senza dipendenze esterne in `frontend/src/lib/i18n/`:
+> runtime a rune `index.svelte.ts` (`SUPPORTED_LOCALES = ['it','en']`,
+> `DEFAULT_LOCALE = 'it'`, `locale` reattivo, `setLocale()` persistente in
+> `localStorage['vaultlab-locale']` + sync `<html lang>` + ascolto cross-tab,
+> `t(key, params)` con interpolazione `{name}`), dizionari `en.ts`
+> (canonico) / `it.ts` verificati con `satisfies Dictionary` (identità
+> strutturale garantita alla compile-time), chiavi annidate a due livelli
+> `group.key` esposte appiattite (`nav.dashboard`) e tipizzate come unione
+> `MessageKey`; chiave sconosciuta → chiave stessa con fallback EN (D1) e
+> warning solo in dev. `app.html` parte con `lang="it"` (valore statico =
+> DEFAULT_LOCALE, sincronizzato a runtime). Nuova pagina **Settings →
+> Preferenze** (`/settings/preferences`, tab tra Password e Valute come da
+> spec §6.6): tema Chiaro/Scuro/Sistema sullo store esistente (default
+> system, D9) e lingua IT/EN su `setLocale` (default italiano, D1), con
+> apply immediato e persistenza locale. Prima passata di migrazione:
+> navigation della shell tradotta (`SidebarNav`, `AppHeader`, `UserMenu`,
+> `ThemeToggle`, `SettingsTabs`, `MobileDrawer`, skip-link `AppShell`); le
+> altre pagine restano con la copia mista EN/IT fino alle rispettive fasi
+> (migrazione progressiva).
+
+> **K.1c — Primitive UI di base — ✅ completata (questo branch)**: sei nuove
+> primitive accessibili (WCAG 2.2 AA) e theme-aware in
+> `frontend/src/lib/components/ui/`, ancora non consumate da nessuna pagina
+> (l'adozione avviene con K.2–K.5): `PnlValue` (segno + ▲▼ + colore semantico,
+> zero neutro — D6), `AsyncCard` (stati loading/errore/vuoto/dati per singola
+> card, con Retry isolato), `PeriodChips` (radiogroup compatta per i periodi
+> dei grafici, navigazione con frecce), `Drawer` (drawer di ispezione ≥ `lg`,
+> focus-trap + Esc/backdrop + ripristino — D4), `Sheet` (bottom sheet < `lg`,
+> stessa API con handle decorativo) e `Tabs` (tablist ARIA legata alle route,
+> focus roving). Helper condivisi estratti: `ui/focus-trap.ts` e
+> `ui/transitions.ts` (transizioni sui token motion, `prefers-reduced-motion`
+> rispettato anche nelle transizioni JS); `Modal`/`MobileDrawer` restano
+> invariati (zero regressioni). **`DataTable` e `KpiStrip` sono rinviati
+> deliberatamente a K.4**, dove verranno progettate attorno ai reali call
+> site. In K.1 resta solo la palette CVD (il toggle è pianificato per K.5);
+> i18n (D1) è completata in K.1b.
+
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di
 rischio) in una card **Insights** su Overview/portafoglio; Fase 3 (sharing/ruoli) nel

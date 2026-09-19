@@ -8,12 +8,12 @@ export const THEME_STORAGE_KEY = 'vaultlab-theme'
 /**
  * Theme used when nothing valid is persisted in localStorage.
  *
- * Dark is the product default since D.4: every surface now reads the semantic
- * tokens, so the staging note on shipping the token layer is gone. The
- * pre-paint bootstrap script in `src/app.html` mirrors this fallback — keep
- * the two in sync.
+ * Follow-the-system is the product default since K.1a (decision D9): light
+ * and dark are equal citizens and dark is only the effective default on
+ * systems configured dark. The pre-paint bootstrap script in `src/app.html`
+ * mirrors this fallback — keep the two in sync.
  */
-export const DEFAULT_MODE: ThemeMode = 'dark'
+export const DEFAULT_MODE: ThemeMode = 'system'
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'dark' || value === 'system'

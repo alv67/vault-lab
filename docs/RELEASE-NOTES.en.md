@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+- The app now follows your system theme by default: light and dark are both first-class, and you can still pin your preferred one from the header
+- New interface font (Inter) plus a dedicated monospace font for tickers and codes — both bundled with the app, nothing is downloaded from third-party services
+- New Settings → Preferences page: choose theme (Light/Dark/System) and interface language (Italian/English); the app now defaults to the system theme and to Italian, and remembers your choices on this device
+
 ### Fixes
 - Fetching an asset's exposure from Morningstar now also works for funds quoted on multiple markets: if one market's quotation carries no data, the next quotation of the same ISIN is used automatically
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import AppHeader from './AppHeader.svelte'
   import MobileDrawer from './MobileDrawer.svelte'
   import Sidebar from './Sidebar.svelte'
@@ -51,7 +52,7 @@
   href="#content"
   class="focus-ring sr-only rounded-control bg-surface px-4 py-2 text-sm font-medium text-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50"
 >
-  Skip to content
+  {t('nav.skipToContent')}
 </a>
 
 <div class="flex h-dvh overflow-hidden bg-background text-foreground">

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Banknote, Menu, PanelLeft } from 'lucide-svelte'
   import { resolve } from '$app/paths'
+  import { t } from '$lib/i18n/index.svelte'
   import Button from '../ui/Button.svelte'
   import ThemeToggle from './ThemeToggle.svelte'
   import UserMenu from './UserMenu.svelte'
@@ -9,7 +10,9 @@
    * Sticky top bar (EPIC D.3). Left: hamburger below `lg` (opens the mobile
    * drawer) / sidebar collapse toggle from `lg` up, plus a mobile-only brand
    * (the sidebar is hidden there). Right: theme toggle and — on mobile,
-   * where the sidebar's user menu is gone — the user menu too.
+   * where the sidebar's user menu is gone — the user menu too. The control
+   * aria-labels go through `t()` (EPIC K.1b, decision D1); the "VaultLab"
+   * brand is a proper noun and stays as-is.
    *
    * z-20: same tier as the dropdowns it hosts (header and its popovers must
    * both stay under the drawer, z-30).
@@ -38,7 +41,7 @@
       variant="ghost"
       size="icon"
       class="lg:hidden"
-      aria-label={drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
+      aria-label={drawerOpen ? t('header.closeMenu') : t('header.openMenu')}
       aria-haspopup="dialog"
       aria-expanded={drawerOpen}
       onclick={ontoggledrawer}
@@ -49,7 +52,7 @@
       variant="ghost"
       size="icon"
       class="hidden lg:inline-flex"
-      aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      aria-label={collapsed ? t('header.expandSidebar') : t('header.collapseSidebar')}
       aria-pressed={collapsed}
       onclick={ontogglecollapse}
     >

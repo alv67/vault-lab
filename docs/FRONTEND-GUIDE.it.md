@@ -527,32 +527,63 @@ La UI si basa su un piccolo design system interno introdotto nell'**EPIC D**.
 
 I colori non sono più scritti direttamente nelle pagine. `tailwind.config.js`
 definisce un insieme di token di colore **semantici** — `background`,
-`foreground`, `surface`, `surface-raised`, `muted`, `muted-foreground`,
-`border`, `input`, `ring`, `accent` (+ `accent-hover`/`accent-foreground`/
-`accent-text`), `positive`, `negative`, `warning`, `overlay`, `chart-1..12`,
-`chart-muted` — mappati su custom property CSS definite in `app.css` (`:root` e
-`.dark`). Poiché i valori sono terne HSL composte con
+`foreground`, la **scala di elevazione** `surface-0..3` (+ gli alias legacy
+`surface` = `surface-1` e `surface-raised` = `surface-2`), `muted`,
+`muted-foreground`, `border`, `input`, `ring`, `accent` (+
+`accent-hover`/`accent-foreground`/`accent-text`), `positive`, `negative`,
+`warning`, `info` (+ `info-foreground`, per l'indicazione di freschezza
+prezzi/informativa), `overlay`, `chart-1..12`, `chart-muted`, `chart-grid` —
+mappati su custom property CSS definite in `app.css` (`:root` e `.dark`).
+Poiché i valori sono terne HSL composte con
 `hsl(var(--token) / <alpha-value>)`, i modificatori di opacità funzionano
 (`bg-accent/10`).
 
+- **Scala di elevazione (EPIC K.1a)**: quattro superfici semantiche —
+  `surface-0` (sfondo app), `surface-1` (card), `surface-2` (raised/drawer),
+  `surface-3` (popover/tooltip). Il tema scuro le separa con una scala di
+  luminosità di ~6–8 punti per gradino (i componenti futuri aggiungono
+  hairline `border-white/6`); il tema chiaro mantiene bianchi i gradini 1–3 e
+  affida la separazione alla rampa di ombre.
 - Raggi: `rounded-card` / `rounded-control`; elevazione: `shadow-card` /
-  `shadow-raised`; focus coerente: la classe `.focus-ring`.
+  `shadow-raised` / `shadow-popover`; focus coerente: la classe `.focus-ring`.
+- **Token di motion (K.1a)**: durate `duration-fast` (120 ms),
+  `duration-base` (200 ms), `duration-slow` (320 ms) e un'unica curva ease-out
+  `ease-standard`; `app.css` disattiva transizioni e animazioni sotto
+  `prefers-reduced-motion: reduce`.
+- **Scala tipografica (K.1a)**: default di Tailwind più i gradini nominati
+  `text-hero` (40 px semibold, per i KPI della overview) e `text-micro`
+  (etichette da 11 px).
+- **Font (decisione D5)**: **Inter** (UI) e **JetBrains Mono** (ticker, ISIN,
+  codici) sono **self-hosted** via `@fontsource/inter` (400/500/600/700) e
+  `@fontsource/jetbrains-mono` (400/500), importati in
+  `routes/+layout.svelte` — nessun CDN, `font-display: swap`.
+  `fontFamily.sans` inizia con Inter e `fontFamily.mono` con JetBrains Mono
+  (fallback di sistema mantenuti), quindi `font-mono` applica lo stack mono
+  ovunque sia usato.
 - Tailwind è caricato tramite `app.css` (le tre direttive `@tailwind`) e
   PostCSS (`postcss.config.js`: `tailwindcss` + `autoprefixer`).
+- `lib/chartTheme.ts` replica i token per la canvas (ECharts non risolve le
+  variabili CSS), incluso `--chart-grid`: le split line degli assi sono
+  dipinte con quel colore a ~8% di opacità, così i dati restano l'elemento
+  più luminoso.
 - `lib/ui-colors.ts` centralizza i colori testo di P&L (`pnlColorClass`,
   `totalColorClass`), prima duplicati in quattro pagine.
 
 ### Dark mode
 
-- **Lo scuro è il default**; l'utente può scegliere **Chiaro**, **Scuro** o
-  **Sistema** (segue l'OS) dal selettore del tema nell'header.
+- **Il default è Sistema (segue l'OS, decisione D9, da K.1a)**; chiaro e
+  scuro sono temi first-class, progettati allo stesso modo. L'utente può
+  sovrascrivere con **Chiaro**, **Scuro** o **Sistema** dal selettore del
+  tema nell'header.
 - La scelta è salvata in `localStorage` (`vaultlab-theme`) ed è gestita da
-  `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`); è
-  sincronizzata tra le schede e segue i cambi dell'OS in modalità `system`.
+  `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`,
+  `DEFAULT_MODE = 'system'`); è sincronizzata tra le schede e segue i cambi
+  dell'OS in modalità `system`.
 - Uno script inline in `app.html` imposta la classe `.dark` **prima del primo
-  paint**, così un reload in scuro non mostra mai un lampo bianco (niente FOUC).
-  `darkMode: 'class'` nella config di Tailwind fa sì che una sola classe cambi
-  tutti i token.
+  paint**, risolvendo il `prefers-color-scheme` dell'OS quando non c'è nulla
+  di valido salvato, così un reload non mostra mai il tema sbagliato (niente
+  FOUC). `darkMode: 'class'` nella config di Tailwind fa sì che una sola
+  classe cambi tutti i token.
 
 ### Primitive UI
 
@@ -564,6 +595,22 @@ primary/secondary/outline/ghost/danger/link, dimensioni, loading), `Input`,
 `StatCard`. Le pagine e la shell le riusano invece di duplicare markup. Le
 azioni distruttive usano `ConfirmDialog` al posto del `confirm()` nativo del
 browser.
+
+**Fondamenta EPIC K.1c (redesign UX)**: sei nuove primitive, costruite sugli
+stessi token ma ancora non adottate da nessuna pagina (arrivano con K.2–K.5):
+`PnlValue` (il renderer canonico di guadagno/perdita — segno esplicito +
+glifo ▲▼ + colore semantico, zero neutro, "positive/negative" solo per
+screen reader; decisione D6), `AsyncCard` (stati loading/errore/vuoto/dati per
+singola card, con skeleton di forma compatibile ed errore isolato su una riga
++ Retry), `PeriodChips` (selettore di periodo compatto con semantica
+radiogroup e navigazione con i tasti freccia, da posizionare sul grafico),
+`Drawer` (drawer di ispezione laterale destro, focus-trap + Esc/backdrop +
+ripristino; D4 a ≥ `lg`), `Sheet` (bottom sheet con handle di trascinamento,
+stessa API; D4 a < `lg`) e `Tabs` (tablist ARIA di `<a>` reali con focus
+roving, per i sottopagine-entità di K.4). Il focus-trap condiviso delle
+overlay e le transizioni sui token di motion sono estratti in
+`ui/focus-trap.ts` e `ui/transitions.ts` (le esistenti `Modal`/`MobileDrawer`
+mantengono per ora le loro ricette inline, a zero regressioni).
 
 ### La shell dell'app
 
@@ -594,16 +641,35 @@ fisso.
   `sm:grid-cols-2 lg:grid-cols-3`, `md:grid-cols-3 lg:grid-cols-6`), le tabelle
   lunghe sono avvolte in `overflow-x-auto`, e sotto `lg` la shell diventa un
   drawer mobile.
-- **App-wide**: `app.html` mantiene `lang="en"` e la favicon `/vault.svg`,
-  imposta i meta `theme-color` chiaro/scuro ed esegue il bootstrap del tema
-  pre-paint; background/foreground del body ora arrivano dai token via
-  `app.css`.
-- **Nota sulla lingua**: la UI è volutamente mista inglese/italiano — la
-  maggior parte dei titoli è in inglese, mentre diverse etichette, stati vuoti
-  e messaggi di toast sono in italiano ("cambio mancante", "Nessuna allocazione
-  per classi", "Aggiorna da Yahoo", "Salva modifiche", ...). Riflette la lingua
-  attuale del prodotto; anche i formattatori del capitolo 6 seguono lo stesso
-  mix.
+- **App-wide**: `app.html` parte con `lang="it"` (il default dell'i18n —
+  vedi la nota lingua sotto — e aggiornato a runtime dal locale
+  persistito), la favicon `/vault.svg`, i meta `theme-color` chiaro/scuro
+  e il bootstrap del tema pre-paint; background/foreground del body ora
+  arrivano dai token via `app.css`.
+- **Nota sulla lingua (i18n da EPIC K.1b, decisione D1)**: le traduzioni
+  girano su un layer leggerissimo senza dipendenze esterne in
+  `src/lib/i18n/`. Lo store a rune `index.svelte.ts` esporta
+  `SUPPORTED_LOCALES` (`['it', 'en']`), `DEFAULT_LOCALE = 'it'`, il
+  `locale` reattivo (`locale.current`), `setLocale()` (valida, persiste in
+  `localStorage['vaultlab-locale']`, sincronizza `<html lang>`, listener
+  cross-tab — rispecchia lo store del tema) e `t(key, params)` che legge il
+  locale reattivo così i componenti si ri-renderizzano al cambio; i
+  segnaposto `{name}` sono interpolati da `params`. I dizionari sono
+  oggetti annidati a due livelli — `en.ts` è la forma canonica
+  (`Dictionary`), `it.ts` è verificato con `satisfies Dictionary` quindi
+  una chiave mancante/in più fa fallire la build; le chiavi vengono
+  appiattite in lookup dot-joined (`nav.dashboard`) e tipizzate come
+  unione `MessageKey`, così anche i siti di chiamata `t()` sono controllati
+  alla compile-time. Ordine di ricerca: locale attivo → inglese
+  (fallback) → la chiave stessa, con warning su console solo in dev (mai
+  un'eccezione). **La migrazione è progressiva**: K.1b ha tradotto la
+  navigation della shell (`SidebarNav`, etichette di
+  `AppHeader`/`UserMenu`/`ThemeToggle`, `SettingsTabs`, `MobileDrawer`,
+  skip link) più la nuova pagina **Impostazioni → Preferenze**; le altre
+  pagine mantengono la storica copia mista inglese/italiano ("cambio
+  mancante", "Aggiorna da Yahoo", … — anche i formattatori del capitolo 6
+  seguono lo stesso mix) fino alla rispettiva passata nelle fasi
+  successive.
 
 ---
 
@@ -1047,7 +1113,9 @@ freschi.
 ### `/settings` — Impostazioni (`routes/settings/+page.svelte`)
 
 Endpoint chiamati: `settingsApi.listCurrencies()`, `updateProfile()`,
-`authApi.changePassword()`.
+`authApi.changePassword()`. La barra `SettingsTabs` naviga le quattro
+sezioni (Profilo · Password · **Preferenze** · Valute) e le sue etichette
+sono tradotte tramite il layer i18n (capitolo 8).
 
 - **Profile** (nome/email/**valuta base**) e **Change password**
   (`POST /users/me/password` con `current_password` + `new_password`,
@@ -1057,6 +1125,15 @@ Endpoint chiamati: `settingsApi.listCurrencies()`, `updateProfile()`,
   `auth.user.base_currency` (fallback `EUR`) e salvato con
   `updateProfile(name, email, baseCurrency)`; pilota il riepilogo e la
   conversione dello storico della dashboard (capitolo 10).
+- **Preferenze** (`routes/settings/preferences/+page.svelte`, EPIC K.1b):
+  la prima pagina completamente tradotta. Tema **Chiaro/Scuro/Sistema** con
+  una `SegmentedControl` collegata allo store del tema (default Sistema,
+  decisione D9) e **lingua** dell'interfaccia (Italiano/English, default
+  italiano, decisione D1) con una `Select` collegata a `setLocale` in
+  `lib/i18n/`. Entrambe si applicano subito e persistono in `localStorage`
+  (niente pulsante di salvataggio); cambiando lingua la navigation della
+  shell si ri-renderizza sul posto. Il tab si trova tra Password (=
+  Sicurezza) e Valute, nell'ordine di sezioni della spec UX-redesign.
 - **Valute gestite**: il CRUD della whitelist valute — aggiungi un codice di 3
   lettere (un 422 dal backend significa che Yahoo non ha la conversione
   USD→codice e il frontend mostra un messaggio dedicato; 409 = già presente),
