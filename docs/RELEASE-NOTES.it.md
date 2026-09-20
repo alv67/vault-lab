@@ -30,6 +30,7 @@
 - Passando un grafico alla vista Tabella non si apre più una barra di scorrimento dentro la card su nessun dispositivo: tutte le righe sono visibili e scorre solo la pagina; sul telefono ogni riga si compatta in un blocco nome + cifre che sta nella larghezza dello schermo
 - Anche il grafico della ripartizione per paese non scorre più dentro la card: mostra i dieci maggiori e un comando "Mostra tutti" lo espande sul posto
 - Le viste di allocazione ora seguono la lingua dell'interfaccia: la card "Allocazione complessiva" della dashboard, il tab Allocazione del portafoglio e il tab Esposizione dell'asset (etichette, stati vuoti, tooltip dei grafici e badge di provenienza inclusi) passano ora dall'italiano all'inglese come il resto dell'app
+- Niente più doppia barra di scorrimento nelle pagine lunghe: la cornice dell'app non fa più scorrere l'intera pagina oltre all'area dei contenuti, quindi si torna a una sola barra di scorrimento
 - Il recupero dell'esposizione di un asset da Morningstar ora funziona anche per i fondi quotati su più mercati: se la quotazione di un mercato non ha dati, viene usata automaticamente la quotazione successiva dello stesso ISIN
 
 ## v0.5.0 — 17 Set 2026
