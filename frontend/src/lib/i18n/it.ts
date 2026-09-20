@@ -73,6 +73,35 @@ export const it = {
     preferences: 'Preferenze',
     currencies: 'Valute',
   },
+  /**
+   * Pannello comandi globale (EPIC K.5a, spec §8.1). Le etichette di
+   * destinazioni/azioni sono riusate dai gruppi `nav.*`, `settingsTabs.*`,
+   * `quickActions.*`, `theme.*` e `preferences.palette*`; qui c'è solo la
+   * copy propria del pannello. `{query}` porta il testo digitato.
+   */
+  commandPalette: {
+    /** Nome accessibile del dialog. */
+    title: 'Pannello comandi',
+    /** aria-label del pulsante di ricerca nell'header. */
+    trigger: 'Apri il pannello comandi',
+    /** Etichetta visibile (lg+) e aria-label dell'input di ricerca. */
+    inputLabel: 'Cerca',
+    placeholder: 'Cerca pagine, portafogli, asset…',
+    sectionGoTo: 'Vai a',
+    sectionAssets: 'Asset',
+    sectionActions: 'Azioni',
+    noResults: 'Nessun risultato',
+    yahooRow: 'Cerca su Yahoo “{query}”',
+    searching: 'Ricerca su Yahoo in corso…',
+    /** Azioni (gli hint mostrano lo stato di destinazione dei toggle). */
+    toggleTheme: 'Cambia tema',
+    toggleCvd: 'Attiva/disattiva palette per daltonici',
+    toggleSidebar: 'Mostra/nascondi barra laterale',
+    /** Suggestioni da tastiera, dopo un glifo <kbd>. */
+    hintNavigate: 'per navigare',
+    hintSelect: 'per selezionare',
+    hintClose: 'per chiudere',
+  },
   preferences: {
     title: 'Preferenze',
     themeHint: 'Chiaro, scuro, oppure in base alle impostazioni del dispositivo (Sistema).',

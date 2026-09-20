@@ -97,6 +97,35 @@ export const en = {
     preferences: 'Preferences',
     currencies: 'Currencies',
   },
+  /**
+   * Global command palette (EPIC K.5a, spec §8.1). Destination/action labels
+   * reused from `nav.*`, `settingsTabs.*`, `quickActions.*`, `theme.*` and
+   * `preferences.palette*` live there; this group only holds the palette's
+   * own copy. `{query}` carries the raw typed text.
+   */
+  commandPalette: {
+    /** Accessible name of the dialog. */
+    title: 'Command palette',
+    /** aria-label of the header search trigger. */
+    trigger: 'Open command palette',
+    /** Visible pill text (lg+) and aria-label of the search input. */
+    inputLabel: 'Search',
+    placeholder: 'Search pages, portfolios, assets…',
+    sectionGoTo: 'Go to',
+    sectionAssets: 'Assets',
+    sectionActions: 'Actions',
+    noResults: 'No results',
+    yahooRow: 'Search Yahoo for “{query}”',
+    searching: 'Searching Yahoo…',
+    /** Action rows (the hints preview the target state of the toggles). */
+    toggleTheme: 'Toggle theme',
+    toggleCvd: 'Toggle color-blind palette',
+    toggleSidebar: 'Toggle sidebar',
+    /** Footer key hints, composed after a <kbd> glyph. */
+    hintNavigate: 'to navigate',
+    hintSelect: 'to select',
+    hintClose: 'to close',
+  },
   preferences: {
     title: 'Preferences',
     themeHint: 'Light, dark, or follow the device setting (System).',

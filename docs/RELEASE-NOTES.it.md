@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- Apri il nuovo pannello comandi con ⌘K/Ctrl+K (o con il pulsante di ricerca nell'header, su ogni dispositivo): vai a una qualsiasi pagina, portafoglio o asset, cerca su Yahoo ed esegui le azioni rapide — aggiungi transazione, aggiorna prezzi, cambia tema, attiva la palette per daltonici — senza lasciare la pagina in cui sei
 - Palette utile/perdita opzionale per daltonici: da Impostazioni → Preferenze puoi sostituire i colori verde/rosso con una coppia blu/arancione in tutta l'app, testi e grafici inclusi — i segni +/− e le frecce ▲▼ ci sono sempre, e il tema scelto non cambia
 - La scheda Attività del portafoglio ora si può filtrare per tipo di transazione, asset e intervallo di date; i filtri restano nel link, quindi puoi condividere o salvare una vista filtrata e il pulsante indietro la riporta esattamente com'era
 - L'eliminazione di una transazione ora si può annullare direttamente dal toast di conferma (5 secondi); la finestra di conferma dell'eliminazione non c'è più

@@ -4,6 +4,7 @@
   import { viewport } from '$lib/stores/viewport.svelte'
   import AppHeader from './AppHeader.svelte'
   import BottomNav from './BottomNav.svelte'
+  import CommandPalette from './CommandPalette.svelte'
   import Fab from './Fab.svelte'
   import MobileDrawer from './MobileDrawer.svelte'
   import Sidebar from './Sidebar.svelte'
@@ -29,12 +30,14 @@
    * - `collapsed` — persisted under `vaultlab-sidebar` so the rail survives
    *   reloads (the app is SPA-only: `export const ssr = false`, so reading
    *   localStorage at init never runs on the server);
-   * - `moreOpen` — the phone More sheet (the drawer handles its own
-   *   close-on-navigation + focus trap);
-   * - `condensed` — measured on the main scroll container past a small
-   *   threshold and handed to the sticky header (§5.1 "condenses on
-   *   scroll").
-   */
+    * - `moreOpen` — the phone More sheet (the drawer handles its own
+    *   close-on-navigation + focus trap);
+    * - `condensed` — measured on the main scroll container past a small
+    *   threshold and handed to the sticky header (§5.1 "condenses on
+    *   scroll");
+    * - `paletteOpen` — the K.5a command palette (⌘K/Ctrl+K chord, the header
+    *   search trigger and Esc all share this one bindable state).
+    */
   const SIDEBAR_STORAGE_KEY = 'vaultlab-sidebar'
 
   /** Scroll distance (px) after which the sticky header condenses. */
@@ -54,6 +57,7 @@
   let collapsed = $state(readCollapsed())
   let moreOpen = $state(false)
   let condensed = $state(false)
+  let paletteOpen = $state(false)
   let scrollContainer = $state<HTMLElement | null>(null)
 
   // Tablet forces the rail (spec §5.1: on the `sm`–`lg` classes the sidebar
@@ -103,7 +107,12 @@
     bind:this={scrollContainer}
     class="flex min-w-0 flex-1 flex-col overflow-y-auto"
   >
-    <AppHeader {collapsed} {condensed} ontogglecollapse={toggleCollapsed} />
+    <AppHeader
+      {collapsed}
+      {condensed}
+      ontogglecollapse={toggleCollapsed}
+      onopenpalette={() => (paletteOpen = true)}
+    />
     <!-- Longhand padding utilities only: `p-*` shorthand would fight the
          phone-only `pb-[…]` clearance below the fixed bottom nav. -->
     <main
@@ -124,3 +133,8 @@
 <MobileDrawer bind:open={moreOpen}>
   <Sidebar collapsed={false} />
 </MobileDrawer>
+
+<!-- Global command palette (EPIC K.5a, spec §8.1): mounted once here — the
+     ⌘K/Ctrl+K chord lives in the component, the header search button opens
+     it, and it borrows `toggleCollapsed` for its Toggle-sidebar action. -->
+<CommandPalette bind:open={paletteOpen} ontogglesidebar={toggleCollapsed} />

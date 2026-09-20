@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- Open the new command palette with ⌘K/Ctrl+K (or the search button in the header, on every device): jump to any page, portfolio or asset, search Yahoo, and run quick actions — add transaction, refresh prices, switch theme, toggle the color-blind palette — all without leaving where you are
 - Optional colour-blind-friendly gain/loss palette: from Settings → Preferences you can swap the green/red P/L colours for a blue/orange pair everywhere, text and charts included — the +/− signs and ▲▼ arrows are always shown, and your theme stays untouched
 - The portfolio Activity tab can now be filtered by transaction type, asset and date range — the filters stay in the link, so you can share or bookmark a filtered view and the back button brings it back exactly as it was
 - Deleting a transaction can now be undone straight from the confirmation toast (5 seconds); the delete-confirmation dialog is gone

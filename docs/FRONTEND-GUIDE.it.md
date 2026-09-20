@@ -686,7 +686,7 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   persistita vale solo da `lg` in su). Nessun hamburger e nessuna barra
   inferiore: la navigazione (main, Dati e sincronizzazione, Impostazioni) e il
   menu utente nel footer del rail restano raggiungibili attraverso il rail;
-  l'header conserva solo il selettore tema.
+  l'header conserva solo il trigger del pannello comandi e il selettore tema.
 - **Telefono (< `sm`)** — nessuna sidebar: una `BottomNav` fissa (Panoramica ·
   Portafogli · Asset · Altro, decisione D2) più un `Fab` ancorato sopra di essa
   che apre la `QuickActionSheet` (Aggiungi transazione → al portafoglio unico
@@ -707,6 +707,47 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   decisione D7) e vive in un unico punto di configurazione `adminItems` dentro
   `SidebarNav` (la route `/admin/health` non cambia), così potrà essere
   spostata in un menu Amministrazione senza una revisione diffusa.
+- **Pannello comandi (EPIC K.5a, spec §8.1)** — `layout/CommandPalette.svelte`
+  è montato una sola volta nell'`AppShell`, sul tier dei modali (z-40, sotto i
+  toast a z-50). L'accordo ⌘K/Ctrl+K è un handler `<svelte:window>` dentro il
+  componente (registrato solo dentro il gate di autenticazione, quindi il
+  Login non ne è toccato); l'`AppHeader` ospita il trigger a ogni misura —
+  solo icona sotto `lg` (l'accesso alla ricerca sui telefoni: nessun quinto
+  elemento nella bottom nav) e pill etichettato con l'accordo della piattaforma
+  (`⌘K`/`Ctrl K`) da `lg` in su. Lo stato aperto `$bindable` è di proprietà
+  della shell; Esc, il click sul backdrop e i cambi di rotta chiudono il
+  pannello, e il `ui/focus-trap.ts` condiviso riporta sempre il focus al
+  trigger. Dialog → un solo input `role="combobox"`
+  (`aria-expanded`/`aria-controls`/`aria-activedescendant`, l'input è
+  l'unico tab stop; le opzioni sono righe `role="option"` deliberatamente non
+  focusabili, pattern APG) su una `role="listbox"` raggruppata con tre sezioni
+  `role="group"` rese solo se non vuote: **Vai a** (Panoramica, Portafogli,
+  Asset, Dati e sincronizzazione, Impostazioni + le quattro sottosezioni, poi
+  ogni portafoglio da `portfolioApi.list()`), **Asset** (gli asset registrati
+  da `assetApi.list()` — nome più hint col ticker — seguiti da una riga live
+  "Cerca su Yahoo …" alimentata da un `assetApi.lookup()` con debounce di
+  300 ms da 2 caratteri in su; la selezione naviga semplicemente a `/assets`,
+  la creazione resta fuori scope) e **Azioni** (Aggiungi transazione — la
+  stessa scorciatoia a portafoglio unico del `Fab` —, Aggiorna prezzi —
+  `pricesApi.refresh()` + i toast `quickActions.*` —, Cambia tema — cicla
+  chiaro → scuro → sistema sullo store del tema —, Attiva/disattiva palette
+  CVD — `setCvd` — e Mostra/nascondi barra laterale, solo su desktop, che
+  pilota lo stato `collapsed` della shell). La corrispondenza è un matcher
+  locale senza dipendenze (prefisso > sottostringa > sottosequenza su un
+  haystack minuscolo `label + hint + keywords`); una riga "Nessun risultato"
+  copre lo stato vuoto. Le liste si caricano in modo pigro solo all'apertura
+  (cap di 8 per sezione dinamica a query vuota) — la cache GET di 60 s in
+  `services/api.ts` assorbe le riaperture ravvicinate e ogni mutazione la
+  invalida, quindi il pannello si autoaggiorna senza hook dedicati; gli error
+  restano silenziosi e le sezioni statiche rimangono utili. Tastiera: ↑/↓ con
+  wrap, Home/End, Invio (con guardia IME) esegue la riga attiva, Esc chiude;
+  la riga attiva segue lo scroll con `scrollIntoView({ block: 'nearest' })`.
+  Il motion è un solo fade del backdrop (`backdropFade()`, 0 ms con
+  `prefers-reduced-motion`). Tutta la copy passa dal gruppo dizionario
+  `commandPalette.*`; destinazioni e azioni riusano le chiavi `nav.*`,
+  `settingsTabs.*`, `quickActions.*`, `theme.*` e `preferences.palette*`
+  esistenti, e le sezioni dinamiche anticipano negli hint lo stato target dei
+  toggle (tema successivo, variante di palette).
 
 `ScopeSwitcher` e `FreshnessStamp` (elencati nella spec sotto K.2) sono arrivati
 con l'hero dell'Overview in **K.3a**, come componenti `domain/`: consumano il

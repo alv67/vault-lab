@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Banknote, PanelLeft } from 'lucide-svelte'
+  import { Banknote, PanelLeft, Search } from 'lucide-svelte'
+  import { browser } from '$app/environment'
   import { resolve } from '$app/paths'
   import { t } from '$lib/i18n/index.svelte'
   import Button from '../ui/Button.svelte'
@@ -12,8 +13,12 @@
    * collapse toggle — `lg`+ only, since phones have no sidebar (bottom nav
    * + More sheet, decision D2) and tablets are a forced icon rail — plus the
    * brand link shown below `lg` (the rail/drawer carry it otherwise).
-   * Right: the theme toggle at every size (the rail and the More sheet have
-   * no theme control of their own) and the user menu, phone-only
+   * Right: the command-palette trigger (EPIC K.5a — a search affordance at
+   * every size, spec §8.1; on `lg`+ it grows into a labelled pill with the
+   * ⌘K chord hint, on smaller viewports it stays the icon-only button, so
+   * phones get palette access without a 5th bottom-nav item), the theme
+   * toggle at every size (the rail and the More sheet have no theme control
+   * of their own) and the user menu, phone-only
    * (`sm:hidden`): from `sm` up the sidebar rail's footer hosts one already
    * so the header must not duplicate it, while on phones — where the More
    * sheet is navigation only — account and theme stay in the header (spec
@@ -24,7 +29,8 @@
    * Condensing (spec §5.1): the shell measures its main scroll container
    * and flips `condensed` once scrolled past a small threshold; the bar
    * shrinks 56px → 44px with a plain CSS height transition, which the global
-   * `prefers-reduced-motion` rule in app.css already neutralises.
+   * `prefers-reduced-motion` rule in app.css already neutralises. The
+   * trigger is `size="icon"` (h-9), so it survives the shrink unchanged.
    *
    * z-20: same tier as the dropdowns it hosts (header and its popovers must
    * both stay under the drawer/sheet tier, z-30).
@@ -33,13 +39,21 @@
     collapsed,
     condensed = false,
     ontogglecollapse,
+    onopenpalette,
   }: {
     /** Sidebar rail state (drives the collapse toggle's label/pressed). */
     collapsed: boolean
     /** Main scroll container scrolled past the condense threshold. */
     condensed?: boolean
     ontogglecollapse: () => void
+    /** Opens the K.5a command palette (the shell owns its bindable state). */
+    onopenpalette?: () => void
   } = $props()
+
+  // The ⌘K hint carries the platform's real chord (⌘ on Apple, Ctrl
+  // elsewhere); the palette component handles both chords identically.
+  const chord =
+    browser && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent) ? '⌘K' : 'Ctrl K'
 </script>
 
 <header
@@ -69,6 +83,23 @@
   </div>
 
   <div class="flex shrink-0 items-center gap-1">
+    <!-- Command-palette trigger (K.5a): icon-only below `lg`, a labelled
+         pill with the chord hint from `lg`. aria-haspopup mirrors the Fab's
+         quick-actions wiring: it opens a dialog, not a menu. -->
+    <Button
+      variant="ghost"
+      size="icon"
+      class="lg:w-auto lg:gap-2 lg:px-3"
+      aria-label={t('commandPalette.trigger')}
+      aria-haspopup="dialog"
+      onclick={() => onopenpalette?.()}
+    >
+      <Search class="h-5 w-5 shrink-0" aria-hidden="true" />
+      <span class="hidden text-sm lg:inline">{t('commandPalette.inputLabel')}</span>
+      <kbd class="hidden rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-micro text-muted-foreground lg:inline" aria-hidden="true"
+        >{chord}</kbd
+      >
+    </Button>
     <ThemeToggle />
     <UserMenu compact direction="down" align="end" class="sm:hidden" />
   </div>

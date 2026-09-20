@@ -681,7 +681,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
 | **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
-| **K.5 Power layer** | 🔄 *in corso — K.5c completata (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze).* Restano in K.5: ⌘K command palette, drill-down drawer, "view as table" | endpoint contribuzione drill-down (`dim+key` → asset) |
+| **K.5 Power layer** | 🔄 *in corso — K.5c completata (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze) e K.5a completata (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo).* Restano in K.5: drill-down drawer, "view as table" | endpoint contribuzione drill-down (`dim+key` → asset) |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
 > di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
@@ -980,6 +980,56 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > EN/IT (shape identici): `preferences.colorGroup`,
 > `preferences.paletteClassic`, `preferences.paletteCvd`,
 > `preferences.paletteHint`. Nessuna dipendenza nuova; backend intatto.
+
+> **K.5a — ⌘K Command palette (spec §8.1) — ✅ completata (questo branch)**:
+> nuovo `layout/CommandPalette.svelte` montato una sola volta nell'`AppShell`
+> sul tier modale (z-40, sotto i toast); lo stato `open` `$bindable` resta
+> alla shell (`paletteOpen`), che lo condivide col nuovo trigger in
+> `AppHeader` — pulsante di ricerca presente a ogni misura: solo icona sotto
+> `lg` (affordance di ricerca sul telefono senza quinto elemento nella bottom
+> nav, decisione D2) e pill etichettato con l'accordo della piattaforma
+> (`⌘K`/`Ctrl K`, UA-detected) da `lg`. La chord globale ⌘K/Ctrl+K vive nel
+> componente (`<svelte:window>`, quindi solo dentro il gate di auth: il Login
+> non è toccato); Esc, backdrop e i cambi di rotta chiudono, e il
+> `ui/focus-trap.ts` condiviso di K.1c gestisce Tab-cycling e ripristino del
+> focus sul trigger (nessun focus orfano). Modello ARIA = combobox APG con
+> listbox raggruppata: dialog → un solo input `role="combobox"`
+> (`aria-expanded`/`aria-controls`/`aria-autocomplete="list"`/
+> `aria-activedescendant`) → `role="listbox"` di `role="group"` per sezione e
+> righe `role="option"` non focusabili (di proposito: l'unico tab stop è
+> l'input). Sezioni, rese solo se non vuote: **Vai a** = Panoramica,
+> Portafogli, Asset, Dati e sincronizzazione, Impostazioni + le quattro
+> sottosezioni `settingsTabs.*` (tutte via `resolve()` + `goto`) più i
+> portafogli da `portfolioApi.list()` → `/portfolios/{id}`; **Asset** =
+> asset registrati da `assetApi.list()` (label nome + hint ticker) →
+> `/assets/{id}`, seguiti dalla riga live «Cerca su Yahoo "…"» che invoca
+> `assetApi.lookup()` solo da 2 caratteri con debounce 300 ms, counter
+> anti-race e failure silenziose — la selezione naviga a `/assets` (creazione
+> fuori scope, come da task); **Azioni** = Aggiungi transazione (stessa
+> logica Fab K.2: portafoglio unico → dettaglione, altrimenti lista),
+> Aggiorna prezzi (`pricesApi.refresh()` + gli stessi toast
+> `quickActions.*`), Cambia tema (cicla chiaro → scuro → sistema sullo store
+> del tema; l'hint anticipa il target), Attiva/disattiva palette CVD
+> (`setCvd`, hint = variante risultante) e Mostra/nascondi barra laterale
+> (solo desktop, tramite il callback `ontogglesidebar` della shell che pilota
+> lo stato persistito `collapsed`). Matching senza dipendenze: matcher locale
+> ~15 righe con scoring prefisso > sottostringa > sottosequenza,
+> case-insensitive, su haystack `label + hint + keywords`; stato «Nessun
+> risultato» dedicato. Dati pigri: fetch solo a dialogo aperto (assorbito
+> dalla cache GET 60 s di `services/api.ts`, che ogni mutazione già invalida
+> → self-refresh senza hook), cap 8 per sezione dinamica a query vuota,
+> fallimenti silenziosi (le sezioni statiche restano utili). Tastiera: ↑/↓
+> con wrap, Home/End, Invio eseguito con guardia `isComposing`, Esc chiude;
+> la lista segue la riga attiva con `scrollIntoView({ block: 'nearest' })`.
+> Motion: solo fade del backdrop via `backdropFade()` (0 ms con
+> `prefers-reduced-motion`), nessuna animazione del pannello; layout
+> centrato `max-w-lg`/`max-h-[70dvh]` su `bg-overlay/50`. Header condensante
+> intatto (trigger `size="icon"` h-9 ≤ h-11). Nuove chiavi i18n EN/IT (shape
+> identici): gruppo `commandPalette.*` (title, trigger, inputLabel,
+> placeholder, sectionGoTo/sectionAssets/sectionActions, noResults, yahooRow
+> con `{query}`, searching, toggleTheme/toggleCvd/toggleSidebar, hintNavigate/
+> hintSelect/hintClose); le label di destinazioni e azioni riusano i gruppi
+> esistenti. Nessuna dipendenza nuova; backend e pagine invariate.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

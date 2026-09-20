@@ -653,7 +653,8 @@ JS state and CSS never disagree.
   (`AppShell` passes `collapsed={true}` there; the persisted expand preference
   applies at `lg`+ only). No hamburger and no bottom bar: navigation (main,
   Data & Sync, Settings) and the rail-footer user menu stay reachable through
-  the rail; the header keeps only the theme toggle.
+  the rail; the header keeps only the command-palette trigger and the theme
+  toggle.
 - **Phone (< `sm`)** — no sidebar: a fixed `BottomNav` (Overview · Portfolios ·
   Assets · More, decision D2) plus a `Fab` anchored above it that opens the
   `QuickActionSheet` (Add transaction → the single portfolio when unambiguous
@@ -672,6 +673,44 @@ JS state and CSS never disagree.
   It lives in a single `adminItems` config point in `SidebarNav` (route
   `/admin/health` unchanged) so it can later be relocated into an
   Administration menu without a sweep.
+- **Command palette (EPIC K.5a, spec §8.1)** — `layout/CommandPalette.svelte`
+  mounts once in `AppShell` on the modal tier (z-40, under the z-50 toasts).
+  The ⌘K/Ctrl+K chord is a `<svelte:window>` handler inside the component
+  (registered only inside the auth gate, so Login is unaffected);
+  `AppHeader` carries the trigger at every size — icon-only below `lg` (the
+  phone search affordance: no 5th bottom-nav item) and a labelled pill with
+  the platform chord hint (`⌘K`/`Ctrl K`) from `lg`. The shell owns the
+  `$bindable` open state; Esc, backdrop clicks and route changes close it,
+  and the shared `ui/focus-trap.ts` always returns focus to the trigger.
+  Dialog → single `role="combobox"` input (`aria-expanded`/`aria-controls`/
+  `aria-activedescendant`, the input is the only Tab stop; options are
+  deliberately non-focusable APG `role="option"` rows) over a grouped
+  `role="listbox"` with three `role="group"` sections rendered only when
+  non-empty: **Go to** (Overview, Portfolios, Assets, Data & Sync, Settings +
+  its four sub-sections, then every portfolio from `portfolioApi.list()`),
+  **Assets** (registered assets from `assetApi.list()` — name plus ticker
+  hint — followed by a live "Search Yahoo for …" row fed by a 300 ms-debounced
+  `assetApi.lookup()` from 2 characters; selecting it just navigates to
+  `/assets`, creation stays out of scope) and **Actions** (Add transaction —
+  the same single-portfolio shortcut the `Fab` uses —, Refresh prices —
+  `pricesApi.refresh()` + the `quickActions.*` toasts —, Toggle theme —
+  cycles light → dark → system on the theme store —, Toggle CVD palette —
+  `setCvd` —, and Toggle sidebar, desktop-only, driving the shell's
+  `collapsed` state). Matching is a dependency-free local matcher
+  (prefix > substring > subsequence over a lower-cased `label + hint +
+  keywords` haystack); a "No results" row covers the empty state. Lists load
+  lazily on open only (capped at 8 per dynamic section while the query is
+  empty) — the 60 s GET cache in `services/api.ts` absorbs rapid re-opens and
+  every mutation clears it, so the palette self-refreshes without an extra
+  invalidation hook; failures stay silent and the static sections remain
+  useful. Keyboard: ↑/↓ wrap, Home/End, Enter (IME-guarded) runs the active
+  row, Esc closes; the active row follows the scroll with
+  `scrollIntoView({ block: 'nearest' })`. Motion is a single backdrop fade
+  (`backdropFade()`, 0 ms under `prefers-reduced-motion`). All copy goes
+  through the `commandPalette.*` dictionary group; destinations and actions
+  reuse the existing `nav.*`, `settingsTabs.*`, `quickActions.*`, `theme.*`
+  and `preferences.palette*` keys, and the dynamic sections preview their
+  toggles' target state (next theme, palette variant).
 
 `ScopeSwitcher` and `FreshnessStamp` (originally listed under K.2 in the
 spec) shipped with the Overview hero in **K.3a**, as `domain/` components —
