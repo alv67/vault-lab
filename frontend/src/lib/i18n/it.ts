@@ -77,6 +77,12 @@ export const it = {
     title: 'Preferenze',
     themeHint: 'Chiaro, scuro, oppure in base alle impostazioni del dispositivo (Sistema).',
     languageHint: 'Applicata subito e ricordata su questo dispositivo.',
+    /** Controllo della palette utile/perdita (decisione D6, EPIC K.5c): vale
+     *  anche come nome accessibile della tablist SegmentedControl. */
+    colorGroup: 'Colori utile/perdita',
+    paletteClassic: 'Classica (verde/rosso)',
+    paletteCvd: 'Accessibile ai daltonici (blu/arancione)',
+    paletteHint: 'Sostituisce verde/rosso con blu/arancione in testi e grafici. Segni e frecce ▲▼ restano sempre.',
   },
   hero: {
     netValue: 'Valore netto',

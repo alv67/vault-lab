@@ -30,6 +30,19 @@
           // Storage unavailable (e.g. private mode): stay on the default theme.
         }
       })();
+      // Pre-paint CVD-palette bootstrap (EPIC K.5c / decision D6). Applies
+      // the opt-in blue/orange gain/loss `cvd` class alongside the theme so
+      // users who enabled it never flash the default green/red. Keep the
+      // storage key and the 'true' check in sync with
+      // src/lib/stores/palette.svelte.ts (CVD_STORAGE_KEY / DEFAULT_CVD).
+      (function () {
+        try {
+          var cvd = localStorage.getItem('vaultlab-cvd') === 'true';
+          document.documentElement.classList.toggle('cvd', cvd);
+        } catch {
+          // Storage unavailable (e.g. private mode): stay on the default palette.
+        }
+      })();
     </script>
     %sveltekit.head%
   </head>

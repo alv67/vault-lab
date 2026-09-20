@@ -681,7 +681,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
 | **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
-| **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
+| **K.5 Power layer** | 🔄 *in corso — K.5c completata (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze).* Restano in K.5: ⌘K command palette, drill-down drawer, "view as table" | endpoint contribuzione drill-down (`dim+key` → asset) |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
 > di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
@@ -952,6 +952,34 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > attivi), KPI, allocazioni e performance restano sincronizzati. Nuove
 > chiavi i18n EN/IT (shape identici): gruppo `activity.*`, gruppo `tx.*`,
 > `common.close`. Nessuna dipendenza nuova; desktop invariato.
+
+> **K.5c — Toggle palette CVD (D6) — ✅ completata (questo branch)**:
+> nuovo store `lib/stores/palette.svelte.ts` a specchio di quello del tema:
+> `$state` reattivo `palette.cvd` (default `false`), persistenza in
+> `localStorage['vaultlab-cvd']`, `setCvd()` che commuta la classe `cvd` su
+> `<html>`, listener cross-tab e ri-assert al boot. `app.css` aggiunge gli
+> override `html.cvd`/`html.cvd.dark` di `--positive`/`--negative` con una
+> coppia blu/arancione derivata Okabe–Ito (tema chiaro `#0072b2`/`#c2410c`,
+> tema scuro `#56b4e9`/`#fb923c`; contrasto testo ≥ 4.7:1 su ogni superficie
+> dei rispettivi temi — AA) e selettore abbastanza specifico da battere sia
+> `:root` sia `.dark`: tutto il testo P&L (`pnlColorClass`/`PnlValue`,
+> varianti Badge/StatCard, progress bar) segue i token senza toccare un
+> componente, e i glifi segno+▲▼ restano (l'indipendenza dal colore è già
+> garantita dalla K.1c). Lato grafici: in `lib/chartPalette.ts` la tabella
+> `CHART_SEMANTIC_COLORS_CVD` (solo `positive`/`negative`;
+> `marketValue`/`costBasis`/`realized`/`splitMarkLine`/`other` invariati) e
+> `chartSemanticColors()` che legge lo store, quindi i `$derived` dei
+> chiamanti sono reattivi al flip; l'unico wrapper che dipinge la coppia è
+> `PerformanceChart`, il cui `{#key}` ora include anche la palette —
+> verificati gli altri (`PositionChart`, `Sparkline`, `CapitalChart`,
+> `ClassDonut`, `PriceChart`): non consumano colori P/L, nessun cambio.
+> Settings → Preferenze: seconda `SegmentedControl` «Colori utile/perdita»
+> (Classica/Accessibile ai daltonici) collegata a `setCvd`/`palette.cvd`,
+> apply immediato. Il bootstrap pre-paint di `app.html` applica anche la
+> classe `cvd` (niente flash verde/rosso al reload). Nuove chiavi i18n
+> EN/IT (shape identici): `preferences.colorGroup`,
+> `preferences.paletteClassic`, `preferences.paletteCvd`,
+> `preferences.paletteHint`. Nessuna dipendenza nuova; backend intatto.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

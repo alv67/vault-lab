@@ -573,7 +573,23 @@ through `hsl(var(--token) / <alpha-value>)`, opacity modifiers work
   resolve CSS variables), including `--chart-grid`: axis split lines are
   painted with that ink at ~8% opacity so data stays the brightest element.
 - `lib/ui-colors.ts` centralizes the P&L text colors (`pnlColorClass`,
-  `totalColorClass`), previously duplicated in four pages.
+  `totalColorClass`), previously duplicated in four pages. Because every P/L
+  surface consumes the `positive`/`negative` tokens, the optional CVD palette
+  below re-skins text and charts without touching a single component.
+- **CVD palette (EPIC K.5c, decision D6)**: an opt-in colour-vision-deficient
+  swap of the P/L pair from green/red to a blue/orange one (Okabe–Ito-derived;
+  light `#0072b2`/`#c2410c`, dark `#56b4e9`/`#fb923c`, all ≥ 4.5:1 text
+  contrast in their theme). `app.css` adds `html.cvd` / `html.cvd.dark`
+  overrides of `--positive`/`--negative` (specificity chosen to beat both
+  `:root` and `.dark`); the class is painted before first paint by the
+  `app.html` bootstrap and kept in sync by `lib/stores/palette.svelte.ts`
+  (`palette` state with `cvd`, `setCvd()`, storage key `vaultlab-cvd`,
+  cross-tab listener — same pattern as the theme store). Charts get it via
+  `lib/chartPalette.ts` (`CHART_SEMANTIC_COLORS_CVD` + a reactive
+  `chartSemanticColors()`), and the only component that paints
+  positive/negative bars — `PerformanceChart` — extends its `{#key}` with the
+  palette so a flip re-inits it. Signs and ▲▼ glyphs stay either way (they
+  are the colour-independence guarantee, K.1c).
 
 ### Dark mode
 
@@ -589,6 +605,10 @@ through `hsl(var(--token) / <alpha-value>)`, opacity modifiers work
   paint**, resolving the OS `prefers-color-scheme` when nothing valid is
   stored, so a reload never flashes the wrong theme (no FOUC). `darkMode:
   'class'` in the Tailwind config makes a single class flip every token.
+  A second inline script applies the optional `cvd` class the same way from
+  `localStorage['vaultlab-cvd']`, so the CVD palette (above) never flashes
+  green/red either; `html.cvd` deliberately does not care which theme is
+  painted — the pair ships light and dark variants.
 
 ### UI primitives
 
@@ -1372,12 +1392,16 @@ are translated through the i18n layer (chapter 8).
   summary/history conversion (chapter 10).
 - **Preferences** (`routes/settings/preferences/+page.svelte`, EPIC K.1b):
   the first fully translated page. Theme **Light/Dark/System** via a
-  `SegmentedControl` bound to the theme store (default System, decision D9)
-  and interface **language** (Italiano/English, default Italian, decision
-  D1) via a `Select` bound to `setLocale` in `lib/i18n/`. Both apply
-  immediately and persist in `localStorage` (no save button); switching the
-  language re-renders the shell navigation in place. The tab sits between
-  Password (= Security) and Currencies, per the UX-redesign section order.
+  `SegmentedControl` bound to the theme store (default System, decision D9),
+  gain/loss **palette Classic (green/red) / Color-blind friendly
+  (blue/orange)** via a second `SegmentedControl` bound to the palette store
+  (`setCvd`/`palette.cvd`, decision D6, EPIC K.5c — applies immediately,
+  persists in `localStorage['vaultlab-cvd']`, charts re-init on flip), and
+  interface **language** (Italiano/English, default Italian, decision D1) via
+  a `Select` bound to `setLocale` in `lib/i18n/`. All apply immediately and
+  persist in `localStorage` (no save button); switching the language
+  re-renders the shell navigation in place. The tab sits between Password (=
+  Security) and Currencies, per the UX-redesign section order.
 - **Valute gestite**: the currency whitelist CRUD — add a 3-letter code (a
   422 from the backend means Yahoo has no USD→code conversion and the frontend
   shows a specific message; 409 means already present), delete with confirm

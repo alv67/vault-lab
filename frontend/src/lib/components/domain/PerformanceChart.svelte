@@ -14,6 +14,7 @@
   import type { PerformanceBucket } from '$lib/services/api'
   import { chartSemanticColors } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { palette } from '$lib/stores/palette.svelte'
   import { resolved } from '$lib/stores/theme.svelte'
 
   use([
@@ -39,8 +40,9 @@
   } = $props()
 
   // Bar/line colors come from the semantic chart tokens, re-evaluated on
-  // theme flips (the {#key} block below also re-inits the chart with the new
-  // ECharts theme), same convention as PositionChart.
+  // theme flips and on CVD-palette flips (`chartSemanticColors` tracks
+  // `palette.cvd`); the {#key} block below also re-inits the chart with the
+  // new ECharts theme, same convention as PositionChart.
   const semantic = $derived(chartSemanticColors(resolved()))
 
   /** "2025-06" → "Jun 2025" (month name follows the browser locale);
@@ -133,8 +135,10 @@
   <div class="h-[340px] w-full">
     <!-- {#key} re-inits the chart when the theme flips so the ECharts theme
          object passed below is picked up (svelte-echarts only reads `theme`
-         at init time). -->
-    {#key resolved()}
+         at init time). The palette variant is part of the key too: flipping
+         the CVD toggle (D6, K.5c) repaints the gain/loss bars, which this
+         chart is the only consumer of via `semantic.positive/negative`. -->
+    {#key `${resolved()}:${palette.cvd ? 'cvd' : 'classic'}`}
       <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
     {/key}
   </div>

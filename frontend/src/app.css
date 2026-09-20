@@ -104,6 +104,25 @@
     --chart-grid: #cbd5e1;
   }
 
+  /* ── Optional CVD palette (EPIC K.5c, decision D6) ───────────────────
+     Opt-in swap of the gain/loss pair (green/red → blue/orange, the axis
+     that stays discriminable under protanopia/deuteranopia/tritanopia;
+     Okabe–Ito-derived, orange darkened in light mode to keep AA text
+     contrast: light 5.2:1 on white cards / 4.7:1 on the app background,
+     dark ≥7.7:1 on both). The `html.` prefix makes the specificity
+     (0,1,1 / 0,2,1) beat both `:root` and `.dark` (0,1,0), so the
+     override works with either theme painted. Mirrored in
+     lib/chartPalette.ts (CHART_SEMANTIC_COLORS_CVD) — keep in sync. */
+  html.cvd {
+    --positive: 201.6 100% 34.9%; /* #0072b2 — blue (Okabe–Ito) */
+    --negative: 17.5 88.3% 40.4%; /* #c2410c — deep orange */
+  }
+
+  html.cvd.dark {
+    --positive: 201.6 77% 62.5%; /* #56b4e9 — light blue (Okabe–Ito) */
+    --negative: 27 96% 61%; /* #fb923c — light orange */
+  }
+
   html {
     /* Native controls (checkboxes, radios, range sliders) follow the theme. */
     accent-color: hsl(var(--accent));

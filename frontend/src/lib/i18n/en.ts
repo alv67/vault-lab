@@ -101,6 +101,12 @@ export const en = {
     title: 'Preferences',
     themeHint: 'Light, dark, or follow the device setting (System).',
     languageHint: 'Applied immediately and remembered on this device.',
+    /** Gain/loss palette control (decision D6, EPIC K.5c): also the
+     *  accessible name of the SegmentedControl tablist. */
+    colorGroup: 'Gain/loss colors',
+    paletteClassic: 'Classic (green/red)',
+    paletteCvd: 'Color-blind friendly (blue/orange)',
+    paletteHint: 'Swaps green/red for blue/orange in text and charts. Signs and ▲▼ arrows stay either way.',
   },
   /**
    * Vault Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The

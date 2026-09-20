@@ -598,7 +598,26 @@ Poiché i valori sono terne HSL composte con
   dipinte con quel colore a ~8% di opacità, così i dati restano l'elemento
   più luminoso.
 - `lib/ui-colors.ts` centralizza i colori testo di P&L (`pnlColorClass`,
-  `totalColorClass`), prima duplicati in quattro pagine.
+  `totalColorClass`), prima duplicati in quattro pagine. Poiché ogni
+  superficie di P&L consuma i token `positive`/`negative`, la palette CVD
+  opzionale qui sotto ri-veste testi e grafici senza toccare un singolo
+  componente.
+- **Palette CVD (EPIC K.5c, decisione D6)**: swap opt-in della coppia
+  utile/perdita dal verde/rosso a una blu/arancione per persone con
+  deficit di visione dei colori (derivata Okabe–Ito; chiara
+  `#0072b2`/`#c2410c`, scura `#56b4e9`/`#fb923c`, tutte con contrasto testo
+  ≥ 4.5:1 nel proprio tema). `app.css` aggiunge gli override
+  `html.cvd` / `html.cvd.dark` di `--positive`/`--negative` (specificità
+  scelta per battere sia `:root` sia `.dark`); la classe viene dipinta prima
+  del primo paint dallo script di `app.html` e mantenuta in sync da
+  `lib/stores/palette.svelte.ts` (stato `palette` con `cvd`, `setCvd()`,
+  storage key `vaultlab-cvd`, listener cross-tab — stesso pattern dello
+  store del tema). I grafici la ricevono via `lib/chartPalette.ts`
+  (`CHART_SEMANTIC_COLORS_CVD` + `chartSemanticColors()` reattiva), e
+  l'unico componente che dipinge barre positive/negative —
+  `PerformanceChart` — estende il suo `{#key}` con la palette, così uno
+  switch la re-inizializza. Segni e glifi ▲▼ restano in ogni caso (sono la
+  garanzia di indipendenza dal colore, K.1c).
 
 ### Dark mode
 
@@ -614,7 +633,11 @@ Poiché i valori sono terne HSL composte con
   paint**, risolvendo il `prefers-color-scheme` dell'OS quando non c'è nulla
   di valido salvato, così un reload non mostra mai il tema sbagliato (niente
   FOUC). `darkMode: 'class'` nella config di Tailwind fa sì che una sola
-  classe cambi tutti i token.
+  classe cambi tutti i token. Un secondo script inline applica allo stesso
+  modo la classe opzionale `cvd` da `localStorage['vaultlab-cvd']`, così
+  nemmeno la palette CVD (sopra) mostra mai il verde/rosso; `html.cvd`
+  deliberatamente non dipende dal tema dipinto — la coppia ha varianti
+  chiara e scura.
 
 ### Primitive UI
 
@@ -1435,9 +1458,14 @@ sono tradotte tramite il layer i18n (capitolo 8).
 - **Preferenze** (`routes/settings/preferences/+page.svelte`, EPIC K.1b):
   la prima pagina completamente tradotta. Tema **Chiaro/Scuro/Sistema** con
   una `SegmentedControl` collegata allo store del tema (default Sistema,
-  decisione D9) e **lingua** dell'interfaccia (Italiano/English, default
+  decisione D9), **palette utile/perdita Classica (verde/rosso) /
+  Accessibile ai daltonici (blu/arancione)** con una seconda
+  `SegmentedControl` collegata allo store della palette (`setCvd` /
+  `palette.cvd`, decisione D6, EPIC K.5c — si applica subito, persiste in
+  `localStorage['vaultlab-cvd']`, i grafici si re-inizializzano allo
+  switch) e **lingua** dell'interfaccia (Italiano/English, default
   italiano, decisione D1) con una `Select` collegata a `setLocale` in
-  `lib/i18n/`. Entrambe si applicano subito e persistono in `localStorage`
+  `lib/i18n/`. Tutte si applicano subito e persistono in `localStorage`
   (niente pulsante di salvataggio); cambiando lingua la navigation della
   shell si ri-renderizza sul posto. Il tab si trova tra Password (=
   Sicurezza) e Valute, nell'ordine di sezioni della spec UX-redesign.

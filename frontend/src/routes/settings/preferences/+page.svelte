@@ -1,5 +1,6 @@
 <script lang="ts">
   import { isLocale, locale, setLocale, t, type Locale } from '$lib/i18n/index.svelte'
+  import { palette, setCvd } from '$lib/stores/palette.svelte'
   import { setThemeMode, theme } from '$lib/stores/theme.svelte'
   import SettingsTabs from '$lib/components/domain/SettingsTabs.svelte'
   import Card from '$lib/components/ui/Card.svelte'
@@ -12,17 +13,19 @@
    * proof that the i18n layer works end to end. Theme (Light/Dark/System —
    * the shared `theme.*` keys, default System per decision D9) is bound to
    * the existing theme store; interface language (Italiano/English, default
-   * Italian per decision D1) to the locale store. Both apply immediately
-   * and persist in `localStorage` (no save button — same behaviour as the
-   * header theme toggle); the language control re-renders this page through
-   * `t()` on change.
+   * Italian per decision D1) to the locale store; the gain/loss palette
+   * (Classic green/red vs opt-in CVD blue/orange — decision D6, EPIC K.5c)
+   * to the palette store. All apply immediately and persist in
+   * `localStorage` (no save button — same behaviour as the header theme
+   * toggle); the language control re-renders this page through `t()` on
+   * change.
    */
 
   // The controls bind plain strings; the accessors keep the union types and
   // route writes through the stores (same recipe as the dashboard
-  // granularity switch). Reading `theme.mode` / `locale.current` here also
-  // keeps the controls in sync when the value changes elsewhere (header
-  // toggle, another tab).
+  // granularity switch). Reading `theme.mode` / `locale.current` /
+  // `palette.cvd` here also keeps the controls in sync when the value
+  // changes elsewhere (header toggle, another tab).
   function getMode(): string {
     return theme.mode
   }
@@ -35,11 +38,22 @@
   function setLanguage(value: string): void {
     if (isLocale(value)) setLocale(value)
   }
+  function getPnlPalette(): string {
+    return palette.cvd ? 'cvd' : 'classic'
+  }
+  function setPnlPalette(value: string): void {
+    if (value === 'classic' || value === 'cvd') setCvd(value === 'cvd')
+  }
 
   const themeItems = $derived([
     { value: 'light', label: t('theme.light') },
     { value: 'dark', label: t('theme.dark') },
     { value: 'system', label: t('theme.system') },
+  ])
+
+  const paletteItems = $derived([
+    { value: 'classic', label: t('preferences.paletteClassic') },
+    { value: 'cvd', label: t('preferences.paletteCvd') },
   ])
 
   // Endonyms: each language is displayed in its own language, by convention
@@ -69,6 +83,20 @@
           ariaLabel={t('theme.group')}
         />
         <p class="text-xs text-muted-foreground">{t('preferences.themeHint')}</p>
+      </div>
+      <div class="space-y-1.5">
+        <!-- Same tablist-not-Field rationale as the theme control above. The
+             swap only touches hues: signs and ▲▼ glyphs stay always on
+             (colour independence, D6/K.5c). -->
+        <span class="block text-sm font-medium text-foreground">
+          {t('preferences.colorGroup')}
+        </span>
+        <SegmentedControl
+          items={paletteItems}
+          bind:value={getPnlPalette, setPnlPalette}
+          ariaLabel={t('preferences.colorGroup')}
+        />
+        <p class="text-xs text-muted-foreground">{t('preferences.paletteHint')}</p>
       </div>
       <Field label={t('common.language')} hint={t('preferences.languageHint')} class="max-w-xs">
         <Select bind:value={getLanguage, setLanguage}>

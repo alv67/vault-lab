@@ -1,4 +1,5 @@
 import type { ResolvedTheme } from '$lib/stores/theme.svelte'
+import { palette as paletteState } from '$lib/stores/palette.svelte'
 
 /**
  * Light-mode series palette. Mirrors the `--chart-1..12` custom properties
@@ -71,6 +72,17 @@ export const CHART_SEMANTIC_COLORS: Record<ResolvedTheme, ChartSemanticColors> =
   },
 }
 
+/**
+ * CVD variants (EPIC K.5c, decision D6): the opt-in blue/orange gain/loss
+ * pair, mirroring the `html.cvd` overrides in `src/app.css` — keep the two
+ * in sync. Only `positive`/`negative` differ; every other semantic color is
+ * colour-vision-neutral and stays.
+ */
+export const CHART_SEMANTIC_COLORS_CVD: Record<ResolvedTheme, ChartSemanticColors> = {
+  light: { ...CHART_SEMANTIC_COLORS.light, positive: '#0072b2', negative: '#c2410c' },
+  dark: { ...CHART_SEMANTIC_COLORS.dark, positive: '#56b4e9', negative: '#fb923c' },
+}
+
 /** Read the 12 `--chart-N` tokens from the document root. Null when unavailable. */
 function readChartTokensFromCss(): string[] | null {
   if (typeof document === 'undefined' || !document.documentElement) return null
@@ -115,9 +127,19 @@ export function resolveChartMuted(mode: ResolvedTheme = paintedTheme()): string 
   return value || CHART_MUTED[mode]
 }
 
-/** Semantic chart colors for the given (default: painted) theme. */
+/**
+ * Semantic chart colors for the given (default: painted) theme. When the
+ * CVD palette is enabled (`palette.cvd` in `stores/palette.svelte.ts`, the
+ * source of truth kept in lockstep with the `<html class="cvd">` class that
+ * drives the CSS tokens) the blue/orange variants are returned. The
+ * `paletteState.cvd` read is what makes a caller's `$derived`/`{#key}`
+ * reactive to palette flips — same tracking trick as `resolved()` for the
+ * theme — and the two static tables give correct results per (theme, cvd)
+ * without any cache invalidation or `getComputedStyle` pass.
+ */
 export function chartSemanticColors(mode: ResolvedTheme = paintedTheme()): ChartSemanticColors {
-  return CHART_SEMANTIC_COLORS[mode]
+  const table = paletteState.cvd ? CHART_SEMANTIC_COLORS_CVD : CHART_SEMANTIC_COLORS
+  return table[mode]
 }
 
 export interface ChartRow {
