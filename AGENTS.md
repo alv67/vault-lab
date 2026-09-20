@@ -33,3 +33,7 @@
   Sections are ordered **newest first**: the latest released version on top,
   down to the oldest. Group the lines under `Features` and `Fixes` (in Italian,
   `Nuove funzionalità` / `Correzioni`); omit `Fixes` when a release has none.
+  Include only what the end user perceives as different from the **previous
+  release**: never list bugs that were introduced and fixed within the same
+  unreleased development cycle (users never saw them, so they are not release
+  notes — they are just development activity).
