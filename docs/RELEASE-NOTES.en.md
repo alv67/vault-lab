@@ -28,6 +28,7 @@
 - No more gap under the header on phones and tablets: when the header shrinks while you scroll, the pinned portfolio/asset title bar follows it exactly, so page content never peeks through a strip
 - Settings now fit a phone screen: the section tabs wrap instead of cutting off "Currencies", the theme and gain/loss colour pickers no longer overflow their card (the colour options are now short "Green/Red · Blue/Orange" labels), and the add-currency row stacks vertically
 - Switching a chart to Table view no longer opens a scrollbar inside the card on any device: all rows render and the page scrolls as one; on phones each row collapses into a compact name + figures layout that fits the screen width
+- The country breakdown chart no longer scrolls inside its card either: it shows the ten largest by default with a "Show all" control that expands it in place
 - Allocation views finally follow the interface language: the dashboard "Overall allocation" card, the portfolio Allocation tab and the asset Exposure tab (labels, empty states, chart tooltips and provenance badges included) now switch between Italian and English like the rest of the app
 - Fetching an asset's exposure from Morningstar now also works for funds quoted on multiple markets: if one market's quotation carries no data, the next quotation of the same ISIN is used automatically
 

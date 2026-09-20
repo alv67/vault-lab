@@ -315,6 +315,10 @@ export const en = {
      *  no own heading to reuse. */
     seriesExposure: 'Exposure',
     seriesClassAllocation: 'Class allocation',
+    /** Collapse control of long bar lists (e.g. countries): expands in place
+     *  instead of opening an inner scroll viewport. */
+    showAll: 'Show all ({count})',
+    showLess: 'Show less',
   },
   /**
    * Portfolio-detail shell (EPIC K.4a, spec §6.2): sticky-header chrome and

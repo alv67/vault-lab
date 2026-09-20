@@ -268,6 +268,10 @@ export const it = {
      *  wrapper non ha un titolo proprio da riusare. */
     seriesExposure: 'Esposizione',
     seriesClassAllocation: 'Allocazione per classi',
+    /** Controllo di collasso per liste lunghe (es. paesi): espande in place
+     *  invece di aprire un viewport con scorrimento interno. */
+    showAll: 'Mostra tutti ({count})',
+    showLess: 'Mostra meno',
   },
   portfolio: {
     tabsLabel: 'Sezioni del portafoglio',

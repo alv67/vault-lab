@@ -64,11 +64,11 @@
      * tooltip shows both (e.g. "United States (US)"). Unset = labels are
      * rendered verbatim (sector charts). */
     labelFor?: (name: string) => string
-    /** When set, the canvas still renders every row at full height but is
-     * wrapped in a viewport capped at `maxVisibleRows` rows with vertical
-     * scrolling (dashboard country list). Unset = all rows visible. Table
-     * mode deliberately ignores the cap: the page is the only scroll
-     * container (spec §5.3 "collapse, don't shrink", EPIC K bug-fix). */
+    /** Collapse threshold (dashboard country list): the chart shows the first
+     * `maxVisibleRows` bars by default with a "Show all" control that expands
+     * in place to every row. There is deliberately NO inner scroll viewport —
+     * the page is the only scroll container (spec §5.3 "collapse, don't
+     * shrink"). Unset = all rows visible. */
     maxVisibleRows?: number
     /** Hide the shared Chart ⇄ Table toggle (EPIC K.5b, spec §9.1). Only
      * needed by callers that already render the same rows as a list right
@@ -99,23 +99,26 @@
 
   // One compact row per bar instead of a fixed canvas height.
   const ROW_HEIGHT = 30
-  const height = $derived(Math.max(150, sorted.length * ROW_HEIGHT + 10))
 
-  // Cap for the optional scroll viewport: the same height the canvas would
-  // have with exactly `maxVisibleRows` rows, so lists at or below the cap
-  // never show a scrollbar (undefined = no viewport, chart fully visible).
-  const scrollCap = $derived(
-    maxVisibleRows && maxVisibleRows > 0 ? maxVisibleRows * ROW_HEIGHT + 10 : undefined,
+  // Collapse (not scroll): when a cap is set and the list is longer, the
+  // chart shows the first `maxVisibleRows` bars plus a "Show all" control
+  // that expands in place. No inner scroll viewport exists — the page is the
+  // only scroll container (spec §5.3 "collapse, don't shrink").
+  let showAll = $state(false)
+  const capped = $derived(
+    !!(maxVisibleRows && maxVisibleRows > 0 && sorted.length > maxVisibleRows),
   )
+  const visible = $derived(capped && !showAll ? sorted.slice(0, maxVisibleRows as number) : sorted)
+  const height = $derived(Math.max(150, visible.length * ROW_HEIGHT + 10))
 
   // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
   // The table renders the same shaped `sorted` rows the bars plot; switching
   // to it unmounts the canvas (out of the a11y tree), and empty data keeps
-  // showing the plain empty state instead of an empty table. Table mode has
-  // NO `maxVisibleRows` cap (EPIC K bug-fix): every row renders and the page
-  // scrolls — no nested vertical scroll area inside the already-scrolling
-  // card; below `sm` each row collapses to a stacked key–value grid so the
-  // table never needs its own horizontal scroll either (spec §5.3).
+  // showing the plain empty state instead of an empty table. Table mode
+  // always renders every row (the page scrolls — no nested scroll area), so
+  // the chart-only `maxVisibleRows` collapse never hides rows here; below
+  // `sm` each row collapses to a stacked key–value grid so the table never
+  // needs its own horizontal scroll either (spec §5.3).
   let view = $state<'chart' | 'table'>('chart')
   const showTable = $derived(showTableToggle && view === 'table')
   const caption = $derived(
@@ -130,7 +133,7 @@
       formatter: (params: unknown) => {
         const raw = Array.isArray(params) ? params : [params]
         const p = raw[0] as TooltipItem
-        const row = sorted[p.dataIndex]
+        const row = visible[p.dataIndex]
         if (!row) return ''
         // "United States (US)" when labelFor maps the raw name; plain name
         // (sector charts) when the label is the row name itself.
@@ -146,7 +149,7 @@
     yAxis: {
       type: 'category',
       inverse: true,
-      data: sorted.map((r) => displayName(r.name)),
+      data: visible.map((r) => displayName(r.name)),
       // Mapped labels (full country names) need more room than raw codes;
       // charts without `labelFor` keep the previous compact axis.
       axisLabel: { fontSize: 11, width: labelFor ? 140 : 110, overflow: 'truncate' },
@@ -168,11 +171,11 @@
           color: labelColor,
           formatter: (params: unknown) => {
             const p = params as BarLabelItem
-            const row = sorted[p.dataIndex]
+            const row = visible[p.dataIndex]
             return row ? formatPercent(row.weight) : ''
           },
         },
-        data: sorted.map((r, i) => ({
+        data: visible.map((r, i) => ({
           value: Number(r.value),
           itemStyle: { color: colorFor?.(r.name) ?? palette[i % palette.length] },
         })),
@@ -245,12 +248,19 @@
       {/each}
     </TBody>
   </Table>
-{:else if scrollCap != null}
-  <!-- Capped view (e.g. the country bars): full-height canvas with all rows,
-       scrolled vertically inside a maxVisibleRows-tall viewport. -->
-  <div class="w-full overflow-y-auto" style="max-height: {scrollCap}px">
-    {@render canvas()}
-  </div>
 {:else}
   {@render canvas()}
+  {#if capped}
+    <!-- Collapse control: expands the chart to every row in place, so the
+         card (and the page) grows instead of showing an inner scroll area. -->
+    <div class="mt-1 flex justify-end">
+      <button
+        type="button"
+        class="focus-ring rounded-control px-2 py-1 text-xs font-medium text-accent-text hover:underline"
+        onclick={() => (showAll = !showAll)}
+      >
+        {showAll ? t('chartView.showLess') : t('chartView.showAll', { count: sorted.length })}
+      </button>
+    </div>
+  {/if}
 {/if}
