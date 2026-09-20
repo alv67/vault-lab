@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/amelamela/vault-lab/internal/auth"
-	"github.com/amelamela/vault-lab/internal/model"
-	"github.com/amelamela/vault-lab/internal/service"
+	"github.com/alv67/vault-lab/internal/auth"
+	"github.com/alv67/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/service"
 )
 
 func parseUUID(s string) (uuid.UUID, error) {

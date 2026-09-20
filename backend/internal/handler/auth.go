@@ -9,9 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
-	"github.com/amelamela/vault-lab/internal/auth"
-	"github.com/amelamela/vault-lab/internal/model"
-	"github.com/amelamela/vault-lab/internal/service"
+	"github.com/alv67/vault-lab/internal/auth"
+	"github.com/alv67/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/service"
 )
 
 type Handler struct {

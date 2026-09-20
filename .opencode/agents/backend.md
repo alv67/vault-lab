@@ -11,7 +11,7 @@ podman-compose.
 
 ## Architettura del codice
 
-Layout backend (modulo `github.com/amelamela/vault-lab`):
+Layout backend (modulo `github.com/alv67/vault-lab`):
 
 ```
 backend/

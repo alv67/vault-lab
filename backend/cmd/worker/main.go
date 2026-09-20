@@ -12,12 +12,12 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/amelamela/vault-lab/internal/cache"
-	"github.com/amelamela/vault-lab/internal/config"
-	"github.com/amelamela/vault-lab/internal/price"
-	"github.com/amelamela/vault-lab/internal/repository"
-	"github.com/amelamela/vault-lab/internal/service"
-	"github.com/amelamela/vault-lab/internal/series"
+	"github.com/alv67/vault-lab/internal/cache"
+	"github.com/alv67/vault-lab/internal/config"
+	"github.com/alv67/vault-lab/internal/price"
+	"github.com/alv67/vault-lab/internal/repository"
+	"github.com/alv67/vault-lab/internal/service"
+	"github.com/alv67/vault-lab/internal/series"
 )
 
 func main() {

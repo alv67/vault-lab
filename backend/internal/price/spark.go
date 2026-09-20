@@ -10,7 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/amelamela/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/model"
 )
 
 const sparkChunkSize = 50
