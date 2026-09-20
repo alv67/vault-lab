@@ -679,7 +679,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 |------|-----------|-------------|
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
-| **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp).* Restano in K.3: digest allocazioni (zone B sotto il hero), sparkline card portafogli, card-ificazione tabelle (K.3b/K.4/K.5) | serie giornaliera vault (fast-follow), sparkline portafoglio |
+| **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
 | **K.4 Entità → tab** | Sotto-route portfolio/asset (Overview/Positions/Activity/Allocation/Data), filtri+sheet edit, undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
@@ -799,6 +799,33 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > `period.*`, `quality.*`, `freshness.*`, `checklist.*`, `scope.*`. **Rinviati
 > a K.3b+**: sparkline nei card portafoglio, digest allocazione, tabelle in
 > card, `DataTable`/`KpiStrip`, skeletons `AsyncCard` per card.
+
+> **K.3b — Sparkline nei card portafoglio — ✅ completata (questo branch)**:
+> nuovo componente minimale `domain/Sparkline.svelte` — line chart ECharts
+> senza assi/legenda/tooltip/zoom (tree-shaking: solo `LineChart` +
+> `GridComponent` + `CanvasRenderer`), griglia a bordi zero e `yAxis scale`
+> per usare tutta l'altezza, colore semantico `marketValue` di default (prop
+> `color`), riempimento d'area discreto al 10% opzionale (`area`),
+> `sampling: 'lttb'` (pattern spec §9.2), serie `silent` (nessun hover),
+> strip d'altezza fissa via `heightClass` (default `h-10`); accetta numeri
+> semplici (asse indice) o punti `{date, value}` (asse temporale hidden, i
+> buchi di calendario restano veritieri) e **non renderizza nulla** sotto i
+> 2 punti; wrapper `role="img"` con `aria-label`; re-init al flip di tema
+> con il pattern `{#key resolved()}`. Le card portafoglio della dashboard
+> (zona C §6.1) mostrano ora lo strip dello storico del valore: gli esiti
+> arrivano da `portfolioApi.history(id)` (i `market_value` della serie
+> convertiti in punti `{date, value}`), caricati **in parallelo e in background**
+> dopo il payload della dashboard — le card si renderizzano subito e le
+> sparkline si aggiungono quando le risposte landano; guard monotònico
+> last-write-wins sul round (e store chiave-per-id) perché una risposta
+> obsoleta non possa finire dietro una più recente o sulla card sbagliata;
+> chiamate fallite silenziose (nessun toast, nessuno spazio riservato). A
+> scala familiare N GET parallele sono accettabili (la cache GET da 60s
+> deduplica il round post-refresh): l'endpoint batchato è il fast-follow
+> backend se il numero di portafogli cresce. Il digest allocazione "See
+> all" resta rinviato (non esiste ancora una vista allocazione dedicata;
+> la card "Allocazione complessiva" è invariata). Nuove chiavi i18n EN/IT
+> (shape identici): `sparkline.trend`, `sparkline.valueTrend`.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

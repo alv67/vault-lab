@@ -117,4 +117,8 @@ export const it = {
     label: 'Ambito',
     all: 'Tutti i portafogli (Vault)',
   },
+  sparkline: {
+    trend: 'Andamento del valore',
+    valueTrend: 'Andamento del valore di {name}',
+  },
 } satisfies Dictionary

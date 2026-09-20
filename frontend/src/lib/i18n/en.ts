@@ -157,6 +157,17 @@ export const en = {
     label: 'Scope',
     all: 'All portfolios (Vault)',
   },
+  /**
+   * Portfolio-card sparklines on the vault Overview (EPIC K.3b, spec §6.1
+   * zone C). The shape is supplementary (the card already carries value and
+   * P/L), so these are accessible names, not visible copy.
+   */
+  sparkline: {
+    /** Generic fallback when the caller has no better label. */
+    trend: 'Value trend',
+    /** Per-card aria-label with the portfolio name interpolated. */
+    valueTrend: '{name} value trend',
+  },
 }
 
 /** Canonical dictionary shape derived from the English source of truth. */

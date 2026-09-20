@@ -459,6 +459,7 @@ scuro contornato di bianco).
 | `PositionChart.svelte` | **tre linee**: cost basis (grigia, a scalini), market value (verde, liscia), realized (ambra) + marcatori viola per gli split | la card "Performance history" del **dettaglio portafoglio**, mantenuta come **vista secondaria** sotto la nuova card percentuale "Performance" dell'EPIC I.8 (#87): un menu a tendina passa dal portafoglio al singolo asset. Gli split sono disegnati come `markLine` tratteggiata verticale sulla linea del valore di mercato, etichettata con il rapporto (`7:1`, `4:1`) |
 | `PerformanceChart.svelte` (`lib/components/domain/`) | **combo barre + linea in percentuale** su asse x a **categorie** (EPIC I.3): una barra `return` per bucket (rendimento TWR % del periodo) colorata verde/rosso secondo il segno (semantici `positive`/`negative`, `itemStyle` per barra), linea `twr` (rendimento time-weighted cumulato %) nell'ambra semantica, asse y formattato in % e tooltip `+3,42%` (`formatSignedPercent`, niente valuta), etichette dei periodi formate per granularità (`giu 2025` / `2025`), dataZoom `inside` + `slider`, legenda `Gain/Loss` / `Cumulative`, stato vuoto "No data" | la card "Performance" della **dashboard**, alimentata da `dashboardPerformance(granularity)` (`GET /dashboard/performance`, selettore mensile/annuale con `SegmentedControl` nell'intestazione della card), e — da EPIC I.8 (#87) — la card "Performance" del **dettaglio portafoglio**, alimentata da `performanceBuckets(id, granularity)` (`GET /portfolios/{id}/performance/buckets`, proprio selettore mensile/annuale, nella valuta del portafoglio). Le barre mostrano il rendimento generato dentro ogni mese/anno, la linea il TWR cumulato — sono percentuali pure, quindi il componente non riceve più la prop `currency` |
 | `CapitalChart.svelte` (`lib/components/domain/`) | **due linee** sugli **stessi** bucket a categorie: `invested` (capitale netto investito, linea a scalini `end` nel grigio semantico `costBasis`) e `value` (valore di mercato, linea liscia nel verde semantico `marketValue`), tooltip in valuta con `formatCurrency(value, currency)`, dataZoom `inside` + `slider` (o solo `inside` e canvas da 240px con la prop `compact`), legenda `Invested` / `Value`, re-init theme-aware (`{#key}`), stato vuoto "No data" | il grafico valore-vs-investito dell'**hero** della dashboard da EPIC K.3a (la card autonoma "Capital invested" è stata assorbita dall'hero), alimentato dalla **stessa** chiamata `dashboardPerformance(granularity)` e dagli stessi bucket di `PerformanceChart` (importi nella **valuta base** dell'utente, `currency` del payload) e con lo stesso selettore mensile/annuale; l'hero passa `compact` e finestra i bucket lato client con i chip periodo bucket-driven (decisione D10) |
+| `Sparkline.svelte` (`lib/components/domain/`) | minuscola **linea senza assi** (EPIC K.3b): niente legenda/tooltip/zoom, griglia ai bordi zero; accetta numeri semplici (asse indice nascosto) o punti `{date, value}` (`SparklinePoint`, asse **temporale** nascosto così i buchi di calendario restano veritieri — non mescolare le due forme), il verde semantico `marketValue` di default con override `color` opzionale, riempimento d'area discreto al 10% (`area`), `smooth` + `sampling: 'lttb'`, nessun hover (`silent`), strip d'altezza fissa via `heightClass` (default `h-10`); sotto i 2 punti **non renderizza nulla**; wrapper `role="img"` con `aria-label` (del chiamante, altrimenti `sparkline.trend`), re-init theme-aware (`{#key}`) | il fondo delle **card portafoglio** della **dashboard** da EPIC K.3b (spec §6.1 zona C): strip con lo storico del valore di mercato del portafoglio, alimentato da `portfolioApi.history(id)` (le stringhe `market_value` della serie mappate in punti `{date, value}`) caricato in background dopo il payload principale della dashboard; se la chiamata fallisce la card resta senza sparkline, in silenzio |
 | `ExposurePie.svelte` | **ciambella** (raggio 45%–70%), palette a 12 colori, legenda mostrata solo con ≤ 6 righe, righe a peso zero filtrate; `complete={false}` la rende **aperta** quando le righe sommano < 100 (una fetta residua trasparente tiene veritieri gli angoli — niente fetta grigia "Other") | pagina dettaglio asset (donut regioni con `complete={false}` e donut settori) e le due modali esposizione (in modalità `mute`: regioni in `ExposureGeoModal`, settori in `ExposureSectorModal`). I paesi (pagina e modale geografica) sono liste a barre, mai una pie. Accetta `ExposureRow[]` (`{name, weight}`). Non è più usata nel dettaglio portafoglio: la card classi con tabella e le card `GeographyChart`/`SectorChart` sono state sostituite da `ClassDonut` + `ExposureBarChart` nell'EPIC I.7 (#86) |
 | `ClassDonut.svelte` (`lib/components/domain/`) | **ciambella** delle classi di asset (EPIC I.4, stesso stile radius/palette/etichette di `ExposurePie`): righe `AssetClassSlice[]` (`{class, value, weight}`) mappate con `ASSET_CLASS_LABELS` per i nomi in chiaro, tooltip con importo (`formatCurrency`) e peso (`formatPercent`), fetta `other` in grigio spento, righe a peso zero scartate, stato vuoto "Nessuna allocazione per classi"; prop `label` opzionale per l'intestazione sopra il grafico | il pannello classi della card "Allocazione complessiva" della **dashboard**, alimentato da `dashboardAllocation().classes` (vault intero, valuta base), e — da EPIC I.7 (#86) — il pannello classi della sezione "Allocazione" del **dettaglio portafoglio**, alimentato da `classAllocation(id).classes` (valuta del portafoglio) |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | **barre orizzontali** riutilizzabili (EPIC I.4) su righe generiche `{name, value, weight}[]` (`ExposureBarRow`): barre ordinate **per valore decrescente** (risortese in modo difensivo nel componente, righe non positive scartate; asse categorie `inverse`, quindi la barra più grande sta in alto), peso % stampato a fine barra, tooltip con importo (`formatCurrency(value, currency)`) e peso (`formatPercent`), asse dei valori nascosto (le barre servono solo a confrontarsi tra loro), altezza del canvas proporzionale al numero di righe, `colorFor?: (name) => string` per colore per-riga (altrimenti palette `resolvePalette` per indice), `labelFor?: (name) => string` per mappare le etichette dell'asse (l'asse mostra il nome leggibile — es. codice ISO → nome completo del paese via `countryDisplayName` — e il tooltip aggiunge il nome grezzo tra parentesi quando differisce, "United States (US)"; la colonna delle etichette si allarga a 140px quando `labelFor` è attivo), `maxVisibleRows?: number` limita l'area visibile a quel numero di righe con un viewport `overflow-y-auto` mentre il canvas mantiene l'altezza completa (tutte le righe scorrevoli), `label` e `note` (didascalia muted) opzionali, stato vuoto "No data", re-init theme-aware (`{#key}`) | i pannelli regioni, settori e paesi della card "Allocazione complessiva" della **dashboard**, alimentati da `dashboardAllocation().regions` / `.sectors` / `.countries`, e — da EPIC I.7 (#86) — gli stessi tre pannelli della sezione "Allocazione" del **dettaglio portafoglio**, alimentati da `geographyAllocation(id).regions` / `sectorAllocation(id).sectors` / `geographyAllocation(id).countries` (in valuta del portafoglio); i chiamanti mappano `RegionAllocation`/`SectorAllocation`/`CountryAllocation` su `ExposureBarRow`; i paesi portano codici ISO alpha-2 renderizzati con `labelFor={countryDisplayName}` e `maxVisibleRows={10}` su entrambe le pagine — si vedono le ~10 barre maggiori, le altre scorrono in verticale; i pannelli regioni e settori non passano nulla: etichette invariate e tutte le righe visibili — le ~10 macro-regioni non hanno mai bisogno del cap |
@@ -515,7 +516,10 @@ date con `new Date(...).toLocaleDateString()`.
   una **singola** chiamata `dashboardPerformance(granularity)` (EPIC I.3,
   selettore mensile/annuale; l'hero inoltre finestra i bucket lato
   client, decisione D10), più i widget I.4 della card "Allocazione
-  complessiva" (donut classi, barre regioni/settori/paesi).
+  complessiva" (donut classi, barre regioni/settori/paesi) e — da EPIC K.3b —
+  una `Sparkline` sul fondo di ogni card portafoglio, alimentata da una
+  chiamata `portfolioApi.history(id)` di background per portafoglio emessa
+  dopo l'arrivo del payload della dashboard.
 - **Dettaglio portafoglio** — il medesimo `PerformanceChart` condiviso nella
   card "Performance" (EPIC I.8, #87), alimentato da
   `performanceBuckets(id, granularity)` con un proprio selettore
@@ -792,14 +796,18 @@ Endpoint chiamati: `portfolioApi.dashboard()` e
 `portfolioApi.dashboardPerformance(granularity)`, poi il `pricesApi.refresh()`
 di sessione + una dashboard fresca e un refill delle performance (una sola
 chiamata che alimenta sia il grafico "valore vs investito" dell'hero sia la
-card Performance). Nessuna chiamata aggiuntiva: lo scope switcher e la
-checklist di primo avvio usano dati già presenti nel payload di
-`dashboard()`.
+card Performance). Le uniche chiamate aggiuntive sono gli storici delle
+sparkline di K.3b: quando il payload della dashboard arriva, partono in
+parallelo e in background uno `portfolioApi.history(id)` GET per portafoglio
+(non bloccanti, silenziose in caso di errore — vedi le card portafogli qui
+sotto). Lo scope switcher e la checklist di primo avvio usano dati già
+presenti nel payload di `dashboard()`.
 
 **Ricostruita attorno al modello hero in EPIC K.3a** (spec di ridisegno
 §6.1 zone A–B, decisioni D3/D8/D10); le zone C–E (card portafogli,
 allocazione complessiva, asset investiti) mantengono struttura e dati
-dell'EPIC I.
+dell'EPIC I, con le card portafogli che guadagnano una strip sparkline dello
+storico del valore in K.3b (spec §6.1 zona C).
 
 - **Header**: titolo "Dashboard" e **`ScopeSwitcher`** (decisione D3,
   `domain/ScopeSwitcher.svelte`): un `<select>` nativo costruito sulla
@@ -902,7 +910,21 @@ dell'EPIC I.
   i dividendi delle posizioni completamente chiuse), renderizzata solo se il
   portafoglio ha effettivamente venduto lotti (`hasClosedActivity`, cioè
   `closed.invested ≠ 0`), in tono muted e con il realizzato colorato via
-  `pnlColorClass`.
+  `pnlColorClass`. Da EPIC K.3b ogni card si chiude con una **`Sparkline`**
+  in fondo (spec §6.1 zona C) con lo storico del valore di mercato del
+  portafoglio: quando il payload della dashboard arriva, la pagina emette in
+  **parallelo e in background** uno `portfolioApi.history(id)` per ogni
+  portafoglio — le card si renderizzano subito e le sparkline arrivano quando
+  le risposte landano (le stringhe `market_value` della serie diventano punti
+  `{date, value}` su un asse temporale nascosto). Un contatore di round
+  monotònico (last-write-wins) impedisce a una risposta obsoleta di arrivare
+  dopo un round più recente, e la store chiave-per-id fa sì che una risposta
+  non possa mai agganciarsi alla card sbagliata; una chiamata fallita lascia
+  in silenzio la card senza strip (dato decorativo — niente toast, nessuno
+  spazio riservato). A scala familiare N GET parallele sono accettabili (la
+  cache GET da 60s deduplica anche il round post-refresh); un endpoint
+  batchato per lo storico del vault è il fast-follow backend registrato se
+  il numero cresce.
 - Card **Invested assets** (EPIC I.5, #82 — sostituisce i vecchi accordion
   espandibili per portafoglio e le loro `PositionTable`): un'unica `Card` con
   una tabella su `dashboard().invested_assets`, una riga per ogni asset

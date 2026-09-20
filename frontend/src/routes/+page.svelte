@@ -23,6 +23,7 @@
   import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import ScopeSwitcher from '$lib/components/domain/ScopeSwitcher.svelte'
+  import Sparkline, { type SparklinePoint } from '$lib/components/domain/Sparkline.svelte'
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
   import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
   import { countryDisplayName } from '$lib/countryNames'
@@ -208,6 +209,42 @@
   const portfolioSlices = $derived(
     (dash?.portfolios ?? []).map((p) => ({ name: p.portfolio_name, value: Number(p.active.value) })),
   )
+
+  // Zone C sparklines (EPIC K.3b, spec §6.1/§9.2): per-portfolio market-value
+  // history rendered inside the portfolio cards. Fetched in the background
+  // once the dashboard payload exists — the cards render immediately and the
+  // sparklines drop in as responses land. At family scale a handful of
+  // parallel `history(id)` GETs is acceptable (and the 60s GET cache dedupes
+  // the post-refresh round); a batched vault-history endpoint is the backend
+  // fast-follow if the portfolio count ever grows.
+  let sparklines = $state<Record<string, SparklinePoint[]>>({})
+
+  // Monotonic round guard (last-write-wins): whenever `dash` is replaced
+  // (initial load, refetch after the session price refresh) a new round is
+  // issued and only that round may write, so a late response can never land
+  // after a newer one. Responses also key on the portfolio id, so they can
+  // never attach to the wrong card. Failed fetches resolve silently: the
+  // card simply renders without its sparkline (decorative data, no toast).
+  let sparkRound = 0
+  $effect(() => {
+    const ids = (dash?.portfolios ?? []).map((p) => p.portfolio_id)
+    const round = ++sparkRound
+    ids.forEach((id) => {
+      portfolioApi
+        .history(id)
+        .then((res) => {
+          if (round === sparkRound) {
+            sparklines[id] = res.series.map((pt) => ({
+              date: pt.date,
+              value: Number(pt.market_value),
+            }))
+          }
+        })
+        .catch(() => {
+          if (round === sparkRound) sparklines[id] = []
+        })
+    })
+  })
 
   // EPIC I.5 consolidated "Invested assets" table: open positions aggregated
   // across portfolios in the base currency, already sorted by descending
@@ -452,6 +489,7 @@
         <h2 class="mb-4 font-semibold">Portfolios</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {#each dash.portfolios as p (p.portfolio_id)}
+            {@const spark = sparklines[p.portfolio_id]}
             <Card class="transition-colors hover:border-accent">
               <a href={resolve(`/portfolios/${p.portfolio_id}`)} class="block p-4">
                 <div class="flex items-baseline justify-between gap-2">
@@ -477,6 +515,16 @@
                   </p>
                 {/if}
                 <p class="mt-2 text-xs text-muted-foreground">{p.asset_count} assets</p>
+                {#if spark && spark.length > 1}
+                  <!-- Value-history sparkline as a bottom strip (K.3b): only
+                       present once the background fetch has landed, so the
+                       card never reserves space or blocks on it. -->
+                  <Sparkline
+                    class="mt-3"
+                    points={spark}
+                    ariaLabel={t('sparkline.valueTrend', { name: p.portfolio_name })}
+                  />
+                {/if}
               </a>
             </Card>
           {/each}
