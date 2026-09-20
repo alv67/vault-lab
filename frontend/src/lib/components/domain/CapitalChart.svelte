@@ -167,36 +167,34 @@
     </div>
   {/if}
   {#if showTable}
-    <!-- No inner scroll viewport: the page scrolls. Phone rows collapse to a
-         stacked key–value grid (period full-width, invested + value on the
-         second line); ≥ `sm` the classic table is unchanged. -->
-    <div class="overflow-x-auto">
-      <Table class="max-sm:block">
-        <caption class="sr-only">{t('chartView.caption', { name: chartName })}</caption>
-        <THead class="max-sm:block">
+    <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
+         scroll container. `w-full` + wrapping period labels stay inside the
+         card; below `sm` rows collapse to a stacked key–value grid. -->
+    <Table class="max-sm:block">
+      <caption class="sr-only">{t('chartView.caption', { name: chartName })}</caption>
+      <THead class="max-sm:block">
+        <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+          <Th class="max-sm:col-span-2 max-sm:py-0.5 break-words">{t('chartView.colPeriod')}</Th>
+          <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">{t('chartView.colInvested')}</Th>
+          <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 whitespace-nowrap">{t('chartView.colValue')}</Th>
+        </Tr>
+      </THead>
+      <TBody class="max-sm:block">
+        {#each buckets as b (b.period)}
           <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-            <Th class="max-sm:col-span-2 max-sm:py-0.5">{t('chartView.colPeriod')}</Th>
-            <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left">{t('chartView.colInvested')}</Th>
-            <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5">{t('chartView.colValue')}</Th>
+            <Td class="max-sm:col-span-2 max-sm:py-0.5 font-medium break-words">
+              {formatPeriod(b.period)}
+            </Td>
+            <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">
+              {formatCurrency(b.invested, currency)}
+            </Td>
+            <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 whitespace-nowrap">
+              {formatCurrency(b.value, currency)}
+            </Td>
           </Tr>
-        </THead>
-        <TBody class="max-sm:block">
-          {#each buckets as b (b.period)}
-            <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-              <Td class="max-sm:col-span-2 max-sm:break-words max-sm:py-0.5 font-medium">
-                {formatPeriod(b.period)}
-              </Td>
-              <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 max-sm:text-left">
-                {formatCurrency(b.invested, currency)}
-              </Td>
-              <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5">
-                {formatCurrency(b.value, currency)}
-              </Td>
-            </Tr>
-          {/each}
-        </TBody>
-      </Table>
-    </div>
+        {/each}
+      </TBody>
+    </Table>
   {:else}
     <div class={cx('w-full', compact ? 'h-[240px]' : 'h-[340px]')}>
       <!-- {#key} re-inits the chart when the theme flips so the ECharts theme

@@ -146,29 +146,26 @@
     </div>
   {/if}
   {#if showTable}
-    <!-- No inner scroll viewport: the page scrolls. Two short columns, so
-         below `sm` each row just blockifies into a name/weight grid cell
-         pair (`break-words` keeps long region names from widening the
-         table); ≥ `sm` the classic table is unchanged. -->
-    <div class="overflow-x-auto">
-      <Table class="max-sm:block">
-        <caption class="sr-only">{caption}</caption>
-        <THead class="max-sm:block">
+    <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
+         scroll container. Two short columns with wrapping names stay inside
+         the card; below `sm` each row blockifies into a name/weight pair. -->
+    <Table class="max-sm:block">
+      <caption class="sr-only">{caption}</caption>
+      <THead class="max-sm:block">
+        <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+          <Th class="max-sm:min-w-0 max-sm:py-0.5 break-words">{t('chartView.colName')}</Th>
+          <Th align="right" class="max-sm:py-0.5 whitespace-nowrap">{t('chartView.colWeight')}</Th>
+        </Tr>
+      </THead>
+      <TBody class="max-sm:block">
+        {#each rows as r (r.name)}
           <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-            <Th class="max-sm:min-w-0 max-sm:py-0.5">{t('chartView.colName')}</Th>
-            <Th align="right" class="max-sm:py-0.5">{t('chartView.colWeight')}</Th>
+            <Td class="max-sm:min-w-0 max-sm:py-0.5 font-medium break-words">{r.name}</Td>
+            <Td align="right" class="max-sm:py-0.5 whitespace-nowrap">{formatPercent(Number(r.weight))}</Td>
           </Tr>
-        </THead>
-        <TBody class="max-sm:block">
-          {#each rows as r (r.name)}
-            <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-              <Td class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 font-medium">{r.name}</Td>
-              <Td align="right" class="max-sm:py-0.5">{formatPercent(Number(r.weight))}</Td>
-            </Tr>
-          {/each}
-        </TBody>
-      </Table>
-    </div>
+        {/each}
+      </TBody>
+    </Table>
   {:else}
     <div class="h-[240px] w-full">
       {#key resolved()}

@@ -214,40 +214,37 @@
     {t('chartView.noData')}
   </div>
 {:else if showTable}
-  <!-- Full row list, no inner scroll viewport (EPIC K bug-fix): the page is
-       the only scroll container. Phone rows collapse into a stacked key–value
-       grid (blockified table parts, name spanning the full width, value and
-       weight sharing the second line); from `sm` the classic 3-column table
-       renders exactly as before and `overflow-x-auto` only kicks in when a
-       long value genuinely needs it (spec §5.3 "collapse, don't shrink"). -->
-  <div class="overflow-x-auto">
-    <Table class="max-sm:block">
-      <caption class="sr-only">{caption}</caption>
-      <THead class="max-sm:block">
+  <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
+       scroll container, so no nested scrollbar appears. The table is
+       `w-full` with wrapping names, and below `sm` rows collapse into a
+       stacked key–value grid (name spanning the full width, value and weight
+       sharing the second line) — spec §5.3 "collapse, don't shrink". -->
+  <Table class="max-sm:block">
+    <caption class="sr-only">{caption}</caption>
+    <THead class="max-sm:block">
+      <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+        <Th class="max-sm:col-span-2 max-sm:py-0.5 break-words">{t('chartView.colName')}</Th>
+        <Th align="right" class="max-sm:py-0.5 max-sm:text-left whitespace-nowrap">{t('chartView.colValue')}</Th>
+        <Th align="right" class="max-sm:py-0.5 whitespace-nowrap">{t('chartView.colWeight')}</Th>
+      </Tr>
+    </THead>
+    <TBody class="max-sm:block">
+      {#each sorted as r (r.name)}
+        {@const shown = displayName(r.name)}
         <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-          <Th class="max-sm:col-span-2 max-sm:py-0.5">{t('chartView.colName')}</Th>
-          <Th align="right" class="max-sm:py-0.5 max-sm:text-left">{t('chartView.colValue')}</Th>
-          <Th align="right" class="max-sm:py-0.5">{t('chartView.colWeight')}</Th>
+          <!-- Same label as the tooltip: friendly name plus the raw name
+               in parentheses when `labelFor` maps it (e.g. "US"). -->
+          <Td class="max-sm:col-span-2 max-sm:py-0.5 font-medium break-words">
+            {shown === r.name ? shown : `${shown} (${r.name})`}
+          </Td>
+          <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">
+            {formatCurrency(r.value, currency)}
+          </Td>
+          <Td align="right" class="max-sm:py-0.5 whitespace-nowrap">{formatPercent(r.weight)}</Td>
         </Tr>
-      </THead>
-      <TBody class="max-sm:block">
-        {#each sorted as r (r.name)}
-          {@const shown = displayName(r.name)}
-          <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-            <!-- Same label as the tooltip: friendly name plus the raw name
-                 in parentheses when `labelFor` maps it (e.g. "US"). -->
-            <Td class="max-sm:col-span-2 max-sm:break-words max-sm:py-0.5 font-medium">
-              {shown === r.name ? shown : `${shown} (${r.name})`}
-            </Td>
-            <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 max-sm:text-left">
-              {formatCurrency(r.value, currency)}
-            </Td>
-            <Td align="right" class="max-sm:py-0.5">{formatPercent(r.weight)}</Td>
-          </Tr>
-        {/each}
-      </TBody>
-    </Table>
-  </div>
+      {/each}
+    </TBody>
+  </Table>
 {:else if scrollCap != null}
   <!-- Capped view (e.g. the country bars): full-height canvas with all rows,
        scrolled vertically inside a maxVisibleRows-tall viewport. -->

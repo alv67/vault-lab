@@ -136,35 +136,33 @@
     {t('chartView.noClassAllocation')}
   </div>
 {:else if showTable}
-  <!-- No inner scroll viewport: the page scrolls. Phone rows collapse to a
-       stacked key–value grid (name full-width, value + weight sharing the
-       second line); ≥ `sm` the classic table is unchanged. -->
-  <div class="overflow-x-auto">
-    <Table class="max-sm:block">
-      <caption class="sr-only">{caption}</caption>
-      <THead class="max-sm:block">
+  <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
+       scroll container. `w-full` + wrapping class names keep the table inside
+       the card; below `sm` rows collapse to a stacked key–value grid. -->
+  <Table class="max-sm:block">
+    <caption class="sr-only">{caption}</caption>
+    <THead class="max-sm:block">
+      <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+        <Th class="max-sm:col-span-2 max-sm:py-0.5 break-words">{t('chartView.colName')}</Th>
+        <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">{t('chartView.colValue')}</Th>
+        <Th align="right" class="max-sm:py-0.5 whitespace-nowrap">{t('chartView.colWeight')}</Th>
+      </Tr>
+    </THead>
+    <TBody class="max-sm:block">
+      {#each rows as r (r.class)}
         <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-          <Th class="max-sm:col-span-2 max-sm:py-0.5">{t('chartView.colName')}</Th>
-          <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left">{t('chartView.colValue')}</Th>
-          <Th align="right" class="max-sm:py-0.5">{t('chartView.colWeight')}</Th>
+          <!-- Friendly class label, same mapping the slice names use. -->
+          <Td class="max-sm:col-span-2 max-sm:py-0.5 font-medium break-words">
+            {labelFor(r.class)}
+          </Td>
+          <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">
+            {formatCurrency(r.value, currency)}
+          </Td>
+          <Td align="right" class="max-sm:py-0.5 whitespace-nowrap">{formatPercent(r.weight)}</Td>
         </Tr>
-      </THead>
-      <TBody class="max-sm:block">
-        {#each rows as r (r.class)}
-          <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-            <!-- Friendly class label, same mapping the slice names use. -->
-            <Td class="max-sm:col-span-2 max-sm:break-words max-sm:py-0.5 font-medium">
-              {labelFor(r.class)}
-            </Td>
-            <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 max-sm:text-left">
-              {formatCurrency(r.value, currency)}
-            </Td>
-            <Td align="right" class="max-sm:py-0.5">{formatPercent(r.weight)}</Td>
-          </Tr>
-        {/each}
-      </TBody>
-    </Table>
-  </div>
+      {/each}
+    </TBody>
+  </Table>
 {:else}
   <div class="h-[280px] w-full">
     {#key resolved()}
