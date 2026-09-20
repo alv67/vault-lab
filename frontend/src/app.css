@@ -13,6 +13,14 @@
   :root {
     color-scheme: light;
 
+    /*        Live height of the sticky app header (EPIC K.2 condensing): the
+       expanded 56px default lives here; `AppShell.svelte` overrides it on
+       its scroll column (3.5rem ↔ 2.75rem from its `condensed` state) so
+       `AppHeader` and the entity sticky headers (`top-[var(--app-header-h)]`)
+       stay flush with each other while the bar shrinks. Height-only: keep
+       the two values in sync with the shell. */
+    --app-header-h: 3.5rem;
+
     --background: 210 40% 96.1%;
     --foreground: 222.2 47.4% 11.2%;
     /* Elevation ladder (EPIC K.1a): 0 = app background, 1 = card,

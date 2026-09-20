@@ -17,6 +17,7 @@
   import { palette } from '$lib/stores/palette.svelte'
   import { resolved } from '$lib/stores/theme.svelte'
   import { pnlColorClass } from '$lib/ui-colors'
+  import { cx } from '$lib/components/ui/utils'
   import { t } from '$lib/i18n/index.svelte'
   import ChartTableToggle from '$lib/components/ui/ChartTableToggle.svelte'
   import Table from '$lib/components/ui/Table.svelte'
@@ -155,7 +156,7 @@
 
 {#if (buckets ?? []).length === 0}
   <div class="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
-    No data
+    {t('chartView.noData')}
   </div>
 {:else}
   {#if showTableToggle}
@@ -164,24 +165,31 @@
     </div>
   {/if}
   {#if showTable}
+    <!-- No inner scroll viewport: the page scrolls. Phone rows collapse to a
+         stacked key–value grid (period full-width, return + cumulative on
+         the second line); ≥ `sm` the classic table is unchanged. -->
     <div class="overflow-x-auto">
-      <Table>
+      <Table class="max-sm:block">
         <caption class="sr-only">{t('chartView.caption', { name: chartName })}</caption>
-        <THead>
-          <Tr>
-            <Th>{t('chartView.colPeriod')}</Th>
-            <Th align="right">{t('chartView.colReturn')}</Th>
-            <Th align="right">{t('chartView.colCumulative')}</Th>
+        <THead class="max-sm:block">
+          <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+            <Th class="max-sm:col-span-2 max-sm:py-0.5">{t('chartView.colPeriod')}</Th>
+            <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left">{t('chartView.colReturn')}</Th>
+            <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5">{t('chartView.colCumulative')}</Th>
           </Tr>
         </THead>
-        <TBody>
+        <TBody class="max-sm:block">
           {#each buckets as b (b.period)}
-            <Tr>
-              <Td class="font-medium">{formatPeriod(b.period)}</Td>
-              <Td align="right" class={pnlColorClass(b.return)}>
+            <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+              <Td class="max-sm:col-span-2 max-sm:break-words max-sm:py-0.5 font-medium">
+                {formatPeriod(b.period)}
+              </Td>
+              <Td align="right" class={cx('max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left', pnlColorClass(b.return))}>
                 {formatSignedPercent(b.return)}
               </Td>
-              <Td align="right">{formatSignedPercent(b.twr)}</Td>
+              <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5">
+                {formatSignedPercent(b.twr)}
+              </Td>
             </Tr>
           {/each}
         </TBody>

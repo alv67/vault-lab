@@ -1,6 +1,7 @@
 <script lang="ts">
   import { formatPercent } from '$lib/format'
   import { resolvePalette } from '$lib/chartPalette'
+  import { t } from '$lib/i18n/index.svelte'
   import { resolved } from '$lib/stores/theme.svelte'
   import { countryDisplayName } from '$lib/countryNames'
   import ExposurePie from '$lib/components/ExposurePie.svelte'
@@ -72,22 +73,22 @@
        regions pie -->
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="font-semibold">Distribuzione geografica</h2>
+      <h2 class="font-semibold">{t('exposure.geoTitle')}</h2>
       <button
         onclick={ctx.openGeoModal}
-        aria-label="Modifica distribuzione geografica"
+        aria-label={t('exposure.editGeo')}
         class="flex items-center gap-2 rounded-control border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted"
       >
         <Pencil class="h-4 w-4" />
-        Modifica
+        {t('exposure.modify')}
       </button>
     </div>
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
       <div class="rounded-card border border-border bg-muted p-4">
-        <h3 class="mb-2 font-medium">Paesi</h3>
+        <h3 class="mb-2 font-medium">{t('exposure.countries')}</h3>
         {#if topCountries.length === 0}
           <div class="flex h-[240px] w-full items-center justify-center text-sm text-muted-foreground">
-            Nessuna distribuzione
+            {t('chartView.noDistribution')}
           </div>
         {:else}
           <div class="space-y-2 py-1">
@@ -112,7 +113,7 @@
         {/if}
       </div>
       <div class="rounded-card border border-border bg-muted p-4">
-        <h3 class="mb-2 font-medium">Regioni</h3>
+        <h3 class="mb-2 font-medium">{t('exposure.regions')}</h3>
         <!-- displayRegions never carries the «Other / Not Classified» row
              (withoutOther filters it out of the stored exposure), so the
              donut renders open: complete={false} adds the transparent
@@ -120,7 +121,7 @@
              chart already lists every visible row with its weight. -->
         <ExposurePie
           data={displayRegions}
-          title="Distribuzione geografica"
+          title={t('exposure.geoTitle')}
           complete={false}
           showTableToggle={false}
         />
@@ -143,21 +144,21 @@
   <!-- Sector distribution card -->
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="font-semibold">Distribuzione settoriale</h2>
+      <h2 class="font-semibold">{t('exposure.sectorTitle')}</h2>
       <button
         onclick={ctx.openSectorModal}
-        aria-label="Modifica distribuzione settoriale"
+        aria-label={t('exposure.editSectors')}
         class="flex items-center gap-2 rounded-control border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted"
       >
         <Pencil class="h-4 w-4" />
-        Modifica
+        {t('exposure.modify')}
       </button>
     </div>
     <div class="rounded-card border border-border bg-muted p-4">
-      <h3 class="mb-2 font-medium">Settori</h3>
+      <h3 class="mb-2 font-medium">{t('exposure.sectors')}</h3>
       <!-- Same as regions: the legend below already lists every sector with
            its weight, so no K.5b table toggle here. -->
-      <ExposurePie data={displaySectors} title="Distribuzione settoriale" showTableToggle={false} />
+      <ExposurePie data={displaySectors} title={t('exposure.sectorTitle')} showTableToggle={false} />
       <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
         {#each displaySectors.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
           <div class="flex items-center gap-1.5 text-xs">
@@ -174,13 +175,13 @@
   </div>
 {:else if ctx.asset && !exposureApplicable}
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
-    <h2 class="mb-2 font-semibold">Distribuzione geografica e settoriale</h2>
+    <h2 class="mb-2 font-semibold">{t('exposure.universeTitle')}</h2>
     <p class="text-sm text-muted-foreground">
-      Questa distribuzione si applica solo agli asset azionari (azioni ed ETF/fondi di classe equity).
+      {t('exposure.universeHint')}
     </p>
     {#if ctx.asset.type !== 'stock'}
       <p class="mt-2 text-sm text-muted-foreground">
-        Imposta la classe 'Azioni' o 'Immobiliare' nelle Caratteristiche per attivarla.
+        {t('exposure.universeClassHint')}
       </p>
     {/if}
   </div>

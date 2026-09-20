@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Loader2, X } from 'lucide-svelte'
   import type { ExposureRow } from '$lib/services/api'
+  import { t } from '$lib/i18n/index.svelte'
   import ExposurePie from './ExposurePie.svelte'
   import ProvenanceBadge from './ProvenanceBadge.svelte'
   import { colorForRow, resolvePalette } from '$lib/chartPalette'
@@ -70,18 +71,18 @@
     onkeydown={(e) => e.key === 'Escape' && onClose()}
     role="dialog"
     aria-modal="true"
-    aria-label="Modifica distribuzione settoriale"
+    aria-label={t('exposure.editSectors')}
     tabindex="-1"
   >
     <div
       class="relative mx-4 max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-card border-border bg-surface p-6 shadow-raised"
     >
       <div class="mb-6 flex items-center justify-between">
-        <h2 class="text-lg font-semibold">Modifica distribuzione settoriale</h2>
+        <h2 class="text-lg font-semibold">{t('exposure.editSectors')}</h2>
         <button
           onclick={onClose}
           class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Chiudi"
+          aria-label={t('common.close')}
         >
           <X class="h-5 w-5" />
         </button>
@@ -91,7 +92,7 @@
       <div class="flex flex-col rounded-card border border-border bg-muted p-4">
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <h3 class="font-medium">Distribuzione settoriale</h3>
+            <h3 class="font-medium">{t('exposure.sectorTitle')}</h3>
             <ProvenanceBadge source={sectorsSource} updatedAt={sectorsUpdatedAt} />
           </div>
           <div class="flex items-center gap-1.5">
@@ -205,7 +206,7 @@
                  would only duplicate it. -->
             <ExposurePie
               data={sectorsEdit}
-              title="Distribuzione settoriale"
+              title={t('exposure.sectorTitle')}
               mute
               showTableToggle={false}
             />

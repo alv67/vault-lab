@@ -288,7 +288,7 @@
     const excluded = Number(alloc?.excluded_value || 0)
     const total = covered + excluded
     if (total <= 0 || excluded <= 0) return undefined
-    return `Universo azionario: ${((covered / total) * 100).toFixed(1)}% del portafoglio`
+    return t('allocation.equityUniverse', { pct: ((covered / total) * 100).toFixed(1) })
   })
 
   // Aggregated "Other" buckets are muted grey, like the slice treatment in the
@@ -470,16 +470,16 @@
         </Card>
 
         <Card class="p-4">
-          <h2 class="mb-4 font-semibold">Allocation by portfolio</h2>
+          <h2 class="mb-4 font-semibold">{t('allocation.byPortfolio')}</h2>
           <AllocationDonut
             data={portfolioSlices}
-            title="Allocation by portfolio"
+            title={t('allocation.byPortfolio')}
             currency={dash.base_currency || dash.by_currency[0]?.currency || 'USD'}
             showValue={!hasMultipleCurrencies}
           />
           {#if hasMultipleCurrencies}
             <p class="mt-2 text-xs text-muted-foreground">
-              Portfolios use different currencies: values are not comparable, shares are indicative.
+              {t('allocation.mixedCurrencies')}
             </p>
           {/if}
         </Card>
@@ -532,9 +532,9 @@
       </div>
 
       <div class="rounded-card border-border bg-surface p-4 shadow-card">
-        <h2 class="mb-4 font-semibold">Allocazione complessiva</h2>
+        <h2 class="mb-4 font-semibold">{t('allocation.title')}</h2>
         {#if alloc == null}
-          <p class="text-sm text-muted-foreground">Allocazione non disponibile</p>
+          <p class="text-sm text-muted-foreground">{t('allocation.unavailable')}</p>
         {:else}
           <!-- EPIC I.4 layout: asset-class donut over the whole vault plus the
                equity-only breakdown (sector, region and country bars), in a
@@ -544,13 +544,17 @@
                exact layout in EPIC I.7 (#86). -->
           <div class="grid gap-4 lg:grid-cols-2">
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
-              <ClassDonut data={alloc.classes ?? []} currency={alloc.currency} label="Classi di attività" />
+              <ClassDonut
+                data={alloc.classes ?? []}
+                currency={alloc.currency}
+                label={t('allocation.assetClasses')}
+              />
             </div>
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
               <ExposureBarChart
                 rows={sectorBarRows}
                 currency={alloc.currency}
-                label="Settori (solo equity)"
+                label={t('allocation.sectorsEquity')}
                 note={equityUniverseNote}
                 colorFor={otherGrey}
               />
@@ -559,7 +563,7 @@
               <ExposureBarChart
                 rows={regionBarRows}
                 currency={alloc.currency}
-                label="Regioni (solo equity)"
+                label={t('allocation.regionsEquity')}
                 note={equityUniverseNote}
                 colorFor={otherGrey}
               />
@@ -568,7 +572,7 @@
               <ExposureBarChart
                 rows={countryBarRows}
                 currency={alloc.currency}
-                label="Paesi (solo equity)"
+                label={t('allocation.countriesEquity')}
                 note={equityUniverseNote}
                 colorFor={otherGrey}
                 labelFor={countryDisplayName}

@@ -3,6 +3,7 @@
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
   import { countryDisplayName } from '$lib/countryNames'
   import { chartSemanticColors } from '$lib/chartPalette'
+  import { t } from '$lib/i18n/index.svelte'
   import { resolved } from '$lib/stores/theme.svelte'
   import { getPortfolioPage } from '../context'
 
@@ -41,7 +42,7 @@
     const excludedNum = Number(excluded || 0)
     const total = coveredNum + excludedNum
     if (total <= 0 || excludedNum <= 0) return undefined
-    return `Universo azionario: ${((coveredNum / total) * 100).toFixed(1)}% del portafoglio`
+    return t('allocation.equityUniverse', { pct: ((coveredNum / total) * 100).toFixed(1) })
   }
   const geoUniverseNote = $derived(
     equityUniverseNote(ctx.geoAlloc?.covered_value, ctx.geoAlloc?.excluded_value),
@@ -64,25 +65,25 @@
 <div class="grid gap-4 lg:grid-cols-2">
   <div class="rounded-card border-border bg-surface p-4 shadow-card">
     {#if ctx.classAllocError}
-      <h3 class="mb-3 font-semibold">Classi di attività</h3>
-      <p class="text-sm text-muted-foreground">Allocazione per classi non disponibile</p>
+      <h3 class="mb-3 font-semibold">{t('allocation.assetClasses')}</h3>
+      <p class="text-sm text-muted-foreground">{t('allocation.classUnavailable')}</p>
     {:else}
       <ClassDonut
         data={ctx.classAlloc?.classes ?? []}
         currency={ctx.classAlloc?.currency || currency}
-        label="Classi di attività"
+        label={t('allocation.assetClasses')}
       />
     {/if}
   </div>
   <div class="rounded-card border-border bg-surface p-4 shadow-card">
     {#if ctx.sectorAllocError}
-      <h3 class="mb-1 font-semibold">Settori (solo equity)</h3>
-      <p class="text-sm text-muted-foreground">Allocazione settoriale non disponibile</p>
+      <h3 class="mb-1 font-semibold">{t('allocation.sectorsEquity')}</h3>
+      <p class="text-sm text-muted-foreground">{t('allocation.sectorUnavailable')}</p>
     {:else}
       <ExposureBarChart
         rows={sectorBarRows}
         currency={ctx.sectorAlloc?.currency || currency}
-        label="Settori (solo equity)"
+        label={t('allocation.sectorsEquity')}
         note={sectorUniverseNote}
         colorFor={otherGrey}
       />
@@ -90,13 +91,13 @@
   </div>
   <div class="rounded-card border-border bg-surface p-4 shadow-card">
     {#if ctx.geoAllocError}
-      <h3 class="mb-1 font-semibold">Regioni (solo equity)</h3>
-      <p class="text-sm text-muted-foreground">Allocazione geografica non disponibile</p>
+      <h3 class="mb-1 font-semibold">{t('allocation.regionsEquity')}</h3>
+      <p class="text-sm text-muted-foreground">{t('allocation.geoUnavailable')}</p>
     {:else}
       <ExposureBarChart
         rows={regionBarRows}
         currency={ctx.geoAlloc?.currency || currency}
-        label="Regioni (solo equity)"
+        label={t('allocation.regionsEquity')}
         note={geoUniverseNote}
         colorFor={otherGrey}
       />
@@ -104,13 +105,13 @@
   </div>
   <div class="rounded-card border-border bg-surface p-4 shadow-card">
     {#if ctx.geoAllocError}
-      <h3 class="mb-1 font-semibold">Paesi (solo equity)</h3>
-      <p class="text-sm text-muted-foreground">Allocazione geografica non disponibile</p>
+      <h3 class="mb-1 font-semibold">{t('allocation.countriesEquity')}</h3>
+      <p class="text-sm text-muted-foreground">{t('allocation.geoUnavailable')}</p>
     {:else}
       <ExposureBarChart
         rows={countryBarRows}
         currency={ctx.geoAlloc?.currency || currency}
-        label="Paesi (solo equity)"
+        label={t('allocation.countriesEquity')}
         note={geoUniverseNote}
         colorFor={otherGrey}
         labelFor={countryDisplayName}

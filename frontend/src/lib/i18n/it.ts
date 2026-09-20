@@ -107,11 +107,85 @@ export const it = {
     themeHint: 'Chiaro, scuro, oppure in base alle impostazioni del dispositivo (Sistema).',
     languageHint: 'Applicata subito e ricordata su questo dispositivo.',
     /** Controllo della palette utile/perdita (decisione D6, EPIC K.5c): vale
-     *  anche come nome accessibile della tablist SegmentedControl. */
+     *  anche come nome accessibile della tablist SegmentedControl. Le
+     *  etichette restano corte ("Verde/Rosso" / "Blu/Arancione") per non far
+     *  traboccare il controllo nella card a larghezza telefono (bug-fix
+     *  EPIC K); il pannello comandi le riusa come hint dello stato di
+     *  destinazione del toggle, e `paletteHint` porta la spiegazione estesa. */
     colorGroup: 'Colori utile/perdita',
-    paletteClassic: 'Classica (verde/rosso)',
-    paletteCvd: 'Accessibile ai daltonici (blu/arancione)',
+    paletteClassic: 'Verde/Rosso',
+    paletteCvd: 'Blu/Arancione',
     paletteHint: 'Sostituisce verde/rosso con blu/arancione in testi e grafici. Segni e frecce ▲▼ restano sempre.',
+  },
+  /**
+   * Superfici di allocazione (bug-fix EPIC K, sweep progressivo D1): la card
+   * "Allocazione complessiva" del vault in dashboard, il tab Allocazione del
+   * portafoglio e il suo digest in Panoramica — titoli dei pannelli, stati di
+   * errore isolati e nota di copertura dell'universo azionario (`{pct}` porta
+   * una cifra decimale).
+   */
+  allocation: {
+    title: 'Allocazione complessiva',
+    unavailable: 'Allocazione non disponibile',
+    classUnavailable: 'Allocazione per classi non disponibile',
+    sectorUnavailable: 'Allocazione settoriale non disponibile',
+    geoUnavailable: 'Allocazione geografica non disponibile',
+    assetClasses: 'Classi di attività',
+    sectorsEquity: 'Settori (solo equity)',
+    regionsEquity: 'Regioni (solo equity)',
+    countriesEquity: 'Paesi (solo equity)',
+    /** Nota di copertura dell'universo azionario mostrata quando c'era esclusioni. */
+    equityUniverse: 'Universo azionario: {pct}% del portafoglio',
+    /** Torta dashboard: valore del vault ripartito per portafoglio. */
+    byPortfolio: 'Allocazione per portafoglio',
+    mixedCurrencies:
+      'I portafogli usano valute diverse: i valori non sono confrontabili, le quote sono indicative.',
+  },
+  /**
+   * Tab Esposizione degli asset e relative modali di modifica (bug-fix EPIC
+   * K): titoli delle card, intestazioni dei pannelli, pulsanti di modifica e
+   * banner riservato all'equity.
+   */
+  exposure: {
+    geoTitle: 'Distribuzione geografica',
+    sectorTitle: 'Distribuzione settoriale',
+    countries: 'Paesi',
+    regions: 'Regioni',
+    sectors: 'Settori',
+    noCountries: 'Nessun paese inserito',
+    noCountriesHint: 'Aggiungi un paese qui sotto, oppure usa un prefill JustETF / Morningstar',
+    modify: 'Modifica',
+    editGeo: 'Modifica distribuzione geografica',
+    editSectors: 'Modifica distribuzione settoriale',
+    /** Banner che sostituisce le card per asset fuori dall'universo azionario. */
+    universeTitle: 'Distribuzione geografica e settoriale',
+    universeHint:
+      'Questa distribuzione si applica solo agli asset azionari (azioni ed ETF/fondi di classe equity).',
+    universeClassHint: "Imposta la classe 'Azioni' o 'Immobiliare' nelle Caratteristiche per attivarla.",
+  },
+  /**
+   * Badge di provenienza (bug-fix EPIC K): etichetta della pill, spiegazione
+   * nel tooltip/aria connessa e connettore di data (`{date}` è il stamp
+   * YYYY-MM-DD grezzo). Una chiave piatta per id di provenienza
+   * (`manualLabel`/`manualDesc`, …) perché il runtime supporta esattamente
+   * due livelli di annidamento.
+   */
+  provenance: {
+    updatedTo: 'aggiornato al {date}',
+    manualLabel: 'manuale',
+    manualDesc: 'Dati modificati manualmente',
+    justetfLabel: 'da JustETF',
+    justetfDesc: 'Lista paesi importata da JustETF, non modificata manualmente',
+    morningstarLabel: 'da Morningstar',
+    morningstarDesc: 'Dati importati da Morningstar, non modificati manualmente',
+    morningstarRegionsLabel: 'da Morningstar (regioni ufficiali)',
+    morningstarRegionsDesc: 'Regioni ufficiali importate da Morningstar, non modificate manualmente',
+    yahooLabel: 'da Yahoo',
+    yahooDesc: 'Settori importati da Yahoo, non modificati manualmente',
+    derivedLabel: 'calcolato dai paesi',
+    derivedDesc: 'Regioni calcolate a partire dai pesi dei paesi',
+    derivedEtfLabel: 'da JustETF via paesi',
+    derivedEtfDesc: 'Regioni calcolate dai paesi importati da JustETF',
   },
   hero: {
     netValue: 'Valore netto',
@@ -174,6 +248,8 @@ export const it = {
     ariaNamed: 'Vista dati del grafico — {name}',
     caption: '{name} — dati del grafico',
     captionGeneric: 'Dati del grafico',
+    /** Intestazioni di colonna condivise dalle viste tabellari (usate anche
+     *  come etichette `Valore:`/`Peso:` nei tooltip ECharts, bug-fix EPIC K). */
     colName: 'Nome',
     colValue: 'Valore',
     colWeight: 'Peso',
@@ -183,6 +259,15 @@ export const it = {
     colInvested: 'Investito',
     namePerformance: 'Performance',
     nameCapital: 'Investito contro valore',
+    /** Stati vuoti dei wrapper di grafici di allocazione/esposizione. */
+    noData: 'Nessun dato',
+    noDistribution: 'Nessuna distribuzione',
+    noClassAllocation: 'Nessuna allocazione per classi',
+    noAllocation: 'Nessuna allocazione',
+    /** Nomi di serie di riserva (identità in legenda/tooltip) quando il
+     *  wrapper non ha un titolo proprio da riusare. */
+    seriesExposure: 'Esposizione',
+    seriesClassAllocation: 'Allocazione per classi',
   },
   portfolio: {
     tabsLabel: 'Sezioni del portafoglio',

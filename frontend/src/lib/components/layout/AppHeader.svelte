@@ -6,7 +6,6 @@
   import Button from '../ui/Button.svelte'
   import ThemeToggle from './ThemeToggle.svelte'
   import UserMenu from './UserMenu.svelte'
-  import { cx } from '../ui/utils'
 
   /**
    * Sticky top bar (EPIC D.3, adaptive since K.2). Left: the sidebar
@@ -26,9 +25,11 @@
    * aria-labels go through `t()` (EPIC K.1b, decision D1); the "VaultLab"
    * brand is a proper noun and stays as-is.
    *
-   * Condensing (spec §5.1): the shell measures its main scroll container
-   * and flips `condensed` once scrolled past a small threshold; the bar
-   * shrinks 56px → 44px with a plain CSS height transition, which the global
+   * Condensing (spec §5.1): the shell measures its main scroll container and
+   * publishes the live bar height as `--app-header-h` (3.5rem → 2.75rem,
+   * i.e. 56px → 44px) on the scroll column — this bar and the entity sticky
+   * headers below it read the same variable, so they always stay flush. The
+   * height transitions with plain CSS, which the global
    * `prefers-reduced-motion` rule in app.css already neutralises. The
    * trigger is `size="icon"` (h-9), so it survives the shrink unchanged.
    *
@@ -37,14 +38,11 @@
    */
   let {
     collapsed,
-    condensed = false,
     ontogglecollapse,
     onopenpalette,
   }: {
     /** Sidebar rail state (drives the collapse toggle's label/pressed). */
     collapsed: boolean
-    /** Main scroll container scrolled past the condense threshold. */
-    condensed?: boolean
     ontogglecollapse: () => void
     /** Opens the K.5a command palette (the shell owns its bindable state). */
     onopenpalette?: () => void
@@ -57,10 +55,7 @@
 </script>
 
 <header
-  class={cx(
-    'sticky top-0 z-20 flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/90 px-3 backdrop-blur transition-[height] duration-base ease-standard lg:px-4',
-    condensed ? 'h-11' : 'h-14',
-  )}
+  class="sticky top-0 z-20 flex h-[var(--app-header-h)] shrink-0 items-center justify-between gap-2 border-b border-border bg-surface/90 px-3 backdrop-blur transition-[height] duration-base ease-standard lg:px-4"
 >
   <div class="flex min-w-0 items-center gap-1">
     <Button

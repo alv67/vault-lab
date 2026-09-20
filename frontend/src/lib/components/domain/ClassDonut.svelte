@@ -81,7 +81,7 @@
         const p = params as TooltipItem
         const row = rows.find((r) => labelFor(r.class) === p.name)
         if (!row) return ''
-        return `${p.marker}${p.name}<br/>Valore: <b>${formatCurrency(row.value, currency)}</b><br/>Peso: <b>${formatPercent(row.weight)}</b>`
+        return `${p.marker}${p.name}<br/>${t('chartView.colValue')}: <b>${formatCurrency(row.value, currency)}</b><br/>${t('chartView.colWeight')}: <b>${formatPercent(row.weight)}</b>`
       },
     },
     legend: rows.length > 0 && rows.length <= 6
@@ -89,7 +89,7 @@
       : undefined,
     series: [
       {
-        name: 'Allocazione per classi',
+        name: t('chartView.seriesClassAllocation'),
         type: 'pie',
         radius: ['45%', '70%'],
         center: ['50%', '50%'],
@@ -133,26 +133,33 @@
 {/if}
 {#if rows.length === 0}
   <div class="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
-    Nessuna allocazione per classi
+    {t('chartView.noClassAllocation')}
   </div>
 {:else if showTable}
+  <!-- No inner scroll viewport: the page scrolls. Phone rows collapse to a
+       stacked key–value grid (name full-width, value + weight sharing the
+       second line); ≥ `sm` the classic table is unchanged. -->
   <div class="overflow-x-auto">
-    <Table>
+    <Table class="max-sm:block">
       <caption class="sr-only">{caption}</caption>
-      <THead>
-        <Tr>
-          <Th>{t('chartView.colName')}</Th>
-          <Th align="right">{t('chartView.colValue')}</Th>
-          <Th align="right">{t('chartView.colWeight')}</Th>
+      <THead class="max-sm:block">
+        <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+          <Th class="max-sm:col-span-2 max-sm:py-0.5">{t('chartView.colName')}</Th>
+          <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left">{t('chartView.colValue')}</Th>
+          <Th align="right" class="max-sm:py-0.5">{t('chartView.colWeight')}</Th>
         </Tr>
       </THead>
-      <TBody>
+      <TBody class="max-sm:block">
         {#each rows as r (r.class)}
-          <Tr>
+          <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
             <!-- Friendly class label, same mapping the slice names use. -->
-            <Td class="font-medium">{labelFor(r.class)}</Td>
-            <Td align="right">{formatCurrency(r.value, currency)}</Td>
-            <Td align="right">{formatPercent(r.weight)}</Td>
+            <Td class="max-sm:col-span-2 max-sm:break-words max-sm:py-0.5 font-medium">
+              {labelFor(r.class)}
+            </Td>
+            <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 max-sm:text-left">
+              {formatCurrency(r.value, currency)}
+            </Td>
+            <Td align="right" class="max-sm:py-0.5">{formatPercent(r.weight)}</Td>
           </Tr>
         {/each}
       </TBody>

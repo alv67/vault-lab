@@ -3,6 +3,7 @@
   import { Calculator, Globe2, Info, Loader2, X, Plus, Trash2 } from 'lucide-svelte'
   import type { ExposureRow } from '$lib/services/api'
   import { CANONICAL_COUNTRIES, countryDisplayName } from '$lib/countryNames'
+  import { t } from '$lib/i18n/index.svelte'
   import ExposurePie from './ExposurePie.svelte'
   import ProvenanceBadge from './ProvenanceBadge.svelte'
   import { colorForRow, resolvePalette } from '$lib/chartPalette'
@@ -189,7 +190,7 @@
     onkeydown={(e) => e.key === 'Escape' && onClose()}
     role="dialog"
     aria-modal="true"
-    aria-label="Modifica distribuzione geografica"
+    aria-label={t('exposure.editGeo')}
     tabindex="-1"
   >
     <!-- max-w-6xl (1152px): with the lg:grid-cols-2 split each box gets ~536px
@@ -199,11 +200,11 @@
       class="relative mx-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-card border-border bg-surface p-6 shadow-raised"
     >
       <div class="mb-6 flex items-center justify-between">
-        <h2 class="text-lg font-semibold">Modifica distribuzione geografica</h2>
+        <h2 class="text-lg font-semibold">{t('exposure.editGeo')}</h2>
         <button
           onclick={onClose}
           class="rounded-control p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Chiudi"
+          aria-label={t('common.close')}
         >
           <X class="h-5 w-5" />
         </button>
@@ -214,7 +215,7 @@
         <div class="flex flex-col rounded-card border border-border bg-muted p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
-              <h3 class="font-medium">Paesi</h3>
+              <h3 class="font-medium">{t('exposure.countries')}</h3>
               <ProvenanceBadge source={countriesSource} updatedAt={countriesUpdatedAt} />
             </div>
             <div class="flex items-center gap-1.5">
@@ -280,9 +281,9 @@
             {#if visibleCountries.length === 0}
               <div class="flex min-h-0 flex-1 flex-col items-center justify-center py-10 text-center">
                 <Globe2 class="h-8 w-8 text-input" />
-                <p class="text-sm text-muted-foreground">Nessun paese inserito</p>
+                <p class="text-sm text-muted-foreground">{t('exposure.noCountries')}</p>
                 <p class="text-xs text-muted-foreground">
-                  Aggiungi un paese qui sotto, oppure usa un prefill JustETF / Morningstar
+                  {t('exposure.noCountriesHint')}
                 </p>
               </div>
             {:else}
@@ -419,7 +420,7 @@
         <div class="flex flex-col rounded-card border border-border bg-muted p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
-              <h3 class="font-medium">Regioni</h3>
+              <h3 class="font-medium">{t('exposure.regions')}</h3>
               <ProvenanceBadge source={regionsSource} updatedAt={regionsUpdatedAt} />
             </div>
             <div class="flex items-center gap-1.5">
@@ -513,7 +514,7 @@
                    toggle would only duplicate it. -->
               <ExposurePie
                 data={regionsEdit}
-                title="Distribuzione geografica"
+                title={t('exposure.geoTitle')}
                 mute
                 complete={false}
                 showTableToggle={false}

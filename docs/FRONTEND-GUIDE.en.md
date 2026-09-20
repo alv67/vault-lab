@@ -472,7 +472,7 @@ in white).
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2); since EPIC I.9 (#88) the page feeds it one 20-row page at a time and renders the Previous/Next footer under it |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction form: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls and toasts. Since EPIC K.4c it renders as the `ui/Modal` at ≥ `sm` and as a `ui/Sheet` (bottom sheet) on phones (decision D4, via the `viewport` store), sharing one form/footer snippet pair; Delete removes the row immediately and shows a 5 s **undo** toast instead of a `ConfirmDialog` (decision D11 — undo re-POSTs the captured payload, which yields a new id) | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
-| `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Currencies / Health), active tab marked with `aria-current="page"` | all four **Settings** pages (E.4) |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Preferences / Currencies), active tab marked with `aria-current="page"`; the pill container is `max-w-full flex-wrap` so all four tabs stay reachable at phone widths (EPIC K bug-fix) | all four **Settings** pages (E.4) |
 | `ChartTableToggle.svelte` (`lib/components/ui/`) | shared **Chart ⇄ Table** segmented disclosure (EPIC K.5b, spec §9.1): a thin wrapper over `SegmentedControl` bound to the owning chart's internal `view` state (`'chart' \| 'table'`, `$bindable`), labeled `Chart`/`Table` through `chartView.*`; the tablist accessible name interpolates the chart's own heading when it has one (`chartView.ariaNamed`, generic `chartView.aria` otherwise) | embedded by `ExposureBarChart`, `ClassDonut`, `ExposurePie`, `PerformanceChart`, `CapitalChart` and `AllocationDonut` (see the "View as table" note below); callers hide it with `showTableToggle={false}` where a list of the same rows already sits directly under the chart |
 
 Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
@@ -509,8 +509,14 @@ the screen-reader path. The pattern is uniform across the six wrappers:
   name/value/weight (bars, class donut), name/weight (`ExposurePie`),
   period/return/cumulative TWR (`PerformanceChart`), period/invested/value
   (`CapitalChart`), name/value/weight (`AllocationDonut`).
-- on `ExposureBarChart` the `maxVisibleRows` country cap is mirrored in
-  table mode with its own scroll viewport sized to the table rows.
+- on `ExposureBarChart` the `maxVisibleRows` country cap applies to the
+  **chart** viewport only; table mode never caps or scrolls internally (EPIC
+  K bug-fix): it lists every row and lets the page scroll. Below `sm` all six
+  tables collapse each row into a stacked key–value grid (the table parts are
+  blockified, the name spans full width, the numeric cells share the second
+  line) so they never introduce a horizontal scrollbar at 393px; ≥ `sm` the
+  classic table is unchanged and `overflow-x-auto` stays for genuinely wide
+  desktop data.
 
 `PriceChart`, `PositionChart` and the card `Sparkline`s are out of the
 K.5b batch: the first two are the price-history tool (its own 1M–MAX
@@ -660,6 +666,11 @@ primary/secondary/outline/ghost/danger/link, sizes, loading), `Input`,
 `Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, the `Table`
 primitives (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` and
 `StatCard`. Pages and the shell reuse them instead of duplicating markup.
+`SegmentedControl` is overflow-safe by design (EPIC K bug-fix): its pill row is
+`max-w-full flex-wrap` with content-based `flex-auto` segments, so long labels
+wrap inside the container at phone widths instead of pushing a horizontal
+scroll, while at `sm`+ the inline-flex row still shrink-wraps to the labels on
+a single line (the desktop pill look is unchanged).
 Irreducible destructive actions use `ConfirmDialog` instead of the browser's
 native `confirm()` (since EPIC K.4c transaction deletes are exempt: reversible
 actions go undo-toast-first, decision D11 — see chapter 10).
@@ -708,9 +719,15 @@ JS state and CSS never disagree.
   in the header. `<main>` carries an extra bottom clearance and the bar
   respects `env(safe-area-inset-bottom)`; every tap target is ≥ 44px.
 - **Condensing header** (all sizes): the shell measures scroll on the main
-  scroll container and flips a `condensed` prop past a 16px threshold; the
-  sticky `AppHeader` shrinks 56px → 44px via a CSS height transition, which the
-  global `prefers-reduced-motion` rule neutralises.
+  scroll container and flips `condensed` past a 16px threshold; it then
+  publishes the live bar height as the `--app-header-h` custom property on its
+  scroll column (expanded `3.5rem` = 56px, condensed `2.75rem` = 44px).
+  `AppHeader` sizes itself `h-[var(--app-header-h)]` (a CSS height transition
+  the global `prefers-reduced-motion` rule neutralises), and the entity sticky
+  headers on the portfolio/asset detail shells stack at
+  `top-[var(--app-header-h)]` (with a matched `transition-[top]`) so they stay
+  flush with the bar and never leave a gap strip while it condenses (EPIC K
+  bug-fix). The default lives in `app.css` `:root`.
 - The Admin entry is labelled **"Data & Sync"** (`nav.dataSync`, decision D7).
   It lives in a single `adminItems` config point in `SidebarNav` (route
   `/admin/health` unchanged) so it can later be relocated into an
@@ -805,9 +822,18 @@ the old fixed `Layout.svelte`.
   throw). **Migration is progressive**: K.1b translated the shell navigation
   (`SidebarNav`, `AppHeader`/`UserMenu`/`ThemeToggle` labels, `SettingsTabs`,
   `MobileDrawer`, the skip link) plus the new **Settings → Preferences**
-  page; the other pages keep their historical mixed English/Italian copy
-  ("cambio mancante", "Aggiorna da Yahoo", … — the chapter 6 formatters
-  follow the same mix) until each one gets its own sweep in a later phase.
+  page; the EPIC K bug-fix batch then moved every **allocation-related**
+  string onto `t()` — the dashboard/portfolio/asset allocation & exposure
+  surfaces (new `allocation.*`, `exposure.*` groups), the chart empty states,
+  tooltip `Value:`/`Weight:` labels and fallback series names
+  (`chartView.noData`/`noDistribution`/`noClassAllocation`/`noAllocation`/
+  `seriesExposure`/`seriesClassAllocation`) and the `ProvenanceBadge`
+  label+description (`provenance.*`), all shape-identical in `en.ts`/`it.ts`;
+  the other pages keep their historical mixed English/Italian copy
+  ("cambio mancante", "Aggiorna da Yahoo", exposure-modal field labels,
+  portfolio/dashboard "Performance"/"Invested assets" cards, … — the chapter 6
+  formatters follow the same mix) until each one gets its own sweep in a
+  later phase.
 
 ---
 
@@ -1088,7 +1114,8 @@ refetch; the header adds `portfolioApi.exportDoc`,
 `.delete` (⋯ menu) and reuses `ImportPortfolioModal` (import → full shell
 reload, transactions reset to the first page).
 
-The sticky shell header (below the app header, `top-14`):
+The sticky shell header (stacked at `top-[var(--app-header-h)]`, its negative
+margins/padding mirroring `<main>`'s responsive `px-4 lg:px-6` / `pt-4 lg:pt-6`):
 
 - Identity row: back link to `/portfolios`, portfolio name + currency (and
   description when present), the `[+ Transaction]` primary action (opens the
@@ -1238,7 +1265,8 @@ behind "Where held" (below). The tabs add no endpoint that the old page
 didn't call: `assetApi.update`/`.meta`/`.backfillHistory`/`.remove` (now
 also for delete) and the exposure PUT/prefill/derive set live in the shell.
 
-The sticky shell header (below the app header, `top-14`):
+The sticky shell header (stacked at `top-[var(--app-header-h)]`, its negative
+margins/padding mirroring `<main>`'s responsive `px-4 lg:px-6` / `pt-4 lg:pt-6`):
 
 - Identity row: back link to `/assets`, ticker (mono font, D5) + name, the
   identity chips **type · class · currency · exchange** (`ASSET_TYPE_LABELS`
@@ -1474,8 +1502,11 @@ are translated through the i18n layer (chapter 8).
 - **Preferences** (`routes/settings/preferences/+page.svelte`, EPIC K.1b):
   the first fully translated page. Theme **Light/Dark/System** via a
   `SegmentedControl` bound to the theme store (default System, decision D9),
-  gain/loss **palette Classic (green/red) / Color-blind friendly
-  (blue/orange)** via a second `SegmentedControl` bound to the palette store
+  gain/loss **palette Verde/Rosso (green/red) / Blu/Arancione (blue/orange)**
+  — short `preferences.palette*` labels so the control can't overflow its card
+  at phone widths (EPIC K bug-fix); the command palette reuses them as the
+  toggle's target-state hint and `preferences.paletteHint` carries the full
+  explanation — via a second `SegmentedControl` bound to the palette store
   (`setCvd`/`palette.cvd`, decision D6, EPIC K.5c — applies immediately,
   persists in `localStorage['vaultlab-cvd']`, charts re-init on flip), and
   interface **language** (Italiano/English, default Italian, decision D1) via

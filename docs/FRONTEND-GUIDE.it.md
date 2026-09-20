@@ -488,7 +488,7 @@ scuro contornato di bianco).
 | `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2); dall'EPIC I.9 (#88) la pagina le passa una pagina da 20 righe alla volta e mostra i pulsanti Previous/Next con l'intervallo sotto di essa |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | form di aggiunta/modifica/eliminazione transazione: combobox asset, tipo (buy/sell/dividend), quantità/prezzo o importo, data, commissioni, note; validazione inline e totale live; gestisce chiamate API e toast. Dall'EPIC K.4c si presenta come `ui/Modal` da `sm` in su e come `ui/Sheet` (bottom sheet) sui telefoni (decisione D4, store `viewport`), condividendo un'unica coppia di snippet form/piè; Elimina rimuove la riga subito e mostra un toast **undo** da 5 s invece del `ConfirmDialog` (decisione D11 — l'undo re-INVIA il payload catturato, con nuovo id) | la pagina **dettaglio portafoglio** (E.2), aperta da "Add Transaction" e dall'azione di modifica della tabella |
-| `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profile / Password / Currencies / Health), tab attivo marcato con `aria-current="page"` | tutte e quattro le pagine **Settings** (E.4) |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profilo / Password / Preferenze / Valute), tab attivo marcato con `aria-current="page"`; il contenitore delle pill `max-w-full flex-wrap` mantiene tutte e quattro le tab raggiungibili a larghezza telefono (bug-fix EPIC K) | tutte e quattro le pagine **Settings** (E.4) |
 | `ChartTableToggle.svelte` (`lib/components/ui/`) | disclosure segmentata **Grafico ⇄ Tabella** condivisa (EPIC K.5b, spec §9.1): wrapper sottile di `SegmentedControl` legato allo stato `view` interno (`'chart' \| 'table'`, `$bindable`) del grafico che lo ospita, con etichette `Chart`/`Table` da `chartView.*`; il nome accessibile della tablist interpola il titolo proprio del grafico, se ce l'ha (`chartView.ariaNamed`, altrimenti il generico `chartView.aria`) | incorporato da `ExposureBarChart`, `ClassDonut`, `ExposurePie`, `PerformanceChart`, `CapitalChart` e `AllocationDonut` (vedi la nota "Vedi come tabella" qui sotto); i chiamanti lo nascondono con `showTableToggle={false}` dove sotto al grafico è già presente un elenco delle stesse righe |
 
 I tooltip formattano i valori monetari con `formatCurrency` (capitolo 6), le
@@ -528,9 +528,15 @@ nei sei wrapper:
   (`ExposurePie`), periodo/rendimento/TWR cumulativo (`PerformanceChart`),
   periodo/investito/valore (`CapitalChart`), nome/valore/peso
   (`AllocationDonut`).
-- in `ExposureBarChart` il cap `maxVisibleRows` dei paesi è rispecchiato
-  anche in modalità tabella, con un viewport scorrevole dimensionato sulle
-  righe della tabella.
+- in `ExposureBarChart` il cap `maxVisibleRows` dei paesi si applica **solo**
+  al viewport del grafico; la modalità tabella non ha mai un cap né uno scroll
+  interno (bug-fix EPIC K): elenca tutte le righe e lascia scorrere la pagina.
+  Sotto `sm` tutte e sei le tabelle collassano ogni riga in una griglia
+  chiave–valore impilata (le parti della tabella vengono blockificate, il nome
+  occupa tutta la larghezza, le celle numeriche condividono la seconda riga)
+  così non introducono mai una scrollbar orizzontale a 393px; da `sm` in su la
+  tabella classica resta invariata e `overflow-x-auto` copre i dati desktop
+  davvero larghi.
 
 `PriceChart`, `PositionChart` e le `Sparkline` delle card sono fuori dal
 lotto K.5b: i primi due sono lo strumento dello storico prezzi (con
@@ -692,7 +698,13 @@ primary/secondary/outline/ghost/danger/link, dimensioni, loading), `Input`,
 `Textarea`, `Select`, `Field`, `Card` (+ `CardHeader`/`CardContent`), `Badge`,
 `Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, le primitive
 `Table` (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` e
-`StatCard`. Le pagine e la shell le riusano invece di duplicare markup. Le
+`StatCard`. Le pagine e la shell le riusano invece di duplicare markup.
+`SegmentedControl` e sicuro contro l'overflow per costruzione (bug-fix EPIC K):
+la riga delle pill `max-w-full flex-wrap` con segmenti `flex-auto` basati sul
+contenuto, quindi le etichette lunghe vanno a capo dentro il contenitore a
+larghezza telefono invece di generare scroll orizzontale; da `sm` in su la riga
+inline-flex si restringe comunque alle etichette su una sola riga (aspetto
+desktop invariato). Le
 azioni distruttive irriducibili usano `ConfirmDialog` al posto del `confirm()`
 nativo del browser (dall'EPIC K.4c le eliminazioni di transazioni sono
 esclusi: le azioni reversibili passano prima dal toast undo, decisione D11 —
@@ -745,10 +757,16 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   spazio extra in basso e la barra rispetta `env(safe-area-inset-bottom)`;
   ogni target di tocco è ≥ 44px.
 - **Header condensante** (tutte le misure): la shell misura lo scroll del
-  contenitore scrollabile principale e commuta la prop `condensed` oltre una
-  soglia di 16px; l'`AppHeader` sticky si restringe da 56px a 44px con una
-  transizione CSS sull'altezza, neutralizzata dalla regola globale
-  `prefers-reduced-motion` in `app.css`.
+  contenitore scrollabile principale e commuta `condensed` oltre una soglia di
+  16px; pubblica quindi l'altezza live della barra come proprietà custom
+  `--app-header-h` sulla colonna scrollabile (espansa `3.5rem` = 56px,
+  condensata `2.75rem` = 44px). `AppHeader` si dimensiona con
+  `h-[var(--app-header-h)]` (transizione CSS sull'altezza, neutralizzata dalla
+  regola globale `prefers-reduced-motion` in `app.css`) e gli header sticky
+  delle shell entità (dettaglio portafoglio/asset) si impilano a
+  `top-[var(--app-header-h)]` (con una `transition-[top]` analoga) così restano
+  adiacenti alla barra e non lasciano una striscia scoperta mentre si condensa
+  (bug-fix EPIC K). Il default vive nel `:root` di `app.css`.
 - La voce Admin si chiama **"Dati e sincronizzazione"** (`nav.dataSync`,
   decisione D7) e vive in un unico punto di configurazione `adminItems` dentro
   `SidebarNav` (la route `/admin/health` non cambia), così potrà essere
@@ -849,11 +867,20 @@ sostituito il vecchio `Layout.svelte` fisso.
   un'eccezione). **La migrazione è progressiva**: K.1b ha tradotto la
   navigation della shell (`SidebarNav`, etichette di
   `AppHeader`/`UserMenu`/`ThemeToggle`, `SettingsTabs`, `MobileDrawer`,
-  skip link) più la nuova pagina **Impostazioni → Preferenze**; le altre
-  pagine mantengono la storica copia mista inglese/italiano ("cambio
-  mancante", "Aggiorna da Yahoo", … — anche i formattatori del capitolo 6
-  seguono lo stesso mix) fino alla rispettiva passata nelle fasi
-  successive.
+  skip link) più la nuova pagina **Impostazioni → Preferenze**; il lotto di
+  bug-fix EPIC K ha poi spostato su `t()` **tutte le stringhe legate
+  all'allocazione** — le superfici allocazione/esposizione di dashboard,
+  portafoglio e asset (nuovi gruppi `allocation.*`, `exposure.*`), gli stati
+  vuoti dei grafici, le etichette `Valore:`/`Peso:` dei tooltip e i nomi di
+  serie di riserva (`chartView.noData`/`noDistribution`/
+  `noClassAllocation`/`noAllocation`/`seriesExposure`/
+  `seriesClassAllocation`) e etichetta+descrizione di `ProvenanceBadge`
+  (`provenance.*`), tutti strutturalmente identici in `en.ts`/`it.ts`; le
+  altre pagine mantengono la storica copia mista inglese/italiano ("cambio
+  mancante", "Aggiorna da Yahoo", le etichette dei campi delle modali di
+  esposizione, le card "Performance"/"Invested assets" di dashboard e
+  portafoglio, … — anche i formattatori del capitolo 6 seguono lo stesso mix)
+  fino alla rispettiva passata nelle fasi successive.
 
 ---
 
@@ -1144,7 +1171,8 @@ performance; l'header aggiunge `portfolioApi.exportDoc`,
 `.delete` (menu ⋯) e riusa `ImportPortfolioModal` (import → refill completo
 della shell, transazioni riportate alla prima pagina).
 
-L'header sticky della shell (sotto l'header app, `top-14`):
+L'header sticky della shell (impilato a `top-[var(--app-header-h)]`, con margini/padding
+negativi che rispecchiano il `px-4 lg:px-6` / `pt-4 lg:pt-6` responsivo di `<main>`):
 
 - Riga identità: link indietro a `/portfolios`, nome del portafoglio +
   valuta (e descrizione se presente), l'azione primaria `[+ Transazione]`
@@ -1305,7 +1333,8 @@ aggiungono alcun endpoint che la vecchia pagina non chiamasse:
 l'eliminazione) e il set PUT/prefill/derive dell'esposizione vivono nella
 shell.
 
-L'header sticky della shell (sotto l'header app, `top-14`):
+L'header sticky della shell (impilato a `top-[var(--app-header-h)]`, con margini/padding
+negativi che rispecchiano il `px-4 lg:px-6` / `pt-4 lg:pt-6` responsivo di `<main>`):
 
 - Riga identità: link indietro a `/assets`, ticker (font mono, D5) + nome,
   i chip di identità **tipo · classe · valuta · exchange**
@@ -1545,8 +1574,11 @@ sono tradotte tramite il layer i18n (capitolo 8).
 - **Preferenze** (`routes/settings/preferences/+page.svelte`, EPIC K.1b):
   la prima pagina completamente tradotta. Tema **Chiaro/Scuro/Sistema** con
   una `SegmentedControl` collegata allo store del tema (default Sistema,
-  decisione D9), **palette utile/perdita Classica (verde/rosso) /
-  Accessibile ai daltonici (blu/arancione)** con una seconda
+  decisione D9), **palette utile/perdita Verde/Rosso / Blu/Arancione** —
+  etichette `preferences.palette*` corte così il controllo non può uscire dalla
+  card a larghezza telefono (bug-fix EPIC K); il pannello comandi le riusa come
+  hint dello stato di destinazione e `preferences.paletteHint` porta la
+  spiegazione estesa — con una seconda
   `SegmentedControl` collegata allo store della palette (`setCvd` /
   `palette.cvd`, decisione D6, EPIC K.5c — si applica subito, persiste in
   `localStorage['vaultlab-cvd']`, i grafici si re-inizializzano allo

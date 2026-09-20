@@ -32,9 +32,10 @@
    *   localStorage at init never runs on the server);
     * - `moreOpen` — the phone More sheet (the drawer handles its own
     *   close-on-navigation + focus trap);
-    * - `condensed` — measured on the main scroll container past a small
-    *   threshold and handed to the sticky header (§5.1 "condenses on
-    *   scroll");
+     * - `condensed` — measured on the main scroll container past a small
+     *   threshold and published as the `--app-header-h` custom property (the
+     *   header height and every sticky page header derive their offsets from
+     *   it, §5.1 "condenses on scroll");
     * - `paletteOpen` — the K.5a command palette (⌘K/Ctrl+K chord, the header
     *   search trigger and Esc all share this one bindable state).
     */
@@ -85,6 +86,13 @@
     el.addEventListener('scroll', update, { passive: true })
     return () => el.removeEventListener('scroll', update)
   })
+
+  // Live header height, published as a custom property on this column —
+  // the closest ancestor of both `AppHeader` and every page (so entity
+  // sticky headers stack with `top-[var(--app-header-h)]` and never leave a
+  // gap while the bar condenses 56px → 44px). Keep in sync with the
+  // `h-*`/`top-*` utilities and the `:root` fallback in app.css.
+  const headerHeight = $derived(condensed ? '2.75rem' : '3.5rem')
 </script>
 
 <a
@@ -106,10 +114,10 @@
   <div
     bind:this={scrollContainer}
     class="flex min-w-0 flex-1 flex-col overflow-y-auto"
+    style={`--app-header-h: ${headerHeight}`}
   >
     <AppHeader
       {collapsed}
-      {condensed}
       ontogglecollapse={toggleCollapsed}
       onopenpalette={() => (paletteOpen = true)}
     />

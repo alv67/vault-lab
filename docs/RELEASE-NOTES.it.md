@@ -25,6 +25,10 @@
 - Nuova pagina Impostazioni → Preferenze: scegli il tema (Chiaro/Scuro/Sistema) e la lingua dell'interfaccia (Italiano/Inglese); l'app ora usa di default il tema del sistema e la lingua italiana, e ricorda le tue scelte su questo dispositivo
 
 ### Correzioni
+- Niente più striscia sotto l'header su telefono e tablet: quando l'header si restringe durante lo scroll, la barra titolo fissata di portafoglio/asset lo segue esattamente, così il contenuto della pagina non si vede più in mezzo
+- Le Impostazioni ora stanno sullo schermo del telefono: le tab di sezione vanno a capo invece di tagliare "Valute", i selettori tema e colori utile/perdita non escono più dalla card (le opzioni colore ora hanno etichette corte "Verde/Rosso · Blu/Arancione") e la riga di aggiunta valuta si impila in verticale
+- Passando un grafico alla vista Tabella sul telefono non si apre più una barra di scorrimento dentro la card: tutte le righe sono visibili e scorre solo la pagina, e ogni riga si compatta in un blocco nome + cifre che sta nella larghezza dello schermo
+- Le viste di allocazione ora seguono la lingua dell'interfaccia: la card "Allocazione complessiva" della dashboard, il tab Allocazione del portafoglio e il tab Esposizione dell'asset (etichette, stati vuoti, tooltip dei grafici e badge di provenienza inclusi) passano ora dall'italiano all'inglese come il resto dell'app
 - Il recupero dell'esposizione di un asset da Morningstar ora funziona anche per i fondi quotati su più mercati: se la quotazione di un mercato non ha dati, viene usata automaticamente la quotazione successiva dello stesso ISIN
 
 ## v0.5.0 — 17 Set 2026

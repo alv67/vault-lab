@@ -25,7 +25,13 @@
 </script>
 
 <nav aria-label={t('settingsTabs.sections')} class={cx('flex flex-wrap', className)}>
-  <div class="inline-flex items-center gap-1 rounded-control border border-border bg-muted p-1">
+  <!-- `max-w-full flex-wrap` (EPIC K bug-fix): at phone widths the four
+       labels no longer fit on one line, so the pills wrap INSIDE the pill
+       container instead of overflowing it — every tab stays reachable and
+       no focus ring is ever clipped (single-line pill look kept ≥ `sm`). -->
+  <div
+    class="inline-flex max-w-full flex-wrap items-center gap-1 rounded-control border border-border bg-muted p-1"
+  >
     {#each tabs as tab (tab.to)}
       {@const href = resolve(tab.to)}
       {@const active = page.url.pathname === href}

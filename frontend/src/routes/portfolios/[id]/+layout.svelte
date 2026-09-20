@@ -551,8 +551,16 @@
 
 <svelte:window onkeydown={handleMenuKeydown} />
 
-<div class="p-6">
-  <header class="sticky top-14 z-10 -mx-6 -mt-6 mb-6 flex flex-col gap-3 bg-background px-6 pb-3 pt-6">
+<div class="p-4 lg:p-6">
+  <!-- Sticky entity header (spec §5.1/§6.2): `top` follows the live
+       --app-header-h published by AppShell, so it stays flush while the app
+       header condenses 56px → 44px (no gap strip); the same transition makes
+       the two move in lockstep. The negative margins + padding are the
+       responsive mirror of the wrapper padding (= `<main>`'s), so the opaque
+       `bg-background` band spans the full content width at every size. -->
+  <header
+    class="sticky top-[var(--app-header-h)] z-10 -mx-4 -mt-4 mb-6 flex flex-col gap-3 bg-background px-4 pb-3 pt-4 transition-[top] duration-base ease-standard lg:-mx-6 lg:-mt-6 lg:px-6 lg:pt-6"
+  >
     <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
       <div class="min-w-0">
         <a

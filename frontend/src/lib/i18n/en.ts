@@ -131,11 +131,82 @@ export const en = {
     themeHint: 'Light, dark, or follow the device setting (System).',
     languageHint: 'Applied immediately and remembered on this device.',
     /** Gain/loss palette control (decision D6, EPIC K.5c): also the
-     *  accessible name of the SegmentedControl tablist. */
+     *  accessible name of the SegmentedControl tablist. The option labels
+     *  stay short ("Green/Red" / "Blue/Orange") so the control cannot
+     *  overflow its card at phone widths (EPIC K bug-fix); the command
+     *  palette reuses them as the toggle's target-state hint, and
+     *  `paletteHint` carries the full explanation. */
     colorGroup: 'Gain/loss colors',
-    paletteClassic: 'Classic (green/red)',
-    paletteCvd: 'Color-blind friendly (blue/orange)',
+    paletteClassic: 'Green/Red',
+    paletteCvd: 'Blue/Orange',
     paletteHint: 'Swaps green/red for blue/orange in text and charts. Signs and ▲▼ arrows stay either way.',
+  },
+  /**
+   * Allocation surfaces (EPIC K bug-fix, progressive D1 sweep): the vault
+   * "Overall allocation" card on the dashboard, the portfolio Allocation
+   * tab and its Overview digest — panel headings, isolated error states and
+   * the equity-universe coverage note (`{pct}` carries one decimal).
+   */
+  allocation: {
+    title: 'Overall allocation',
+    unavailable: 'Allocation unavailable',
+    classUnavailable: 'Class allocation unavailable',
+    sectorUnavailable: 'Sector allocation unavailable',
+    geoUnavailable: 'Geographic allocation unavailable',
+    assetClasses: 'Asset classes',
+    sectorsEquity: 'Sectors (equity only)',
+    regionsEquity: 'Regions (equity only)',
+    countriesEquity: 'Countries (equity only)',
+    /** Equity-universe coverage note shown when non-equity was excluded. */
+    equityUniverse: 'Equity universe: {pct}% of the portfolio',
+    /** Dashboard donut: vault value split per portfolio. */
+    byPortfolio: 'Allocation by portfolio',
+    mixedCurrencies:
+      'Portfolios use different currencies: values are not comparable, shares are indicative.',
+  },
+  /**
+   * Asset Exposure tab and its edit modals (EPIC K bug-fix): card headings,
+   * panel titles, the edit buttons and the equity-only banner.
+   */
+  exposure: {
+    geoTitle: 'Geographic distribution',
+    sectorTitle: 'Sector distribution',
+    countries: 'Countries',
+    regions: 'Regions',
+    sectors: 'Sectors',
+    noCountries: 'No countries added',
+    noCountriesHint: 'Add a country below, or use a JustETF / Morningstar prefill',
+    modify: 'Edit',
+    editGeo: 'Edit geographic distribution',
+    editSectors: 'Edit sector distribution',
+    /** Banner replacing the cards for assets outside the equity universe. */
+    universeTitle: 'Geographic and sector distribution',
+    universeHint:
+      'This distribution only applies to equity assets (stocks and equity-class ETFs/funds).',
+    universeClassHint: "Set the 'Stocks' or 'Real estate' class in Characteristics to enable it.",
+  },
+  /**
+   * Provenance badges (EPIC K bug-fix): the pill label, the tooltip/aria
+   * explanation and the date joiner (`{date}` is the raw YYYY-MM-DD stamp).
+   * One flat key per provenance id (`manualLabel`/`manualDesc`, …) because
+   * the dictionary runtime supports exactly two nesting levels.
+   */
+  provenance: {
+    updatedTo: 'updated {date}',
+    manualLabel: 'manual',
+    manualDesc: 'Data edited manually',
+    justetfLabel: 'from JustETF',
+    justetfDesc: 'Country list imported from JustETF, not edited manually',
+    morningstarLabel: 'from Morningstar',
+    morningstarDesc: 'Data imported from Morningstar, not edited manually',
+    morningstarRegionsLabel: 'from Morningstar (official regions)',
+    morningstarRegionsDesc: 'Official regions imported from Morningstar, not edited manually',
+    yahooLabel: 'from Yahoo',
+    yahooDesc: 'Sectors imported from Yahoo, not edited manually',
+    derivedLabel: 'derived from countries',
+    derivedDesc: 'Regions derived from the country weights',
+    derivedEtfLabel: 'from JustETF via countries',
+    derivedEtfDesc: 'Regions derived from the countries imported from JustETF',
   },
   /**
    * Vault Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The
@@ -223,7 +294,8 @@ export const en = {
     /** Screen-reader caption of the table view. */
     caption: '{name} — chart data',
     captionGeneric: 'Chart data',
-    /** Column headers shared by the table views. */
+    /** Column headers shared by the table views (also interpolated into the
+     *  ECharts tooltips as the `Value:`/`Weight:` labels, EPIC K bug-fix). */
     colName: 'Name',
     colValue: 'Value',
     colWeight: 'Weight',
@@ -234,6 +306,15 @@ export const en = {
     /** Accessible names for the bucket charts, which carry no own heading. */
     namePerformance: 'Performance',
     nameCapital: 'Invested vs value',
+    /** Empty states of the allocation/exposure chart wrappers. */
+    noData: 'No data',
+    noDistribution: 'No distribution',
+    noClassAllocation: 'No class allocation',
+    noAllocation: 'No allocation',
+    /** Fallback series names (legend/tooltip identity) when the wrapper has
+     *  no own heading to reuse. */
+    seriesExposure: 'Exposure',
+    seriesClassAllocation: 'Class allocation',
   },
   /**
    * Portfolio-detail shell (EPIC K.4a, spec §6.2): sticky-header chrome and

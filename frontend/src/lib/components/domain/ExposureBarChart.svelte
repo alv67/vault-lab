@@ -66,7 +66,9 @@
     labelFor?: (name: string) => string
     /** When set, the canvas still renders every row at full height but is
      * wrapped in a viewport capped at `maxVisibleRows` rows with vertical
-     * scrolling (dashboard country list). Unset = all rows visible. */
+     * scrolling (dashboard country list). Unset = all rows visible. Table
+     * mode deliberately ignores the cap: the page is the only scroll
+     * container (spec §5.3 "collapse, don't shrink", EPIC K bug-fix). */
     maxVisibleRows?: number
     /** Hide the shared Chart ⇄ Table toggle (EPIC K.5b, spec §9.1). Only
      * needed by callers that already render the same rows as a list right
@@ -109,14 +111,13 @@
   // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
   // The table renders the same shaped `sorted` rows the bars plot; switching
   // to it unmounts the canvas (out of the a11y tree), and empty data keeps
-  // showing the plain empty state instead of an empty table. The scroll
-  // viewport is mirrored with the table's own row height (~36px: text-sm
-  // plus Td's py-2, +16 for the header row).
+  // showing the plain empty state instead of an empty table. Table mode has
+  // NO `maxVisibleRows` cap (EPIC K bug-fix): every row renders and the page
+  // scrolls — no nested vertical scroll area inside the already-scrolling
+  // card; below `sm` each row collapses to a stacked key–value grid so the
+  // table never needs its own horizontal scroll either (spec §5.3).
   let view = $state<'chart' | 'table'>('chart')
   const showTable = $derived(showTableToggle && view === 'table')
-  const tableScrollCap = $derived(
-    maxVisibleRows && maxVisibleRows > 0 ? maxVisibleRows * 36 + 16 : undefined,
-  )
   const caption = $derived(
     label ? t('chartView.caption', { name: label }) : t('chartView.captionGeneric'),
   )
@@ -135,7 +136,7 @@
         // (sector charts) when the label is the row name itself.
         const shown = displayName(row.name)
         const title = shown === row.name ? shown : `${shown} (${row.name})`
-        return `${p.marker}${title}<br/>Valore: <b>${formatCurrency(row.value, currency)}</b><br/>Peso: <b>${formatPercent(row.weight)}</b>`
+        return `${p.marker}${title}<br/>${t('chartView.colValue')}: <b>${formatCurrency(row.value, currency)}</b><br/>${t('chartView.colWeight')}: <b>${formatPercent(row.weight)}</b>`
       },
     },
     grid: { left: 8, right: 60, top: 8, bottom: 8, containLabel: true },
@@ -154,7 +155,7 @@
     },
     series: [
       {
-        name: label ?? 'Esposizione',
+        name: label ?? t('chartView.seriesExposure'),
         type: 'bar',
         barMaxWidth: 18,
         itemStyle: { borderRadius: [0, 4, 4, 0] },
@@ -210,31 +211,38 @@
 {/snippet}
 {#if sorted.length === 0}
   <div class="flex items-center justify-center text-sm text-muted-foreground" style="height: {height}px">
-    No data
+    {t('chartView.noData')}
   </div>
 {:else if showTable}
-  <div
-    class={cx(tableScrollCap != null ? 'overflow-auto' : 'overflow-x-auto')}
-    style={tableScrollCap != null ? `max-height: ${tableScrollCap}px` : undefined}
-  >
-    <Table>
+  <!-- Full row list, no inner scroll viewport (EPIC K bug-fix): the page is
+       the only scroll container. Phone rows collapse into a stacked key–value
+       grid (blockified table parts, name spanning the full width, value and
+       weight sharing the second line); from `sm` the classic 3-column table
+       renders exactly as before and `overflow-x-auto` only kicks in when a
+       long value genuinely needs it (spec §5.3 "collapse, don't shrink"). -->
+  <div class="overflow-x-auto">
+    <Table class="max-sm:block">
       <caption class="sr-only">{caption}</caption>
-      <THead>
-        <Tr>
-          <Th>{t('chartView.colName')}</Th>
-          <Th align="right">{t('chartView.colValue')}</Th>
-          <Th align="right">{t('chartView.colWeight')}</Th>
+      <THead class="max-sm:block">
+        <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+          <Th class="max-sm:col-span-2 max-sm:py-0.5">{t('chartView.colName')}</Th>
+          <Th align="right" class="max-sm:py-0.5 max-sm:text-left">{t('chartView.colValue')}</Th>
+          <Th align="right" class="max-sm:py-0.5">{t('chartView.colWeight')}</Th>
         </Tr>
       </THead>
-      <TBody>
+      <TBody class="max-sm:block">
         {#each sorted as r (r.name)}
           {@const shown = displayName(r.name)}
-          <Tr>
+          <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
             <!-- Same label as the tooltip: friendly name plus the raw name
                  in parentheses when `labelFor` maps it (e.g. "US"). -->
-            <Td class="font-medium">{shown === r.name ? shown : `${shown} (${r.name})`}</Td>
-            <Td align="right">{formatCurrency(r.value, currency)}</Td>
-            <Td align="right">{formatPercent(r.weight)}</Td>
+            <Td class="max-sm:col-span-2 max-sm:break-words max-sm:py-0.5 font-medium">
+              {shown === r.name ? shown : `${shown} (${r.name})`}
+            </Td>
+            <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 max-sm:text-left">
+              {formatCurrency(r.value, currency)}
+            </Td>
+            <Td align="right" class="max-sm:py-0.5">{formatPercent(r.weight)}</Td>
           </Tr>
         {/each}
       </TBody>

@@ -115,12 +115,12 @@
     {/if}
   </div>
   {#if ctx.classAllocError}
-    <p class="text-sm text-muted-foreground">Allocazione per classi non disponibile</p>
+    <p class="text-sm text-muted-foreground">{t('allocation.classUnavailable')}</p>
   {:else}
     <ClassDonut
       data={ctx.classAlloc?.classes ?? []}
       currency={ctx.classAlloc?.currency || currency}
-      label="Classi di attività"
+      label={t('allocation.assetClasses')}
     />
   {/if}
 </Card>

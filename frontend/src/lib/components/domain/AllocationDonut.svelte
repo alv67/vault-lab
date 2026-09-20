@@ -10,6 +10,7 @@
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
   import { t } from '$lib/i18n/index.svelte'
+  import { cx } from '$lib/components/ui/utils'
   import ChartTableToggle from '$lib/components/ui/ChartTableToggle.svelte'
   import Table from '$lib/components/ui/Table.svelte'
   import THead from '$lib/components/ui/THead.svelte'
@@ -84,8 +85,10 @@
         const p = params as TooltipItem
         const row = rows.find((r) => r.name === p.name)
         if (!row) return ''
-        const valueLine = showValue ? `Valore: <b>${formatCurrency(row.value, currency)}</b><br/>` : ''
-        return `${p.marker}${p.name}<br/>${valueLine}Peso: <b>${formatPercent(row.weight)}</b>`
+        const valueLine = showValue
+          ? `${t('chartView.colValue')}: <b>${formatCurrency(row.value, currency)}</b><br/>`
+          : ''
+        return `${p.marker}${p.name}<br/>${valueLine}${t('chartView.colWeight')}: <b>${formatPercent(row.weight)}</b>`
       },
     },
     series: [
@@ -111,7 +114,7 @@
 
 {#if rows.length === 0}
   <div class="flex h-[240px] w-full items-center justify-center text-sm text-muted-foreground">
-    Nessuna allocazione
+    {t('chartView.noAllocation')}
   </div>
 {:else}
   {#if showTableToggle}
@@ -120,26 +123,34 @@
     </div>
   {/if}
   {#if showTable}
+    <!-- No inner scroll viewport: the page scrolls. Phone rows collapse to a
+         stacked key–value grid; ≥ `sm` the classic table is unchanged. -->
     <div class="overflow-x-auto">
-      <Table>
+      <Table class="max-sm:block">
         <caption class="sr-only">{t('chartView.caption', { name: title })}</caption>
-        <THead>
-          <Tr>
-            <Th>{t('chartView.colName')}</Th>
+        <THead class="max-sm:block">
+          <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+            <Th class={cx('max-sm:py-0.5', showValue && 'max-sm:col-span-2 max-sm:break-words')}>
+              {t('chartView.colName')}
+            </Th>
             {#if showValue}
-              <Th align="right">{t('chartView.colValue')}</Th>
+              <Th align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left">{t('chartView.colValue')}</Th>
             {/if}
-            <Th align="right">{t('chartView.colWeight')}</Th>
+            <Th align="right" class="max-sm:py-0.5">{t('chartView.colWeight')}</Th>
           </Tr>
         </THead>
-        <TBody>
+        <TBody class="max-sm:block">
           {#each rows as r (r.name)}
-            <Tr>
-              <Td class="font-medium">{r.name}</Td>
+            <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+              <Td class={cx('max-sm:py-0.5 font-medium', showValue && 'max-sm:col-span-2 max-sm:break-words')}>
+                {r.name}
+              </Td>
               {#if showValue}
-                <Td align="right">{formatCurrency(r.value, currency)}</Td>
+                <Td align="right" class="max-sm:min-w-0 max-sm:break-words max-sm:py-0.5 max-sm:text-left">
+                  {formatCurrency(r.value, currency)}
+                </Td>
               {/if}
-              <Td align="right">{formatPercent(r.weight)}</Td>
+              <Td align="right" class="max-sm:py-0.5">{formatPercent(r.weight)}</Td>
             </Tr>
           {/each}
         </TBody>
