@@ -219,7 +219,7 @@
        `w-full` with wrapping names, and below `sm` rows collapse into a
        stacked key–value grid (name spanning the full width, value and weight
        sharing the second line) — spec §5.3 "collapse, don't shrink". -->
-  <Table class="max-sm:block">
+  <Table class="max-sm:block table-fixed">
     <caption class="sr-only">{caption}</caption>
     <THead class="max-sm:block">
       <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">

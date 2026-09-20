@@ -149,7 +149,7 @@
     <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
          scroll container. Two short columns with wrapping names stay inside
          the card; below `sm` each row blockifies into a name/weight pair. -->
-    <Table class="max-sm:block">
+    <Table class="max-sm:block table-fixed">
       <caption class="sr-only">{caption}</caption>
       <THead class="max-sm:block">
         <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">

@@ -170,7 +170,7 @@
     <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
          scroll container. `w-full` + wrapping period labels stay inside the
          card; below `sm` rows collapse to a stacked key–value grid. -->
-    <Table class="max-sm:block">
+    <Table class="max-sm:block table-fixed">
       <caption class="sr-only">{t('chartView.caption', { name: chartName })}</caption>
       <THead class="max-sm:block">
         <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
