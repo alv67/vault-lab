@@ -680,7 +680,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
-| **K.4 Entità → tab** | 🔄 *in corso — K.4a completata (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso).* Restano in K.4: tab dell'asset (K.4b: Overview/Exposure/Data), filtri Attività + sheet edit (K.4c), undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
+| **K.4 Entità → tab** | 🔄 *in corso — K.4a completata (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso).* e K.4b completata (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica).* Restano in K.4: filtri Attività + sheet edit (K.4c), undo toast (D11) | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
@@ -854,8 +854,59 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > toccata; nessuna dipendenza nuova. Nuove chiavi i18n EN/IT (shape identici):
 > gruppo `portfolio.*` (etichette tab, back, azioni header/menu, conferma
 > eliminazione, link digest) e `common.delete`/`common.cancel`. **Restano a
-> K.4**: tab dell'asset (K.4b), filtri Attività in URL state + editing in
-> sheet + undo toast D11 (K.4c).
+> K.4**: filtri Attività in URL state + editing in
+> sheet + undo toast D11 (K.4c); il tab dell'asset è completato in K.4b
+> (nota sotto).
+
+> **K.4b — Dettaglio asset → tab annidati + "Dove è detenuto" — ✅ completata
+> (questo branch)**: la pagina unica `routes/assets/[id]/+page.svelte`
+> (1137 righe) è divisa in una shell `+layout.svelte` + tre tab nested-route
+> (spec §4.2/§6.3, stesso pattern e contesto tipizzato di K.4a):
+> **Panoramica** (`+page.svelte`: card `PriceChart` con selettore
+> 1M/3M/1Y/YTD/MAX, zoom in-place e marcatori di split invariati; **NUOVO**
+> blocco "Dove è detenuto"; griglia sola-lettura "Dati principali"),
+> **Esposizione** (`exposure/`: card Distribuzione geografica — barre top-15
+> paesi + donut regioni aperto — e Distribuzione settoriale, banner
+> equity-universe quando non applicabile) e **Dati** (`data/`: form
+> "Caratteristiche" con dirty-save e selettore `price_source`, "Zona
+> pericolosa", slot riservati EPIC J — prezzo manuale J.1 e attributi
+> obbligazionari J.2 — muti e senza comportamento). Le tab sono URL reali
+> (`ui/Tabs` K.1c, stato attivo dalla rotta, scroll orizzontale su telefono):
+> deep-link e pulsante indietro funzionano. **Condivisione dati**: il layout
+> possiede ogni fetch e mutazione — load iniziale combinato
+> (asset+quote+prices+exposure+splits, 404 → redirect a `/assets`), refresh
+> prezzi una-volta-per-sessione con refill di quote/prezzi, PATCH metadati
+> sul `form` condiviso (il tab Data vi si lega in binding diretto; i prefill
+> continuano a sincronizzare `form.isin`), e l'intera machinery exposure —
+> salvataggi per dimensione con fonte di provenienza, prefill
+> JustETF/Morningstar/Yahoo, derivazione regioni, guard sulle somme, badge di
+> provenienza, re-hydration all'apertura — esposta via getter nel context
+> (`context.ts`); le modali geo/sector e il `ConfirmDialog` di eliminazione
+> sono montati una sola volta nella shell (le liste `$bindable` restano
+> `$state` nativi del layout), la tab li apre con
+> `openGeoModal`/`openSectorModal`. Gli helper puri di normalizzazione
+> (`roundWeight`/`capAtHundred`/`positiveCountries`/`withoutOther`/
+> `sectorsList`) si spostano invariati in `exposure-utils.ts`, condiviso da
+> shell e tab. **Header sticky**: link indietro, ticker (mono) + nome, chip
+> identità tipo·classe·valuta·exchange, chip "nessun sync automatico" per
+> fonti non-Yahoo, strip quote (ultima chiusura + chip 1G/1S/1M/1Y/YTD via
+> `PnlValue`, dai vecchi "Metriche quote", + data ultimo prezzo) e menu `⋯`
+> (Aggiorna da Yahoo / Backfill storico completo / Elimina asset con conferma
+> e redirect) — stesse azioni e busy-flag rispecchiate nella zona pericolosa;
+> l'eliminazione asset sbarca così sulla pagina detail (prima solo in lista).
+> **"Dove è detenuto"**: una riga per portafoglio che detiene l'asset (link
+> al portafoglio, quantità, costo, valore, P&L firmato + ROI nella valuta
+> dell'asset) derivata client-side da `portfolioApi.dashboard()`
+> (`PortfolioAssets[] → AssetPerformance[]` filtrati sull'id corrente,
+> posizioni chiuse escluse) — nessun endpoint nuovo; fetch isolato e non
+> bloccante: in attesa il blocco non renderizza, errore → nota muted "non
+> disponibili", vuoto → "Non è detenuto in nessun portafoglio". Nessuna API
+> o logica di business toccata; nessuna dipendenza nuova. Nuove chiavi i18n
+> EN/IT (shape identici): gruppo `asset.*` (tab, header/menu/back, chip
+> quote, "Dove è detenuto", dati principali, zona pericolosa, slot
+> riservati); etichette tipo centralizzate in `format.ts`
+> (`ASSET_TYPE_LABELS`). **Restano a K.4**: filtri Attività in URL state +
+> editing in sheet + undo toast D11 (K.4c).
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

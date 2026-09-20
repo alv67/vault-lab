@@ -58,6 +58,18 @@ export const ASSET_CLASS_LABELS: Record<string, string> = {
   other: 'Altro',
 }
 
+// Etichette dei tipi asset (stesse coppie valore/label del form "Type" della
+// pagina asset pre-K.4b): centralizzate perché header, quick facts e select
+// del tab Data le leggano tutte dalla stessa mappa.
+export const ASSET_TYPE_LABELS: Record<string, string> = {
+  stock: 'Stock',
+  etf: 'ETF',
+  bond: 'Bond',
+  mutual_fund: 'Mutual fund',
+  crypto: 'Crypto',
+  commodity: 'Commodity',
+}
+
 export const PRICE_SOURCE_LABELS: Record<string, string> = {
   yahoo: 'Yahoo Finance',
   manual: 'Prezzo manuale',

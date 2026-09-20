@@ -192,7 +192,12 @@ frontend/
         ├── +page.svelte    # Dashboard (/)
         ├── login/          # login + registrazione (una pagina, un toggle)
         ├── assets/         # elenco titoli + creazione (autocomplete)
-        ├── assets/[id]/    # dettaglio asset (B.10)
+        ├── assets/[id]/    # shell del dettaglio asset (K.4b): header sticky,
+        │   │               #   tab; tutto il data loading + context
+        │   ├── +page.svelte        #   tab Panoramica (indice): grafico
+        │   │                        #   prezzi, "Dove è detenuto", dati principali
+        │   ├── exposure/           #   tab Esposizione (paesi/regioni/settori)
+        │   └── data/               #   tab Dati (form metadati, zona pericolosa)
         ├── portfolios/     # elenco portafogli + CRUD + import
         ├── portfolios/[id]/ # shell del dettaglio portafoglio (K.4a): header
         │                    # sticky, strip KPI, tab; tutto il data loading
@@ -387,12 +392,15 @@ valori derivati inline con le rune **`$derived`** di Svelte 5. I principali:
   `ExposureBarChart` (EPIC I.7, #86); `geoUniverseNote` /
   `sectorUniverseNote` costruiscono le didascalie di copertura "Universo
   azionario" dai `covered_value`/`excluded_value` di ciascun payload.
-- **Dettaglio asset** (`routes/assets/[id]/+page.svelte`): `chartSeries`
-  filtra le righe prezzo in base all'intervallo selezionato (`RANGES`: `1M`
-  30 giorni, `3M` 90 giorni, `1Y` 365 giorni, `MAX` illimitato) e le ordina per
-  data; `METRICS` mappa i campi quote `change_1d/1w/1m/1y/ytd` sulle etichette
-  `1G/1S/1M/1Y/YTD`; `sumRegions` / `sumSectors` validano che i pesi
-  dell'esposizione sommino a 100 (±0,5, `regionsValid` / `sectorsValid`).
+- **Dettaglio asset**: `chartSeries` nel tab Panoramica (`routes/assets/[id]/
+  +page.svelte`) ordina le righe prezzo e `zoomStart` mappa l'intervallo
+  selezionato (`RANGES`: `1M` 30 giorni, `3M` 90 giorni, `1Y` 365 giorni,
+  `YTD`, `MAX` illimitato) su uno zoom in-place; i campi quote
+  `change_1d/1w/1m/1y/ytd` sono renderizzati come chip delta nell'header
+  della shell (K.4b, etichette `1G/1S/1M/1Y/YTD` ↔ `1D/1W/1M/1Y/YTD` via
+  `t()`); `sumRegions` / `sumSectors` / `sumCountries` e i rispettivi guard
+  di validità (`regionsValid` / `sectorsValid` / `countriesValid`) vivono
+  nella shell dell'asset (`+layout.svelte`) accanto ai dati che validano.
 
 ---
 
@@ -482,11 +490,13 @@ date con `new Date(...).toLocaleDateString()`.
 
 ### Dove vengono usati
 
-- **Dettaglio asset (B.10)** — `PriceChart` per lo storico prezzi (con
-  zoom in-place e marcatori {@code split}); `ExposurePie` per la
-  distribuzione geo/settoriale. La **modifica**
+- **Dettaglio asset (B.10, a tab da K.4b)** — `PriceChart` nel tab
+  Panoramica per lo storico prezzi (con
+  zoom in-place e marcatori {@code split}); `ExposurePie` nel tab
+  Esposizione per la distribuzione geo/settoriale. La **modifica**
   dell'esposizione avviene in **due modali** (`ExposureGeoModal` per
-  paesi + regioni, `ExposureSectorModal` per i settori): sulla pagina
+  paesi + regioni, `ExposureSectorModal` per i settori), montate una sola
+  volta nella shell: sulla tab
   restano solo i grafici; il pulsante "Modifica" di ciascuna card (icona
   matita) apre la propria modale con le griglie dei pesi, la
   validazione somma=100 (regioni/settori) e i salvataggi indipendenti.
@@ -1109,31 +1119,109 @@ Endpoint chiamati: `assetApi.list()`, `settingsApi.listCurrencies()`.
   uno, il form viene arricchito con `assetApi.meta(ticker)`
   (`GET /assets/meta?ticker=`). Creazione → `assetApi.create()`.
 
-### `/assets/[id]` — Dettaglio asset (`routes/assets/[id]/+page.svelte`)
+### `/assets/[id]` — Dettaglio asset (sotto-route a tab, EPIC K.4b)
+
+Struttura (spec redesign §4.2/§6.3): la vecchia pagina unica (1137 righe) è
+divisa in una shell condivisa `routes/assets/[id]/+layout.svelte` + tre tab
+deep-linkable, ciascuna una rotta propria — **Panoramica** `+page.svelte`
+(indice), **Esposizione** `exposure/+page.svelte` e **Dati**
+`data/+page.svelte`. Le tab sono URL reali, non stato locale: condivisibili
+e salvabili, il pulsante indietro funziona, e aprire direttamente
+`/assets/7/exposure` carica comunque i dati della shell e rende attiva la
+tab Esposizione.
+
+Condivisione dei dati: il **layout possiede ogni fetch e mutazione** ed
+espone lo stato reattivo + le azioni (PATCH metadati, refresh Yahoo,
+backfill, eliminazione, apertura delle modali di edit) alle pagine tab
+tramite un **context** tipizzato Svelte 5 (`context.ts`: `createContext` +
+`AssetPageContext`). I membri di stato sono getter che fanno proxy al
+`$state` del layout, quindi le tab li tracciano come propri; le tab non
+rifetchano mai nulla e ri-derivano solo i dati di vista (serie del grafico,
+liste di esposizione da display, tabella "Dove è detenuto"). Le modali di
+edit `ExposureGeoModal`/`ExposureSectorModal` e il `ConfirmDialog` di
+eliminazione sono montate **una sola volta nella shell** (stesso contratto
+del modal transazioni di K.4a), così le liste di edit `$bindable` in working
+copy restano `$state` nativi del layout; la tab Esposizione le apre tramite
+`openGeoModal`/`openSectorModal`, che ripristinano liste e badge di
+provenienza dall'`exposure` salvata prima di ogni apertura. Gli helper puri
+di normalizzazione delle liste (`positiveCountries`/`withoutOther`/
+`sectorsList`/`capAtHundred`/`roundWeight`, comportamento invariato) sono
+trasferiti in `exposure-utils.ts` accanto alle rotte, condivisi da shell e tab.
 
 Endpoint chiamati: `assetApi.get`, `.quote`, `pricesApi.byAsset(id)`,
-`assetApi.exposure(id)`, poi il `pricesApi.refresh()` di sessione + quote/prezzi
-freschi.
+`assetApi.exposure(id)`, `assetApi.splits(id)`, poi il
+`pricesApi.refresh()` di sessione + quote/prezzi freschi — tutto invariato;
+**nuova** la chiamata isolata, non bloccante e silenziosa in caso di errore
+`portfolioApi.dashboard()` dietro "Dove è detenuto" (sotto). Le tab non
+aggiungono alcun endpoint che la vecchia pagina non chiamasse:
+`assetApi.update`/`.meta`/`.backfillHistory`/`.remove` (ora anche per
+l'eliminazione) e il set PUT/prefill/derive dell'esposizione vivono nella
+shell.
 
-- **Caratteristiche**: Ticker, ISIN, Nome, Tipo, Valuta, Exchange e Classe
-  (`ASSET_CLASS_LABELS`) modificabili. `hasChanges` abilita "Salva modifiche"
-  (`PATCH /assets/{id}`; l'override manuale di `asset_class` vince sempre — il
-  refresh da Yahoo non sovrascrive mai una classe diversa da `other`/vuota).
-- Il menu "⋮" ha due azioni:
-  - **Aggiorna da Yahoo** — `assetApi.meta(ticker)` per aggiornare
-    nome/tipo/valuta/exchange (e la classe solo se attualmente vuota/`other`);
-  - **Backfill storico completo** — `assetApi.backfillHistory(id)`, poi un
-    `pricesApi.byAsset(id)` fresco (la cache GET del client è già stata
-    svuotata dalla POST).
-- **Metriche quote**: "Ultima chiusura" + le 5 variazioni percentuali
-  (1G/1S/1M/1Y/YTD) da `AssetQuote`, colorate verde/grigio/rosso; un 404 in
-  caricamento reindirizza a `/assets`.
-- **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/YTD/MAX (zoom in-place).
+L'header sticky della shell (sotto l'header app, `top-14`):
+
+- Riga identità: link indietro a `/assets`, ticker (font mono, D5) + nome,
+  i chip di identità **tipo · classe · valuta · exchange**
+  (`ASSET_TYPE_LABELS` e `ASSET_CLASS_LABELS` da `lib/format.ts`) e il chip
+  legacy "nessun sync automatico" per fonti prezzo non-Yahoo; a destra il
+  menu `⋯` delle azioni — **Aggiorna da Yahoo** (`assetApi.meta(ticker)`
+  aggiorna nome/tipo/valuta/exchange; l'override manuale di `asset_class`
+  vince sempre — il refresh non sovrascrive mai una classe diversa da
+  `other`/vuota), **Backfill storico completo** (`assetApi.backfillHistory(id)`
+  poi un `pricesApi.byAsset(id)` fresco — la cache GET del client è già stata
+  svuotata dalla POST) ed **Elimina asset** (dialog di conferma → API → toast
+  → ritorno a `/assets`) — le stesse azioni e spinner di busy rispecchiati
+  nella zona pericolosa del tab Dati.
+- Strip quote: la vecchia card "Metriche quote" promossa nell'header sempre
+  visibile — ultima chiusura in primo piano nella valuta **dell'asset**, le
+  variazioni 1G/1S/1M/1Y/YTD come chip compatti firmati (`PnlValue`, D6) e
+  la data dell'ultimo prezzo ("Aggiornato il {date}"); "Nessun dato prezzo"
+  quando la quote è vuota. Un 404 in caricamento reindirizza comunque a
+  `/assets`.
+- Barra `ui/Tabs` (K.1c): Panoramica / Esposizione / Dati, stato attivo
+  derivato dalla rotta, scroll orizzontale sul telefono; etichette delle
+  tab, link indietro, menu e i testi dei nuovi blocchi passano da `t()`
+  (`asset.*`, D1). La copy delle card che precede il dizionario resta
+  invariata (migrazione progressiva).
+
+TAB **Panoramica**:
+
+- **Storico prezzo**: `PriceChart` con il selettore 1M/3M/1Y/YTD/MAX (zoom
+  in-place + marcatori di split, comportamento invariato); la selezione
+  dell'intervallo è stato locale di questa card (prezzi e splits arrivano
+  dal context, quindi il refresh di sessione e ogni backfill aggiornano il
+  grafico in place).
+- **Dove è detenuto** (NUOVO, spec §4.2 decisione 5): una riga per ogni
+  portafoglio che attualmente detiene questo asset — nome che linka a
+  `/portfolios/{id}`, quantità, costo, valore e il guadagno/perdita firmato
+  + ROI nella valuta dell'asset — derivato lato client dagli `assets` per
+  portafoglio di `GET /dashboard` (`portfolioApi.dashboard()`,
+  `PortfolioAssets[] → AssetPerformance[]` filtrati a questo id, posizioni
+  chiuse escluse), senza alcun nuovo endpoint. Il fetch è isolato e non
+  blocca mai la pagina: in attesa il blocco non renderizza nulla; un errore
+  lo degrada a una nota muted "non disponibile"; un risultato vuoto mostra
+  la riga "Non è detenuto in nessun portafoglio".
+- **Dati principali**: griglia di identità sola lettura (ISIN in mono, tipo,
+  classe, valuta, exchange, fonte prezzo); la modifica vive nel tab Dati.
+
+TAB **Dati**: la vecchia card "Caratteristiche" come form dei metadati —
+stessi campi (Ticker, ISIN, Nome, Tipo, Valuta, Exchange, Classe, selettore
+**Fonte prezzo** `price_source`), stesso dirty-save (`hasChanges` abilita
+"Salva modifiche"; il PATCH, il `form` `$state` condiviso e la sincronzza
+`form.isin` dei prefills vivono nel layout, quindi le modifiche non salvate
+sopravvivono ai cambi di tab); la **zona pericolosa** che rispecchia le
+azioni `⋯` dell'header; e gli slot riservati EPIC J, muti e senza
+comportamento — inserimento prezzo manuale (J.1) e attributi obbligazionari
+(J.2) come segnaposto "In arrivo" (`quickActions.comingSoon`).
+
+TAB **Esposizione** — i widget che la vecchia pagina impilava sotto il form
+metadati, invariati in struttura e comportamento:
+
 - **Distribuzione geografica** e **Distribuzione settoriale** sono **due card
   separate** (split dopo B.13/B.14, con l'arrivo dei paesi). L'editing avviene
-  **solo nelle modali**; la pagina mantiene la presentazione. Le card renderizzano
+  **solo nelle modali**; la tab mantiene la presentazione. Le card renderizzano
   sempre l'**esposizione salvata** (`displayCountries` / `displayRegions` /
-  `displaySectors`, derivati dallo stato `exposure` caricato/salvato via API) —
+  `displaySectors`, derivati dallo stato `exposure` della shell caricato/salvato via API) —
   modifiche non salvate e anteprime di prefill non compaiono mai sulle card e non
   sopravvivono nemmeno alla chiusura della modale: ogni pulsante **Modifica**
   ripristina le liste di edit e i badge di provenienza della propria modale dai
@@ -1192,7 +1280,7 @@ freschi.
   - **`ExposureSectorModal`** ha la tabella dei settori, validata a 100 ± 0,5
     (invariata — i settori richiedono ancora il totale esatto). Nell'header
     mostra la stessa pillola `ProvenanceBadge` dei box geografici, guidata da
-    `sectorsSource` + `sectorsUpdatedAt` di pagina (`da JustETF`, `da Yahoo`,
+    `sectorsSource` + `sectorsUpdatedAt` della shell (`da JustETF`, `da Yahoo`,
     `da Morningstar`, `manuale`): ogni prefill dei settori imposta il badge
     (solo etichetta, niente data — l'anteprima non è persistita), la prima
     modifica manuale dei pesi lo riporta a "manuale" (via `onSectorsDirty`,
@@ -1241,13 +1329,14 @@ freschi.
   paesi **non ricalcola più le regioni lato server**: le regioni memorizzate
   tornano invariate e il badge di provenienza delle regioni non viene
   toccato — le regioni si ricalcolano solo cliccando **"Calcola da paesi"**
-  nel box regioni. La pagina
+  nel box regioni. L'helper condiviso
+  `withoutOther` (`exposure-utils.ts`)
   scarta la riga "Other / Not Classified" dalla risposta regioni prima di
   alimentarla alla UI; il server la riaggiunge internamente così le regioni
   persistite sommano ancora a 100 per l'aggregazione del portafoglio. La
-  sezione è renderizzata solo quando l'asset è azionabile per l'universo
+  tab renderizza le card esposizione solo quando l'asset è azionabile per l'universo
   equity (`exposureApplicable`: stock, oppure etf/mutual_fund con
-  `asset_class` `equity`/`real_estate`); altrimenti compare un banner che
+  `asset_class` `equity`/`real_estate`); altrimenti mostra il banner che
   spiega che la distribuzione vale solo per gli asset azionari.
 - **Prefill da Yahoo** — `assetApi.fetchExposure(id)`
   (`POST /assets/{id}/fetch-exposure`, i pesi settoriali `topHoldings` di
@@ -1275,7 +1364,7 @@ freschi.
   provider (es. JustETF su LYSX.DE) pubblicano pesi già arrotondati a 2
   decimali la cui somma è 100,01: il backend accetta fino a **100,5**
   (`weightSumMax100`), ma il guard UI blocca qualsiasi valore sopra 100 e
-  l'import non sarebbe salvabile. Invece di alzare la soglia, la pagina
+  l'import non sarebbe salvabile. Invece di alzare la soglia, la shell
   **normalizza all'import**: `capAtHundred` (applicato in fondo a
   `positiveCountries` / `withoutOther`, quindi su ogni prefill, derivazione di
   regioni e reload canonico) prende i totali in **(100, 100,5]** e sottrae

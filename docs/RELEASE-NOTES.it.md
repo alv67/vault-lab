@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- La pagina dell'asset ora è divisa in schede Panoramica, Esposizione e Dati, ognuna con un link proprio da condividere o salvare; ticker, dati identificativi e ultima quotazione restano fissi in alto mentre cambi scheda
+- La Panoramica dell'asset ora mostra "Dove è detenuto": quali dei tuoi portafogli possiedono l'asset, con quantità, costo, valore e guadagno/perdita — ogni portafoglio rimanda direttamente alla sua pagina
+- Le azioni sull'asset (aggiorna da Yahoo, recupera lo storico prezzi completo, elimina) ora si trovano nel menu ⋯ dell'header dell'asset, e sono ripetute nella zona pericolosa del tab Dati
 - La pagina del portafoglio ora è divisa in schede Panoramica, Posizioni, Attività e Allocazione, ognuna con un link proprio da condividere o salvare; una fascia compatta con valore e utile resta fissa in alto mentre cambi scheda
 - Le azioni sul portafoglio (esporta, importa, elimina) ora si trovano nel menu ⋯ dell'header del portafoglio, accanto al pulsante "Aggiungi transazione" sempre visibile
 - Ogni card dei portafogli nella dashboard ora mostra un piccolo grafico dell'andamento del valore accanto ai numeri attuali

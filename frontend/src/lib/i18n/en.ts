@@ -196,6 +196,60 @@ export const en = {
     /** Overview allocation digest → link to the Allocation tab. */
     viewAllocation: 'View full allocation',
   },
+  /**
+   * Asset-detail shell (EPIC K.4b, spec §6.3): sticky-header chrome, the
+   * three tier-2 tabs, the "Where held" Overview block, the danger-zone
+   * and reserved-section labels. Card copy that predates the dictionary
+   * stays hardcoded until the page's migration sweep (progressive, D1).
+   */
+  asset: {
+    /** Accessible name of the asset tab bar. */
+    tabsLabel: 'Asset sections',
+    tabOverview: 'Overview',
+    tabExposure: 'Exposure',
+    tabData: 'Data',
+    /** Back link in the sticky header, to the assets library list. */
+    back: 'Assets',
+    /** Accessible name of the `⋯` actions menu in the sticky header. */
+    actionsMenu: 'Asset actions',
+    refreshMeta: 'Update from Yahoo',
+    backfillHistory: 'Backfill full history',
+    delete: 'Delete asset',
+    deleteConfirm: 'Delete {ticker}? This cannot be undone.',
+    deleted: 'Asset deleted',
+    /** Muted date under the quote chips: `{date}` is locale-formatted. */
+    priceUpdated: 'Updated {date}',
+    /** Compact quote-delta chips (1D/1W/1M/1Y/YTD). */
+    chip1d: '1D',
+    chip1w: '1W',
+    chip1m: '1M',
+    chip1y: '1Y',
+    chipYtd: 'YTD',
+    /** Overview "Where held" block (spec §4.2 decision 5). */
+    whereHeld: 'Where held',
+    whereHeldEmpty: 'Not held in any portfolio',
+    whereHeldUnavailable: 'Holding portfolios are unavailable right now',
+    heldPortfolio: 'Portfolio',
+    heldQty: 'Qty',
+    heldCost: 'Cost',
+    heldValue: 'Value',
+    heldGl: 'Gain/Loss',
+    /** Overview read-only identity grid. */
+    quickFacts: 'Quick facts',
+    factIsin: 'ISIN',
+    factType: 'Type',
+    factClass: 'Class',
+    factCurrency: 'Currency',
+    factExchange: 'Exchange',
+    factPriceSource: 'Price source',
+    /** Data tab danger zone (same actions as the header `⋯` menu). */
+    dangerZone: 'Danger zone',
+    /** Reserved EPIC J placeholders (no behaviour yet). */
+    manualPrice: 'Manual price entry',
+    manualPriceHint: 'Record dated prices by hand for assets without an automatic feed.',
+    fixedIncome: 'Fixed-income attributes',
+    fixedIncomeHint: 'Issuer, maturity and coupon details for bonds.',
+  },
 }
 
 /** Canonical dictionary shape derived from the English source of truth. */

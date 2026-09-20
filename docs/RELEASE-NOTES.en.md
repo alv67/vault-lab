@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Features
+- The asset page is now split into Overview, Exposure and Data tabs, each with its own link you can share or bookmark; the ticker, its identity chips and the latest quote stay pinned at the top while you switch tabs
+- The asset Overview now shows "Where held": which of your portfolios hold the asset, with quantity, cost, value and gain/loss — each portfolio links straight to its page
+- Asset actions (update from Yahoo, backfill the full price history, delete) moved into the ⋯ menu in the asset header, and are repeated in the Data tab's danger zone
 - The portfolio page is now split into Overview, Positions, Activity and Allocation tabs, each with its own link you can share or bookmark; a compact value + P/L strip stays pinned at the top while you switch tabs
 - Portfolio actions (export, import, delete) moved into the ⋯ menu in the portfolio header, next to the always-visible "Add transaction" button
 - Each portfolio card on the dashboard now shows a small chart of its value trend alongside the current figures
