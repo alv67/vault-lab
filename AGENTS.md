@@ -25,6 +25,10 @@
   project documents first (AGENTS.md, PLAN.md, STATUS.md, `docs/` guides en/it)
   and update them together with the code. A PR must NOT be closed until its
   related documentation (endpoints, behavior, UI, status tables) is updated.
+  The guides (BACKEND/FRONTEND/DATABASE-GUIDE, UX-REDESIGN) describe **how the
+  app works**, not the development history: do not record the intermediate bugs
+  hit while building a feature (they are not meaningful for understanding the
+  app) — only the resulting behavior.
 - **Release notes** (`docs/RELEASE-NOTES.en.md` / `.it.md`): one line per
   feature/fix, written from the end user's point of view (what they see and use
   in the app — no internal/backend details). Add the lines under an `Unreleased`

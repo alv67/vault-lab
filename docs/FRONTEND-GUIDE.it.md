@@ -488,7 +488,7 @@ scuro contornato di bianco).
 | `AssetCombobox.svelte` (`lib/components/domain/`) | combobox filtrabile sugli asset già registrati (ticker/nome, max 8 righe); emette l'id dell'asset selezionato | la modale transazione (E.2). La ricerca ticker Yahoo per creare asset vive in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2); dall'EPIC I.9 (#88) la pagina le passa una pagina da 20 righe alla volta e mostra i pulsanti Previous/Next con l'intervallo sotto di essa |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | form di aggiunta/modifica/eliminazione transazione: combobox asset, tipo (buy/sell/dividend), quantità/prezzo o importo, data, commissioni, note; validazione inline e totale live; gestisce chiamate API e toast. Dall'EPIC K.4c si presenta come `ui/Modal` da `sm` in su e come `ui/Sheet` (bottom sheet) sui telefoni (decisione D4, store `viewport`), condividendo un'unica coppia di snippet form/piè; Elimina rimuove la riga subito e mostra un toast **undo** da 5 s invece del `ConfirmDialog` (decisione D11 — l'undo re-INVIA il payload catturato, con nuovo id) | la pagina **dettaglio portafoglio** (E.2), aperta da "Add Transaction" e dall'azione di modifica della tabella |
-| `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profilo / Password / Preferenze / Valute), tab attivo marcato con `aria-current="page"`; il contenitore delle pill `max-w-full flex-wrap` mantiene tutte e quattro le tab raggiungibili a larghezza telefono (bug-fix EPIC K) | tutte e quattro le pagine **Settings** (E.4) |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profilo / Password / Preferenze / Valute), tab attivo marcato con `aria-current="page"`; il contenitore delle pill `max-w-full flex-wrap` mantiene tutte e quattro le tab raggiungibili a larghezza telefono | tutte e quattro le pagine **Settings** (E.4) |
 | `ChartTableToggle.svelte` (`lib/components/ui/`) | disclosure segmentata **Grafico ⇄ Tabella** condivisa (EPIC K.5b, spec §9.1): wrapper sottile di `SegmentedControl` legato allo stato `view` interno (`'chart' \| 'table'`, `$bindable`) del grafico che lo ospita, con etichette `Chart`/`Table` da `chartView.*`; il nome accessibile della tablist interpola il titolo proprio del grafico, se ce l'ha (`chartView.ariaNamed`, altrimenti il generico `chartView.aria`) | incorporato da `ExposureBarChart`, `ClassDonut`, `ExposurePie`, `PerformanceChart`, `CapitalChart` e `AllocationDonut` (vedi la nota "Vedi come tabella" qui sotto); i chiamanti lo nascondono con `showTableToggle={false}` dove sotto al grafico è già presente un elenco delle stesse righe |
 
 I tooltip formattano i valori monetari con `formatCurrency` (capitolo 6), le
@@ -529,7 +529,7 @@ nei sei wrapper:
   periodo/investito/valore (`CapitalChart`), nome/valore/peso
   (`AllocationDonut`).
 - in `ExposureBarChart` il cap `maxVisibleRows` dei paesi è un controllo di
-  **collasso**, non un viewport con scorrimento (bug-fix EPIC K): il grafico
+  **collasso**, non un viewport con scorrimento: il grafico
   mostra le prime `maxVisibleRows` barre più un pulsante "Mostra tutti" che
   espande in place, così la pagina resta l'unico contenitore scrollabile; la
   modalità tabella elenca sempre tutte le righe. Sotto `sm` tutte e sei le
@@ -701,7 +701,7 @@ primary/secondary/outline/ghost/danger/link, dimensioni, loading), `Input`,
 `Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, le primitive
 `Table` (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` e
 `StatCard`. Le pagine e la shell le riusano invece di duplicare markup.
-`SegmentedControl` e sicuro contro l'overflow per costruzione (bug-fix EPIC K):
+`SegmentedControl` e sicuro contro l'overflow per costruzione:
 la riga delle pill `max-w-full flex-wrap` con segmenti `flex-auto` basati sul
 contenuto, quindi le etichette lunghe vanno a capo dentro il contenitore a
 larghezza telefono invece di generare scroll orizzontale; da `sm` in su la riga
@@ -726,7 +726,7 @@ stessa API; D4 a < `lg`) e `Tabs` (tablist ARIA di `<a>` reali con focus
 roving, per i sottopagine-entità di K.4). Il focus-trap condiviso delle
 overlay e le transizioni sui token di motion sono estratti in
 `ui/focus-trap.ts` e `ui/transitions.ts` (le esistenti `Modal`/`MobileDrawer`
-mantengono per ora le loro ricette inline, a zero regressioni).
+mantengono per ora le loro ricette inline).
 
 ### La shell dell'app
 
@@ -767,8 +767,7 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   regola globale `prefers-reduced-motion` in `app.css`) e gli header sticky
   delle shell entità (dettaglio portafoglio/asset) si impilano a
   `top-[var(--app-header-h)]` (con una `transition-[top]` analoga) così restano
-  adiacenti alla barra e non lasciano una striscia scoperta mentre si condensa
-  (bug-fix EPIC K). Il default vive nel `:root` di `app.css`.
+  adiacenti alla barra mentre si condensa. Il default vive nel `:root` di `app.css`.
 - La voce Admin si chiama **"Dati e sincronizzazione"** (`nav.dataSync`,
   decisione D7) e vive in un unico punto di configurazione `adminItems` dentro
   `SidebarNav` (la route `/admin/health` non cambia), così potrà essere
@@ -866,12 +865,12 @@ sostituito il vecchio `Layout.svelte` fisso.
   unione `MessageKey`, così anche i siti di chiamata `t()` sono controllati
   alla compile-time. Ordine di ricerca: locale attivo → inglese
   (fallback) → la chiave stessa, con warning su console solo in dev (mai
-  un'eccezione). **La migrazione è progressiva**: K.1b ha tradotto la
+  un'eccezione). **La migrazione è progressiva**: la
   navigation della shell (`SidebarNav`, etichette di
   `AppHeader`/`UserMenu`/`ThemeToggle`, `SettingsTabs`, `MobileDrawer`,
-  skip link) più la nuova pagina **Impostazioni → Preferenze**; il lotto di
-  bug-fix EPIC K ha poi spostato su `t()` **tutte le stringhe legate
-  all'allocazione** — le superfici allocazione/esposizione di dashboard,
+  skip link), la nuova pagina **Impostazioni → Preferenze** e **tutte le
+  stringhe legate all'allocazione** sono su `t()` — le superfici
+  allocazione/esposizione di dashboard,
   portafoglio e asset (nuovi gruppi `allocation.*`, `exposure.*`), gli stati
   vuoti dei grafici, le etichette `Valore:`/`Peso:` dei tooltip e i nomi di
   serie di riserva (`chartView.noData`/`noDistribution`/
@@ -1578,7 +1577,7 @@ sono tradotte tramite il layer i18n (capitolo 8).
   una `SegmentedControl` collegata allo store del tema (default Sistema,
   decisione D9), **palette utile/perdita Verde/Rosso / Blu/Arancione** —
   etichette `preferences.palette*` corte così il controllo non può uscire dalla
-  card a larghezza telefono (bug-fix EPIC K); il pannello comandi le riusa come
+  card a larghezza telefono; il pannello comandi le riusa come
   hint dello stato di destinazione e `preferences.paletteHint` porta la
   spiegazione estesa — con una seconda
   `SegmentedControl` collegata allo store della palette (`setCvd` /

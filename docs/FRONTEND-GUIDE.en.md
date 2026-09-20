@@ -472,7 +472,7 @@ in white).
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2); since EPIC I.9 (#88) the page feeds it one 20-row page at a time and renders the Previous/Next footer under it |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction form: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls and toasts. Since EPIC K.4c it renders as the `ui/Modal` at ≥ `sm` and as a `ui/Sheet` (bottom sheet) on phones (decision D4, via the `viewport` store), sharing one form/footer snippet pair; Delete removes the row immediately and shows a 5 s **undo** toast instead of a `ConfirmDialog` (decision D11 — undo re-POSTs the captured payload, which yields a new id) | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
-| `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Preferences / Currencies), active tab marked with `aria-current="page"`; the pill container is `max-w-full flex-wrap` so all four tabs stay reachable at phone widths (EPIC K bug-fix) | all four **Settings** pages (E.4) |
+| `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Preferences / Currencies), active tab marked with `aria-current="page"`; the pill container is `max-w-full flex-wrap` so all four tabs stay reachable at phone widths | all four **Settings** pages (E.4) |
 | `ChartTableToggle.svelte` (`lib/components/ui/`) | shared **Chart ⇄ Table** segmented disclosure (EPIC K.5b, spec §9.1): a thin wrapper over `SegmentedControl` bound to the owning chart's internal `view` state (`'chart' \| 'table'`, `$bindable`), labeled `Chart`/`Table` through `chartView.*`; the tablist accessible name interpolates the chart's own heading when it has one (`chartView.ariaNamed`, generic `chartView.aria` otherwise) | embedded by `ExposureBarChart`, `ClassDonut`, `ExposurePie`, `PerformanceChart`, `CapitalChart` and `AllocationDonut` (see the "View as table" note below); callers hide it with `showTableToggle={false}` where a list of the same rows already sits directly under the chart |
 
 Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
@@ -510,7 +510,7 @@ the screen-reader path. The pattern is uniform across the six wrappers:
   period/return/cumulative TWR (`PerformanceChart`), period/invested/value
   (`CapitalChart`), name/value/weight (`AllocationDonut`).
 - on `ExposureBarChart` the `maxVisibleRows` country cap is a **collapse**
-  control, not a scroll viewport (EPIC K bug-fix): the chart shows the first
+  control, not a scroll viewport: the chart shows the first
   `maxVisibleRows` bars plus a "Show all" button that expands in place, so the
   page stays the only scroll container; table mode always lists every row.
   Below `sm` all six tables collapse each row into a stacked key–value grid
@@ -667,7 +667,7 @@ primary/secondary/outline/ghost/danger/link, sizes, loading), `Input`,
 `Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, the `Table`
 primitives (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` and
 `StatCard`. Pages and the shell reuse them instead of duplicating markup.
-`SegmentedControl` is overflow-safe by design (EPIC K bug-fix): its pill row is
+`SegmentedControl` is overflow-safe by design: its pill row is
 `max-w-full flex-wrap` with content-based `flex-auto` segments, so long labels
 wrap inside the container at phone widths instead of pushing a horizontal
 scroll, while at `sm`+ the inline-flex row still shrink-wraps to the labels on
@@ -688,7 +688,7 @@ inspection drawer, focus-trap + Esc/backdrop + restore; D4 at ≥ `lg`), `Sheet`
 (route-linked `<a>`-based ARIA tablist with roving focus, for the K.4 entity
 sub-pages). The overlay trap and the motion-token transitions they share are
 extracted as `ui/focus-trap.ts` and `ui/transitions.ts` (existing
-`Modal`/`MobileDrawer` keep their inline recipes for now, zero-regression).
+`Modal`/`MobileDrawer` keep their inline recipes for now).
 
 ### The app shell
 
@@ -727,8 +727,7 @@ JS state and CSS never disagree.
   the global `prefers-reduced-motion` rule neutralises), and the entity sticky
   headers on the portfolio/asset detail shells stack at
   `top-[var(--app-header-h)]` (with a matched `transition-[top]`) so they stay
-  flush with the bar and never leave a gap strip while it condenses (EPIC K
-  bug-fix). The default lives in `app.css` `:root`.
+  flush with the bar while it condenses. The default lives in `app.css` `:root`.
 - The Admin entry is labelled **"Data & Sync"** (`nav.dataSync`, decision D7).
   It lives in a single `adminItems` config point in `SidebarNav` (route
   `/admin/health` unchanged) so it can later be relocated into an
@@ -820,11 +819,11 @@ the old fixed `Layout.svelte`.
   lookups (`nav.dashboard`) and typed as the `MessageKey` union, so `t()`
   call sites are typo-checked too. Lookup order: active locale → English
   (fallback) → the key itself, with a console warning only in dev (never a
-  throw). **Migration is progressive**: K.1b translated the shell navigation
+  throw). **Migration is progressive**: the shell navigation
   (`SidebarNav`, `AppHeader`/`UserMenu`/`ThemeToggle` labels, `SettingsTabs`,
-  `MobileDrawer`, the skip link) plus the new **Settings → Preferences**
-  page; the EPIC K bug-fix batch then moved every **allocation-related**
-  string onto `t()` — the dashboard/portfolio/asset allocation & exposure
+  `MobileDrawer`, the skip link), the new **Settings → Preferences**
+  page and every **allocation-related**
+  string are on `t()` — the dashboard/portfolio/asset allocation & exposure
   surfaces (new `allocation.*`, `exposure.*` groups), the chart empty states,
   tooltip `Value:`/`Weight:` labels and fallback series names
   (`chartView.noData`/`noDistribution`/`noClassAllocation`/`noAllocation`/
@@ -1506,7 +1505,7 @@ are translated through the i18n layer (chapter 8).
   `SegmentedControl` bound to the theme store (default System, decision D9),
   gain/loss **palette Verde/Rosso (green/red) / Blu/Arancione (blue/orange)**
   — short `preferences.palette*` labels so the control can't overflow its card
-  at phone widths (EPIC K bug-fix); the command palette reuses them as the
+  at phone widths; the command palette reuses them as the
   toggle's target-state hint and `preferences.paletteHint` carries the full
   explanation — via a second `SegmentedControl` bound to the palette store
   (`setCvd`/`palette.cvd`, decision D6, EPIC K.5c — applies immediately,

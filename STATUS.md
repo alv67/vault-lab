@@ -685,7 +685,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
 > di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
-> `--surface-raised` mappati per compatibilità zero-regression), token
+> `--surface-raised` mappati per compatibilità), token
 > semantico `--info`, `--chart-grid` cablato sulle griglie ECharts a ~8% di
 > opacità (mirror in `chartTheme.ts`), gradini tipografici `text-hero`/
 > `text-micro`, token di motion (`duration-fast/base/slow`, `ease-standard`,
@@ -727,7 +727,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > focus roving). Helper condivisi estratti: `ui/focus-trap.ts` e
 > `ui/transitions.ts` (transizioni sui token motion, `prefers-reduced-motion`
 > rispettato anche nelle transizioni JS); `Modal`/`MobileDrawer` restano
-> invariati (zero regressioni). **`DataTable` e `KpiStrip` sono rinviati
+> invariati. **`DataTable` e `KpiStrip` sono rinviati
 > deliberatamente a K.4**, dove verranno progettate attorno ai reali call
 > site. In K.1 resta solo la palette CVD (il toggle è pianificato per K.5);
 > i18n (D1) è completata in K.1b.
@@ -1067,32 +1067,6 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > con `{query}`, searching, toggleTheme/toggleCvd/toggleSidebar, hintNavigate/
 > hintSelect/hintClose); le label di destinazioni e azioni riusano i gruppi
 > esistenti. Nessuna dipendenza nuova; backend e pagine invariate.
-
-> **K.bug-fix — UX manual testing (telefono 393px / tablet 640–1023) — ✅
-> completata (questo branch)**: quattro fix dalla prima prova manuale del
-> redesign. **(1)** L'header condensante lasciava una striscia da 12px: la
-> shell pubblica ora l'altezza live come `--app-header-h` (3.5rem ↔ 2.75rem
-> dalla colonna scrollabile), `AppHeader` usa `h-[var(--app-header-h)]` e gli
-> header sticky di portafoglio/asset si impilano a
-> `top-[var(--app-header-h)]` con `transition-[top]` sincrona e
-> margini/padding `-mx-4 px-4 pt-4` (`lg:-mx-6 …`) che rispecchiano il
-> padding responsivo di `<main>` (wrapper `p-4 lg:p-6`): nessuna striscia,
-> header opaco a tutta larghezza in entrambi gli stati. **(2)** Overflow orizzontale delle
-> Impostazioni a 393px: `SettingsTabs` e `SegmentedControl` ora
-> `max-w-full flex-wrap` (segmenti `flex-auto`, etichette che vanno a capo),
-> etichette palette `preferences.palette*` accorciate (Verde/Rosso ·
-> Blu/Arancione / Green/Red · Blue/Orange), riga "aggiungi valuta" impilata
-> full-width sotto `sm`. **(3)** La "Vedi come tabella" annidava scrollbar:
-> via il cap `max-height`/`overflow-auto` in modalità tabella di
-> `ExposureBarChart` (tutte le righe, scroll della pagina) e sotto `sm` tutte
-> e sei le tabelle dei grafici collassano le righe in griglia chiave–valore
-> impilata (spec §5.3 "collassa, non rimpicciolire"), desktop invariato.
-> **(4)** Stringhe allocazione sempre italiane anche con EN attivo: migrati
-> su `t()` dashboard/portafoglio/asset (nuovi gruppi `allocation.*`,
-> `exposure.*`, `provenance.*` + chiavi `chartView.*` per stati vuoti,
-> tooltip `Valore:`/`Peso:` e nomi di serie), shape-identici in `en.ts`/
-> `it.ts`; migrazione del resto dell'app lasciata alle singole passate
-> progressive (D1).
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di
