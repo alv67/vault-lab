@@ -102,7 +102,9 @@
   {t('nav.skipToContent')}
 </a>
 
-<div class="flex h-dvh overflow-hidden bg-background text-foreground">
+<div
+  class="fixed inset-x-0 top-0 flex h-dvh overflow-hidden bg-background text-foreground"
+>
   <aside class="hidden shrink-0 sm:flex">
     <Sidebar collapsed={railCollapsed}>
       {#snippet footer()}
