@@ -10,6 +10,15 @@
   import { chartSemanticColors, resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
+  import { t } from '$lib/i18n/index.svelte'
+  import { cx } from '$lib/components/ui/utils'
+  import ChartTableToggle from '$lib/components/ui/ChartTableToggle.svelte'
+  import Table from '$lib/components/ui/Table.svelte'
+  import THead from '$lib/components/ui/THead.svelte'
+  import TBody from '$lib/components/ui/TBody.svelte'
+  import Tr from '$lib/components/ui/Tr.svelte'
+  import Th from '$lib/components/ui/Th.svelte'
+  import Td from '$lib/components/ui/Td.svelte'
 
   use([PieChart, LegendComponent, TooltipComponent, CanvasRenderer])
 
@@ -23,11 +32,15 @@
     data = [] as AssetClassSlice[],
     currency = 'USD',
     label = undefined as string | undefined,
+    showTableToggle = true,
   }: {
     data?: AssetClassSlice[]
     currency?: string
     /** Optional heading rendered above the donut. */
     label?: string
+    /** Hide the shared Chart ⇄ Table toggle (EPIC K.5b, spec §9.1);
+     * shown by default like in every other chart wrapper. */
+    showTableToggle?: boolean
   } = $props()
 
   // Backend class keys are mapped to friendly labels through the shared
@@ -39,6 +52,16 @@
   function isOther(cls: string): boolean {
     return cls.toLowerCase() === 'other'
   }
+
+  // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
+  // The table lists the same shaped `rows` the slices are drawn from; the
+  // switch unmounts the canvas (out of the a11y tree) and empty data keeps
+  // showing the empty state instead of an empty table.
+  let view = $state<'chart' | 'table'>('chart')
+  const showTable = $derived(showTableToggle && view === 'table')
+  const caption = $derived(
+    label ? t('chartView.caption', { name: label }) : t('chartView.captionGeneric'),
+  )
 
   // Palette and "Other" grey come from the chart tokens and are re-evaluated
   // on theme flips; the {#key} block also re-inits the chart with the new
@@ -93,12 +116,47 @@
   }))
 </script>
 
-{#if label}
-  <h3 class="mb-3 font-semibold">{label}</h3>
+{#if label || (showTableToggle && rows.length > 0)}
+  <div
+    class={cx(
+      'mb-3 flex flex-wrap items-center gap-2',
+      label ? 'justify-between' : 'justify-end',
+    )}
+  >
+    {#if label}
+      <h3 class="font-semibold">{label}</h3>
+    {/if}
+    {#if showTableToggle && rows.length > 0}
+      <ChartTableToggle name={label} bind:view />
+    {/if}
+  </div>
 {/if}
 {#if rows.length === 0}
   <div class="flex h-[280px] w-full items-center justify-center text-sm text-muted-foreground">
     Nessuna allocazione per classi
+  </div>
+{:else if showTable}
+  <div class="overflow-x-auto">
+    <Table>
+      <caption class="sr-only">{caption}</caption>
+      <THead>
+        <Tr>
+          <Th>{t('chartView.colName')}</Th>
+          <Th align="right">{t('chartView.colValue')}</Th>
+          <Th align="right">{t('chartView.colWeight')}</Th>
+        </Tr>
+      </THead>
+      <TBody>
+        {#each rows as r (r.class)}
+          <Tr>
+            <!-- Friendly class label, same mapping the slice names use. -->
+            <Td class="font-medium">{labelFor(r.class)}</Td>
+            <Td align="right">{formatCurrency(r.value, currency)}</Td>
+            <Td align="right">{formatPercent(r.weight)}</Td>
+          </Tr>
+        {/each}
+      </TBody>
+    </Table>
   </div>
 {:else}
   <div class="h-[280px] w-full">

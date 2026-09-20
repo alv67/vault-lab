@@ -681,7 +681,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
 | **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
-| **K.5 Power layer** | 🔄 *in corso — K.5c completata (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze) e K.5a completata (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo).* Restano in K.5: drill-down drawer, "view as table" | endpoint contribuzione drill-down (`dim+key` → asset) |
+| **K.5 Power layer** | 🔄 *in corso — K.5c completata (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze), K.5b completata ("view as table" nei sei wrapper dati: toggle segmentato condiviso `ui/ChartTableToggle`, tabella accessibile con gli stessi dati, cap opt-out per i chiamanti che elencano già le righe) e K.5a completata (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo).* Restano in K.5: drawer drill-down (paesi/regioni/settori → asset contribuenti) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
 > di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
@@ -952,6 +952,43 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > attivi), KPI, allocazioni e performance restano sincronizzati. Nuove
 > chiavi i18n EN/IT (shape identici): gruppo `activity.*`, gruppo `tx.*`,
 > `common.close`. Nessuna dipendenza nuova; desktop invariato.
+
+> **K.5b — "View as table" nei grafici (spec §9.1) — ✅ completata (questo branch)**:
+> nuova primitive `ui/ChartTableToggle.svelte`: disclosure segmentata
+> Grafico ⇄ Tabella che avvolge la `SegmentedControl` esistente (tablist di
+> veri pulsanti, quindi già raggiungibile da tastiera con `aria-selected`) e
+> espone `bind:view` (`'chart' | 'table'`, `$bindable`) più un `name`
+> opzionale che interpola il titolo del grafico nel nome accessibile della
+> tablist (fallback generico). Il toggle è incorporato **dentro** i sei
+> wrapper portatori di dati — `ExposureBarChart` (nome/valore/peso,
+> etichette come nei tooltip: nome leggibile + codice grezzo tra parentesi
+> via `labelFor`, e cap `maxVisibleRows` rispecchiato con viewport proprio),
+> `ClassDonut` (classe via `ASSET_CLASS_LABELS`/valore/peso), `ExposurePie`
+> (nome/peso), `PerformanceChart` (periodo/rendimento/TWR cumulativo, con
+> `pnlColorClass` come le barre), `CapitalChart` (periodo/investito/valore,
+> toggle attivo anche nella variante `compact` dell'hero) e
+> `AllocationDonut` (nome/valore/peso, colonna importo omessa con
+> `showValue={false}` come nel tooltip) — quindi ogni call site lo riceve
+> gratis; la prop `showTableToggle={false}` (default: mostrato) disattiva
+> solo dove sotto al grafico è già renderizzato l'elenco delle stesse righe:
+> le due ciambelle del tab Esposizione dell'asset (legenda completa
+> nome+peso) e le anteprime `mute` nelle due modali esposizione (la griglia
+> di pesi editabile *è* quella tabella). Le tabelle riusano le primitive
+> `ui/Table`/`Th`/`Td` con `<caption>` sr-only, `scope="col"`, celle
+> numeriche destre in `tabular-nums` e gli stessi formattatori dei tooltip;
+> il rendering di default resta il grafico (nessuna call-site rotation), in
+> vista tabella il canvas viene smontato (esce dall'albero di accessibilità)
+> e gli stati vuoti esistenti hanno precedenza sulla tabella (mai tabelle
+> vuote, e senza dati il toggle non appare). Non hanno avuto il toggle:
+> `PriceChart`/`PositionChart` (viste secondarie/storico prezzi, fuori
+> perimetro K.5b) e le `Sparkline` (forma pura, numeri già nella card).
+> **Rimandato**: il drill-down paesi/regioni/settori → asset contribuenti
+> (click sulla riga/barra) resta appeso all'endpoint backend di
+> contribuzione (`dim`+`key` → asset), non ancora esposto. Nuove chiavi i18n
+> EN/IT (shape identici): gruppo `chartView.*` (etichette del toggle, nomi
+> accessibili con/senza `{name}`, caption e intestazioni di colonna, nomi
+> dei grafici senza titolo proprio). Nessuna dipendenza nuova; dati e
+> backend intatti.
 
 > **K.5c — Toggle palette CVD (D6) — ✅ completata (questo branch)**:
 > nuovo store `lib/stores/palette.svelte.ts` a specchio di quello del tema:

@@ -10,6 +10,14 @@
   import { resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
+  import { t } from '$lib/i18n/index.svelte'
+  import ChartTableToggle from '$lib/components/ui/ChartTableToggle.svelte'
+  import Table from '$lib/components/ui/Table.svelte'
+  import THead from '$lib/components/ui/THead.svelte'
+  import TBody from '$lib/components/ui/TBody.svelte'
+  import Tr from '$lib/components/ui/Tr.svelte'
+  import Th from '$lib/components/ui/Th.svelte'
+  import Td from '$lib/components/ui/Td.svelte'
 
   use([PieChart, TooltipComponent, CanvasRenderer])
 
@@ -41,6 +49,17 @@
     // a transparent residual slice is appended so visible arcs are proportional
     // to the real percentages (default true = legacy behavior, no residual).
     complete = true,
+    // EPIC K.5b: the shared Chart ⇄ Table disclosure (spec §9.1). Hidden by
+    // the exposure modals (mute previews next to their own weight grids) and
+    // by the asset Exposure tab (which renders the same rows as a legend).
+    showTableToggle = true,
+  }: {
+    data?: ExposureRow[]
+    title?: string
+    showLegend?: boolean
+    mute?: boolean
+    complete?: boolean
+    showTableToggle?: boolean
   } = $props()
 
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
@@ -72,6 +91,14 @@
   // color they keep the default dark fill + white text border, which is
   // unreadable on a dark card ("outlined in white").
   const labelColor = $derived(VAULTLAB_CHART_THEMES[resolved()].textStyle.color)
+
+  // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
+  // The table lists the same shaped `rows` ({name, weight}) the arcs are
+  // drawn from — never the synthetic residual slice; switching unmounts the
+  // canvas (out of the a11y tree) and empty data keeps the empty state.
+  let view = $state<'chart' | 'table'>('chart')
+  const showTable = $derived(showTableToggle && view === 'table')
+  const caption = $derived(t('chartView.caption', { name: title }))
 
   const options = $derived.by((): EChartsOption => ({
     color: palette,
@@ -113,23 +140,50 @@
     Nessuna distribuzione
   </div>
 {:else}
-  <div class="h-[240px] w-full">
-    {#key resolved()}
-      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
-    {/key}
-  </div>
-  {#if showLegend}
-    <div class="mt-2 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
-      {#each rows as r, i (r.name)}
-        <div class="flex items-center gap-2 text-xs">
-          <span
-            class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-            style="background-color: {palette[i % palette.length]};"
-          ></span>
-          <span class="truncate">{r.name}</span>
-          <span class="ml-auto text-muted-foreground">{formatPercent(Number(r.weight))}</span>
-        </div>
-      {/each}
+  {#if showTableToggle}
+    <div class="mb-2 flex justify-end">
+      <ChartTableToggle name={title} bind:view />
     </div>
+  {/if}
+  {#if showTable}
+    <div class="overflow-x-auto">
+      <Table>
+        <caption class="sr-only">{caption}</caption>
+        <THead>
+          <Tr>
+            <Th>{t('chartView.colName')}</Th>
+            <Th align="right">{t('chartView.colWeight')}</Th>
+          </Tr>
+        </THead>
+        <TBody>
+          {#each rows as r (r.name)}
+            <Tr>
+              <Td class="font-medium">{r.name}</Td>
+              <Td align="right">{formatPercent(Number(r.weight))}</Td>
+            </Tr>
+          {/each}
+        </TBody>
+      </Table>
+    </div>
+  {:else}
+    <div class="h-[240px] w-full">
+      {#key resolved()}
+        <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+      {/key}
+    </div>
+    {#if showLegend}
+      <div class="mt-2 grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2">
+        {#each rows as r, i (r.name)}
+          <div class="flex items-center gap-2 text-xs">
+            <span
+              class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+              style="background-color: {palette[i % palette.length]};"
+            ></span>
+            <span class="truncate">{r.name}</span>
+            <span class="ml-auto text-muted-foreground">{formatPercent(Number(r.weight))}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
   {/if}
 {/if}

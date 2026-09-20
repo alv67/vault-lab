@@ -473,9 +473,51 @@ in white).
 | `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2); since EPIC I.9 (#88) the page feeds it one 20-row page at a time and renders the Previous/Next footer under it |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction form: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls and toasts. Since EPIC K.4c it renders as the `ui/Modal` at ≥ `sm` and as a `ui/Sheet` (bottom sheet) on phones (decision D4, via the `viewport` store), sharing one form/footer snippet pair; Delete removes the row immediately and shows a 5 s **undo** toast instead of a `ConfirmDialog` (decision D11 — undo re-POSTs the captured payload, which yields a new id) | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
 | `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Currencies / Health), active tab marked with `aria-current="page"` | all four **Settings** pages (E.4) |
+| `ChartTableToggle.svelte` (`lib/components/ui/`) | shared **Chart ⇄ Table** segmented disclosure (EPIC K.5b, spec §9.1): a thin wrapper over `SegmentedControl` bound to the owning chart's internal `view` state (`'chart' \| 'table'`, `$bindable`), labeled `Chart`/`Table` through `chartView.*`; the tablist accessible name interpolates the chart's own heading when it has one (`chartView.ariaNamed`, generic `chartView.aria` otherwise) | embedded by `ExposureBarChart`, `ClassDonut`, `ExposurePie`, `PerformanceChart`, `CapitalChart` and `AllocationDonut` (see the "View as table" note below); callers hide it with `showTableToggle={false}` where a list of the same rows already sits directly under the chart |
 
 Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
 `new Date(...).toLocaleDateString()`.
+
+#### The "View as table" toggle (EPIC K.5b)
+
+Every data-bearing chart wrapper embeds the shared `ui/ChartTableToggle`:
+the card can switch to an accessible **`<table>` of the very same shaped
+rows the canvas plots** — the WCAG "chart offers a table equivalent"
+requirement (spec §9.1), which doubles as the phone data experience and
+the screen-reader path. The pattern is uniform across the six wrappers:
+
+- the toggle lives **inside the component**, so every call site gets it
+  for free; `showTableToggle={false}` opts out (used by the asset detail
+  Exposure tab, whose pies already list every row in the legend under the
+  chart, and by the two muted preview donuts inside the exposure modals,
+  whose editable weight grid *is* that table);
+- **chart first**: the default rendering is unchanged; the empty states
+  win over the table branch, so a switch never renders an empty table
+  and the toggle itself is not offered when there is nothing to list;
+- in table view the canvas is **unmounted** (it leaves the accessibility
+  tree and repaints from scratch when you switch back);
+- the tables reuse the `ui/Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`
+  primitives with an `sr-only` `<caption>` (`chartView.caption`),
+  `scope="col"` headers, right-aligned `tabular-nums` numeric cells and
+  the same formatters as the tooltips (`formatCurrency`, `formatPercent`,
+  `formatSignedPercent`; the return column keeps `pnlColorClass` like the
+  green/red bars). Row labels follow the chart treatment: `ExposureBarChart`
+  shows the friendly `labelFor` name with the raw code in parentheses
+  ("United States (US)"), `ClassDonut` the `ASSET_CLASS_LABELS` name, and
+  `AllocationDonut` drops the amount column under `showValue={false}`
+  (mixed-currency donut), mirroring its tooltip. Columns per chart:
+  name/value/weight (bars, class donut), name/weight (`ExposurePie`),
+  period/return/cumulative TWR (`PerformanceChart`), period/invested/value
+  (`CapitalChart`), name/value/weight (`AllocationDonut`).
+- on `ExposureBarChart` the `maxVisibleRows` country cap is mirrored in
+  table mode with its own scroll viewport sized to the table rows.
+
+`PriceChart`, `PositionChart` and the card `Sparkline`s are out of the
+K.5b batch: the first two are the price-history tool (its own 1M–MAX
+selector) and the retained secondary view under the percentage card, and
+a sparkline is by design a shape-only affordance whose figures the card
+already shows as text. They can adopt the same pattern later at zero
+marginal cost.
 
 ### Where they are used
 

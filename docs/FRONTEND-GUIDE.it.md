@@ -489,9 +489,55 @@ scuro contornato di bianco).
 | `TransactionTable.svelte` (`lib/components/domain/`) | tabella transazioni (Data/Asset/Type badge/Qty/Price/Total/Azioni) con azione di modifica allineata a destra | la card Transactions del **dettaglio portafoglio** (E.2); dall'EPIC I.9 (#88) la pagina le passa una pagina da 20 righe alla volta e mostra i pulsanti Previous/Next con l'intervallo sotto di essa |
 | `AddTransactionModal.svelte` (`lib/components/domain/`) | form di aggiunta/modifica/eliminazione transazione: combobox asset, tipo (buy/sell/dividend), quantità/prezzo o importo, data, commissioni, note; validazione inline e totale live; gestisce chiamate API e toast. Dall'EPIC K.4c si presenta come `ui/Modal` da `sm` in su e come `ui/Sheet` (bottom sheet) sui telefoni (decisione D4, store `viewport`), condividendo un'unica coppia di snippet form/piè; Elimina rimuove la riga subito e mostra un toast **undo** da 5 s invece del `ConfirmDialog` (decisione D11 — l'undo re-INVIA il payload catturato, con nuovo id) | la pagina **dettaglio portafoglio** (E.2), aperta da "Add Transaction" e dall'azione di modifica della tabella |
 | `SettingsTabs.svelte` (`lib/components/domain/`) | barra di tab basata su link per le subroute delle Impostazioni (Profile / Password / Currencies / Health), tab attivo marcato con `aria-current="page"` | tutte e quattro le pagine **Settings** (E.4) |
+| `ChartTableToggle.svelte` (`lib/components/ui/`) | disclosure segmentata **Grafico ⇄ Tabella** condivisa (EPIC K.5b, spec §9.1): wrapper sottile di `SegmentedControl` legato allo stato `view` interno (`'chart' \| 'table'`, `$bindable`) del grafico che lo ospita, con etichette `Chart`/`Table` da `chartView.*`; il nome accessibile della tablist interpola il titolo proprio del grafico, se ce l'ha (`chartView.ariaNamed`, altrimenti il generico `chartView.aria`) | incorporato da `ExposureBarChart`, `ClassDonut`, `ExposurePie`, `PerformanceChart`, `CapitalChart` e `AllocationDonut` (vedi la nota "Vedi come tabella" qui sotto); i chiamanti lo nascondono con `showTableToggle={false}` dove sotto al grafico è già presente un elenco delle stesse righe |
 
 I tooltip formattano i valori monetari con `formatCurrency` (capitolo 6), le
 date con `new Date(...).toLocaleDateString()`.
+
+#### Il toggle "Vedi come tabella" (EPIC K.5b)
+
+Ogni wrapper di grafico con dati incorpora il `ui/ChartTableToggle`
+condiviso: la card può passare a una **`<table>` accessibile delle stesse
+righe già disegnate sul canvas** — il requisito WCAG "ogni grafico offre
+un equivalente tabellare" (spec §9.1), che vale anche come esperienza
+dati su telefono e come percorso per screen reader. Il pattern è uniforme
+nei sei wrapper:
+
+- il toggle vive **dentro il componente**, quindi ogni call site lo riceve
+  gratis; `showTableToggle={false}` lo disattiva (usato nel tab Esposizione
+  del dettaglio asset, dove le ciambelle elencano già ogni riga nella
+  legenda sotto al grafico, e nelle due anteprime `mute` dentro le modali
+  esposizione, la cui griglia di pesi editabile *è* quella tabella);
+- **prima il grafico**: il rendering di default non cambia; gli stati
+  vuoti hanno la precedenza sul ramo tabellare, quindi non viene mai
+  resa una tabella vuota e il toggle stesso non appare senza dati;
+- in vista tabella il canvas viene **smontato** (esce dall'albero di
+  accessibilità e si ridisegna da capo al ritorno);
+- le tabelle riusano le primitive `ui/Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`
+  con un `<caption>` `sr-only` (`chartView.caption`), intestazioni con
+  `scope="col"`, celle numeriche allineate a destra in `tabular-nums` e
+  gli stessi formattatori dei tooltip (`formatCurrency`, `formatPercent`,
+  `formatSignedPercent`; la colonna del rendimento mantiene
+  `pnlColorClass` come le barre verdi/rosse). Le etichette di riga
+  seguono il trattamento del grafico: `ExposureBarChart` mostra il nome
+  leggibile di `labelFor` con il codice grezzo tra parentesi
+  ("United States (US)"), `ClassDonut` il nome di `ASSET_CLASS_LABELS`, e
+  `AllocationDonut` omette la colonna dell'importo con `showValue={false}`
+  (donut multi-valuta), rispecchiando il suo tooltip. Colonne per
+  grafico: nome/valore/peso (barre, donut classi), nome/peso
+  (`ExposurePie`), periodo/rendimento/TWR cumulativo (`PerformanceChart`),
+  periodo/investito/valore (`CapitalChart`), nome/valore/peso
+  (`AllocationDonut`).
+- in `ExposureBarChart` il cap `maxVisibleRows` dei paesi è rispecchiato
+  anche in modalità tabella, con un viewport scorrevole dimensionato sulle
+  righe della tabella.
+
+`PriceChart`, `PositionChart` e le `Sparkline` delle card sono fuori dal
+lotto K.5b: i primi due sono lo strumento dello storico prezzi (con
+proprio selettore 1M–MAX) e la vista secondaria di supporto mantenuta
+sotto la card percentuale; la sparkline è per definizione un elemento di
+sola forma i cui numeri compaiono già nella card come testo. Potranno
+adottare lo stesso pattern più tardi, a costo marginale zero.
 
 ### Dove vengono usati
 

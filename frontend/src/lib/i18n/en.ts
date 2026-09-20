@@ -209,6 +209,33 @@ export const en = {
     valueTrend: '{name} value trend',
   },
   /**
+   * "View as table" chart toggle (EPIC K.5b, redesign spec §9.1): labels
+   * and accessible names of the shared `ui/ChartTableToggle`, the sr-only
+   * `<caption>` template of the table views and their column headers.
+   * `{name}` carries the chart's own heading when it has one.
+   */
+  chartView: {
+    chart: 'Chart',
+    table: 'Table',
+    /** Tablist accessible name (with/without the interpolated chart title). */
+    aria: 'Chart data view',
+    ariaNamed: 'Chart data view — {name}',
+    /** Screen-reader caption of the table view. */
+    caption: '{name} — chart data',
+    captionGeneric: 'Chart data',
+    /** Column headers shared by the table views. */
+    colName: 'Name',
+    colValue: 'Value',
+    colWeight: 'Weight',
+    colPeriod: 'Period',
+    colReturn: 'Return',
+    colCumulative: 'Cumulative TWR',
+    colInvested: 'Invested',
+    /** Accessible names for the bucket charts, which carry no own heading. */
+    namePerformance: 'Performance',
+    nameCapital: 'Invested vs value',
+  },
+  /**
    * Portfolio-detail shell (EPIC K.4a, spec §6.2): sticky-header chrome and
    * the four tier-2 tabs. Card/section copy that predates the dictionary
    * stays hardcoded until the page's migration sweep (progressive, D1).

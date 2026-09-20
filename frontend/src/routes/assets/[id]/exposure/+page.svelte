@@ -116,8 +116,14 @@
         <!-- displayRegions never carries the «Other / Not Classified» row
              (withoutOther filters it out of the stored exposure), so the
              donut renders open: complete={false} adds the transparent
-             residual gap. -->
-        <ExposurePie data={displayRegions} title="Distribuzione geografica" complete={false} />
+             residual gap. The K.5b table toggle is off: the legend under the
+             chart already lists every visible row with its weight. -->
+        <ExposurePie
+          data={displayRegions}
+          title="Distribuzione geografica"
+          complete={false}
+          showTableToggle={false}
+        />
         <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
           {#each displayRegions.filter((r) => Number(r.weight) > 0) as r, i (r.name)}
             <div class="flex items-center gap-1.5 text-xs">
@@ -149,7 +155,9 @@
     </div>
     <div class="rounded-card border border-border bg-muted p-4">
       <h3 class="mb-2 font-medium">Settori</h3>
-      <ExposurePie data={displaySectors} title="Distribuzione settoriale" />
+      <!-- Same as regions: the legend below already lists every sector with
+           its weight, so no K.5b table toggle here. -->
+      <ExposurePie data={displaySectors} title="Distribuzione settoriale" showTableToggle={false} />
       <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1">
         {#each displaySectors.filter((r) => Number(r.weight) > 0) as s, i (s.name)}
           <div class="flex items-center gap-1.5 text-xs">

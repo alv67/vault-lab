@@ -161,6 +161,29 @@ export const it = {
     trend: 'Andamento del valore',
     valueTrend: 'Andamento del valore di {name}',
   },
+  /**
+   * Toggle "vedi come tabella" dei grafici (EPIC K.5b, spec §9.1):
+   * etichette e nomi accessibili del `ui/ChartTableToggle` condiviso, il
+   * template del `<caption>` sr-only delle viste tabellari e le intestazioni
+   * di colonna. `{name}` porta il titolo proprio del grafico, se ce l'ha.
+   */
+  chartView: {
+    chart: 'Grafico',
+    table: 'Tabella',
+    aria: 'Vista dati del grafico',
+    ariaNamed: 'Vista dati del grafico — {name}',
+    caption: '{name} — dati del grafico',
+    captionGeneric: 'Dati del grafico',
+    colName: 'Nome',
+    colValue: 'Valore',
+    colWeight: 'Peso',
+    colPeriod: 'Periodo',
+    colReturn: 'Rendimento',
+    colCumulative: 'TWR cumulativo',
+    colInvested: 'Investito',
+    namePerformance: 'Performance',
+    nameCapital: 'Investito contro valore',
+  },
   portfolio: {
     tabsLabel: 'Sezioni del portafoglio',
     tabOverview: 'Panoramica',

@@ -200,7 +200,15 @@
             {/if}
           </div>
           <div class="w-48 shrink-0 md:w-56">
-            <ExposurePie data={sectorsEdit} title="Distribuzione settoriale" mute />
+            <!-- Muted live preview next to the weight grid: the grid already
+                 lists (and edits) the same rows, so the K.5b table toggle
+                 would only duplicate it. -->
+            <ExposurePie
+              data={sectorsEdit}
+              title="Distribuzione settoriale"
+              mute
+              showTableToggle={false}
+            />
           </div>
         </div>
         <div class="mt-auto flex justify-end pt-4">

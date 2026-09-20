@@ -508,7 +508,16 @@
               </table>
             </div>
             <div class="w-48 shrink-0 md:w-56">
-              <ExposurePie data={regionsEdit} title="Distribuzione geografica" mute complete={false} />
+              <!-- Muted live preview next to the weight grid: the grid below
+                   already lists (and edits) the same rows, so the K.5b table
+                   toggle would only duplicate it. -->
+              <ExposurePie
+                data={regionsEdit}
+                title="Distribuzione geografica"
+                mute
+                complete={false}
+                showTableToggle={false}
+              />
             </div>
           </div>
 
