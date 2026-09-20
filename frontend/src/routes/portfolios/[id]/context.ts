@@ -9,6 +9,7 @@ import type {
   PortfolioSummary,
   Transaction,
 } from '$lib/services/api'
+import type { TransactionFilters } from './tx-filters'
 
 /**
  * Typed context shared by the portfolio-detail shell (`+layout.svelte`,
@@ -57,6 +58,15 @@ export interface PortfolioPageContext {
   readonly txRangeLabel: string
   /** Jump to a 1-based page (clamped) — refetches only the window. */
   gotoTxPage(target: number): void
+
+  // --- Activity filters (EPIC K.4c, spec §6.2/§8.2): the URL query is
+  // their single source of truth; `txFilters` is parsed from it (unset
+  // dimensions are `undefined`), `setTxFilters` persists a new set back
+  // into the URL (replaceState) — the layout's own watcher then resets the
+  // window to the first page of the filtered result and refetches it, so
+  // this also stays consistent across back/forward navigations.
+  readonly txFilters: TransactionFilters
+  setTxFilters(next: TransactionFilters): void
 
   // --- Transaction modal (mounted by the layout, opened from any tab)
   openAddTransaction(): void

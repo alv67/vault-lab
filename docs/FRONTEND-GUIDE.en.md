@@ -195,7 +195,9 @@ frontend/
         │                    # KPI strip, tabs; all data loading + context
         │   ├── +page.svelte        #   Overview tab (index)
         │   ├── positions/          #   Positions tab
-        │   ├── activity/           #   Activity tab (paginated transactions)
+        │   ├── activity/           #   Activity tab (paginated transactions
+        │   │                       #   + URL-persisted filters, K.4c)
+        │   ├── tx-filters.ts       #   Activity filter model + URL query codec
         │   └── allocation/         #   Allocation tab
         ├── settings/       # profile, password, currency whitelist
         └── admin/health/   # price-sync health dashboard — "Data & Sync" (D7)
@@ -278,7 +280,7 @@ verified against the backend routes (`backend/cmd/server/main.go`).
 | | quote, fetchProfile | `GET /assets/{id}/quote`, `POST /assets/{id}/fetch-profile` |
 | | exposure, saveExposure, fetchExposure, fetchETFExposure, fetchMorningstarExposure | `GET /assets/{id}/exposure`, `PUT /assets/{id}/exposure`, `POST /assets/{id}/fetch-exposure`, `POST /assets/{id}/fetch-etf-exposure`, `POST /assets/{id}/fetch-morningstar-exposure` |
 | | backfillHistory, sync | `POST /assets/{id}/backfill-history`, `POST /assets/sync` |
-| `transactionApi` | list, create | `GET /portfolios/{id}/transactions?limit=&offset=` (EPIC I.9: returns the `TransactionPage` envelope — `transactions`, `total`, applied `limit`/`offset`; default limit 20, max 100, order date desc), `POST /portfolios/{id}/transactions` |
+| `transactionApi` | list, create | `GET /portfolios/{id}/transactions?limit=&offset=&type=&asset_id=&from=&to=` (EPIC I.9: returns the `TransactionPage` envelope — `transactions`, `total`, applied `limit`/`offset`; default limit 20, max 100, order date desc; since EPIC K.4c the optional combinable filters `type` (buy/sell/dividend/split/fee), `asset_id` (uuid) and the inclusive `from`/`to` `YYYY-MM-DD` bounds narrow the rows **and** the returned `total`), `POST /portfolios/{id}/transactions` |
 | | update, remove | `PATCH/DELETE /transactions/{id}` |
 | `pricesApi` | refresh | `POST /prices/refresh` (optional query `portfolio_id`, returns the `RefreshReport`) |
 | | byAsset | `GET /prices/{assetId}?full=1` |
@@ -324,7 +326,9 @@ rows with `has_price: false` carry their value at cost, so their P/L is 0.
 Since EPIC I.9 (#88) `transactionApi.list(id, { limit, offset })` no longer
 returns a bare array but the `TransactionPage` envelope (`transactions`,
 `total`, applied `limit`/`offset`; default limit 20, max 100, order date
-desc), which the portfolio detail paginates.
+desc), which the portfolio detail paginates. Since EPIC K.4c it also accepts
+the optional list filters `type`, `asset_id`, `from` and `to` (each omitted
+when unset); `total` is then the *filtered* count.
 
 > **Note**: `portfolioApi` exposes the geography and sector allocation methods
 > (`geographyAllocation(id)`, `sectorAllocation(id)` — served by the backend
@@ -467,7 +471,7 @@ in white).
 | `AllocationDonut.svelte` (`lib/components/domain/`) | theme-aware donut of `{name, value}[]` shares (weights recomputed on the positive total); `showValue={false}` hides the value in the tooltip (mixed-currency donut) | the **dashboard** "Allocation by portfolio" (E.1) |
 | `AssetCombobox.svelte` (`lib/components/domain/`) | filterable combobox over the already-registered assets (ticker/name, max 8 rows); emits the selected asset id | the transaction modal (E.2). The Yahoo ticker lookup used to create assets lives in `AssetSearchAutocomplete` |
 | `TransactionTable.svelte` (`lib/components/domain/`) | transactions table (Date/Asset/Type badge/Qty/Price/Total/Actions) with a right-aligned edit action | the **portfolio detail** Transactions card (E.2); since EPIC I.9 (#88) the page feeds it one 20-row page at a time and renders the Previous/Next footer under it |
-| `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction dialog: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls, toasts and the delete confirm | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
+| `AddTransactionModal.svelte` (`lib/components/domain/`) | add/edit/delete transaction form: asset combobox, type (buy/sell/dividend), quantity/price or amount, date, fees, notes; inline validation and a live total; owns the API calls and toasts. Since EPIC K.4c it renders as the `ui/Modal` at ≥ `sm` and as a `ui/Sheet` (bottom sheet) on phones (decision D4, via the `viewport` store), sharing one form/footer snippet pair; Delete removes the row immediately and shows a 5 s **undo** toast instead of a `ConfirmDialog` (decision D11 — undo re-POSTs the captured payload, which yields a new id) | the **portfolio detail** page (E.2), opened by "Add Transaction" and by the transaction table edit action |
 | `SettingsTabs.svelte` (`lib/components/domain/`) | link-based tab bar for the Settings subroutes (Profile / Password / Currencies / Health), active tab marked with `aria-current="page"` | all four **Settings** pages (E.4) |
 
 Tooltips format monetary values with `formatCurrency` (chapter 6), dates with
@@ -594,8 +598,9 @@ primary/secondary/outline/ghost/danger/link, sizes, loading), `Input`,
 `Modal`, `ConfirmDialog`, `Spinner`, `Skeleton`, `EmptyState`, the `Table`
 primitives (`Table`/`THead`/`TBody`/`Tr`/`Th`/`Td`), `SegmentedControl` and
 `StatCard`. Pages and the shell reuse them instead of duplicating markup.
-Destructive actions use `ConfirmDialog` instead of the browser's native
-`confirm()`.
+Irreducible destructive actions use `ConfirmDialog` instead of the browser's
+native `confirm()` (since EPIC K.4c transaction deletes are exempt: reversible
+actions go undo-toast-first, decision D11 — see chapter 10).
 
 **EPIC K.1c foundations (UX redesign)** add six primitives, built on the same
 tokens but not adopted by any page yet (they arrive with K.2–K.5): `PnlValue`
@@ -665,7 +670,11 @@ the old fixed `Layout.svelte`.
   auto-dismiss after 3.5 s (4.5 s for warnings); `lib/components/Toaster.svelte`
   renders a fixed top-right stack of **theme-aware** cards (`surface-raised`)
   with semantically colored icons, a close button and `aria-live`
-  (`role="alert"` for errors). `<Toaster />` is mounted once in
+  (`role="alert"` for errors). Since EPIC K.4c each call also accepts an
+  options object `{ duration?, action? }`; an `action` (`{ label, onclick }`)
+  renders an inline, keyboard-reachable button in the card that runs its
+  handler and dismisses the toast — the mechanism behind the transaction
+  delete **undo** (decision D11). `<Toaster />` is mounted once in
   `routes/+layout.svelte`, so every page can toast.
 - **Responsive / mobile-first**: flex/grid classes adapt by breakpoint
   (`flex flex-col gap-4 md:flex-row`, `grid grid-cols-2 md:grid-cols-4`,
@@ -969,11 +978,12 @@ re-derive view data (position rows, exposure bar rows, coverage notes) from
 the shared payloads. The layout stays mounted across tab switches, so the
 header, the data and the transactions page survive navigation.
 
-Called endpoints (unchanged): `portfolioApi.get`, `.summary`,
+Called endpoints: `portfolioApi.get`, `.summary`,
 `.performanceBuckets`, `.history`, `.classAllocation`, `.geographyAllocation`,
-`.sectorAllocation`, `transactionApi.list(id, { limit, offset })`,
-`assetApi.list`, then the session `pricesApi.refresh(id)` + fresh summary + a
-performance-buckets refetch; the header adds `portfolioApi.exportDoc`,
+`.sectorAllocation`, `transactionApi.list(id, { limit, offset, type?, asset_id?,
+from?, to? })`, `transactionApi.create` (undo), `assetApi.list`, then the
+session `pricesApi.refresh(id)` + fresh summary + a performance-buckets
+refetch; the header adds `portfolioApi.exportDoc`,
 `.delete` (⋯ menu) and reuses `ImportPortfolioModal` (import → full shell
 reload, transactions reset to the first page).
 
@@ -1031,17 +1041,39 @@ empty.
 TAB **Activity**: paginated table (date, asset, type badge, quantity, price,
 total), 20 rows per page (`txPage`/`txLimit`/`txOffset`/`txTotal` — EPIC I.9
 #88, now layout-owned, so the current window survives tab switches): the
-window is fetched with `transactionApi.list(id, { limit, offset })` and the
-footer under the table — same Previous/Next + "1–20 of 137" range layout as
+window is fetched with `transactionApi.list(id, { limit, offset, ...filters })`
+and the footer under the table — same Previous/Next + "1–20 of 137" range layout as
 the admin health page — only refetches the transactions, never the whole
-portfolio. Add/edit form for **buy / sell / dividend** (dividend asks the
-total amount instead of quantity × price; quantity is sent as `1`), delete
-with confirm — the modal is mounted once in the layout. After each mutation
-the CURRENT transactions page (plus the total; if deleting the last row of
-the last page empties the window the page steps back to the previous one,
-clamped to the fresh total), the summary, the history, the Performance card
-buckets and the allocations are refetched. Filters and sheet-based editing
-are planned for K.4c.
+portfolio. **Filters (EPIC K.4c, spec §6.2/§8.2)**: the filter row above the
+table — `ui/PeriodChips` for the type (All / Buy / Sell / Dividend / Split /
+Fee), a `ui/Select` over the portfolio's registered assets (from
+`summary.holdings`, closed included) and native `From`/`To` date inputs — is
+**URL state**: the query is the single source of truth, the layout parses it
+(`tx-filters.ts`) and every transaction fetch honours it, so `total` and the
+range label are the *filtered* count. Changing a filter (`ctx.setTxFilters`
+→ `goto(..., { replaceState, keepFocus, noScroll })`, mirroring the
+`ui/Tabs` keyboard nav) resets the window to the first filtered page and
+refetches only that; the view is shareable, survives reload/deep links
+(`/portfolios/7/activity?type=sell&asset=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD`)
+and back/forward, and leaving the tab (plain tab hrefs, no query) clears it.
+A ghost **Clear filters** button appears while any filter is active, and a
+server-confirmed empty filtered result swaps table and footer for an
+`EmptyState` with the same action. Filter labels and the clear/empty copy go
+through `t()` (`activity.*`, D1). Add/edit form for **buy / sell / dividend**
+(dividend asks the total amount instead of quantity × price; quantity is sent
+as `1`) — since EPIC K.4c the form opens as the classic `ui/Modal` at ≥ `sm`
+and as a `ui/Sheet` bottom sheet on phones (decision D4, `viewport` store;
+same fields/validation/live total), delete is **undo-based** (decision D11):
+Delete removes the row at once and the success toast carries a 5 s "Undo"
+action that recreates the transaction via `transactionApi.create` with the
+captured payload (new id — accepted at family scale), no `ConfirmDialog`
+anymore; `ConfirmDialog` stays for portfolio/asset deletes. The modal is
+mounted once in the layout. After each mutation (including undo) the CURRENT
+transactions page **under the active filters** (plus the total; if deleting
+the last row of the last page empties the window the page steps back to the
+previous one, clamped to the fresh total), the summary, the history, the
+Performance card buckets and the allocations are refetched (the shared
+`reloadAfterMutation` path in the layout).
 
 TAB **Allocation** (EPIC I.7 #86, mirrors the dashboard "Allocazione
 complessiva" card): a `lg:grid-cols-2` grid of panels in the **portfolio

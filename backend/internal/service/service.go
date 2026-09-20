@@ -1428,12 +1428,18 @@ const (
 )
 
 // ListTransactionsPaged returns one page of a portfolio's transactions plus
-// the total count, newest first. Negative limit/offset are rejected with
-// ErrInvalidInput; limit is defaulted and clamped as per the constants above.
-// Ownership is enforced like on the other portfolio-scoped reads: missing
-// portfolios yield ErrNotFound, someone else's portfolio yields ErrForbidden.
-func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID uuid.UUID, limit, offset int) (*model.TransactionPage, error) {
+// the total count of the filtered set, newest first. The filter is optional
+// in every dimension (zero value = unfiltered); a type outside the allowed
+// set is rejected with ErrInvalidInput even though the HTTP parser already
+// gates it. Negative limit/offset are rejected the same way; limit is
+// defaulted and clamped as per the constants above. Ownership is enforced
+// like on the other portfolio-scoped reads: missing portfolios yield
+// ErrNotFound, someone else's portfolio yields ErrForbidden.
+func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID uuid.UUID, limit, offset int, filter model.TransactionFilter) (*model.TransactionPage, error) {
 	if limit < 0 || offset < 0 {
+		return nil, ErrInvalidInput
+	}
+	if filter.Type != "" && !model.ValidTransactionType(filter.Type) {
 		return nil, ErrInvalidInput
 	}
 	if limit == 0 {
@@ -1454,14 +1460,14 @@ func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID
 		return nil, ErrForbidden
 	}
 
-	txs, err := s.repos.Transaction.FindByPortfolioPage(ctx, portfolioID, limit, offset)
+	txs, err := s.repos.Transaction.FindByPortfolioPage(ctx, portfolioID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	if txs == nil {
 		txs = []model.TransactionWithAsset{}
 	}
-	total, err := s.repos.Transaction.CountByPortfolio(ctx, portfolioID)
+	total, err := s.repos.Transaction.CountByPortfolio(ctx, portfolioID, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -2281,7 +2287,7 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 			if strings.TrimSpace(et.AssetTicker) == "" {
 				return fmt.Errorf("%w: transaction without asset_ticker", ErrInvalidInput)
 			}
-			if et.Type != model.TxBuy && et.Type != model.TxSell && et.Type != model.TxDividend && et.Type != model.TxSplit && et.Type != model.TxFee {
+			if !model.ValidTransactionType(string(et.Type)) {
 				return fmt.Errorf("%w: invalid transaction type %q", ErrInvalidInput, et.Type)
 			}
 			a, err := createAsset(strings.TrimSpace(et.AssetTicker))

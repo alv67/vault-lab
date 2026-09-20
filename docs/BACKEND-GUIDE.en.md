@@ -355,6 +355,29 @@ number of transactions in the portfolio, not the page size, so a page past
 the end simply yields an empty `transactions` array with the correct
 `total`.
 
+Since **EPIC K.4c** the list also accepts four optional, freely combinable
+filters (all absent = the behaviour above, fully backwards compatible):
+
+| Param | Meaning | Invalid value |
+|-------|---------|---------------|
+| `type` | exact transaction type: `buy`, `sell`, `dividend`, `split`, `fee` | 400 `invalid type` |
+| `asset_id` | exact asset UUID | 400 `invalid asset_id` |
+| `from` | inclusive start date, strict `YYYY-MM-DD` | 400 `invalid from: date must be YYYY-MM-DD` |
+| `to` | inclusive end date, strict `YYYY-MM-DD` | 400 `invalid to: date must be YYYY-MM-DD` |
+
+The query is parsed into a `model.TransactionFilter` (typed: `Type string`,
+`AssetID *uuid.UUID`, `From/To *time.Time` UTC midnights) by
+`model.ParseTransactionFilter`; the service threads it into both
+`FindByPortfolioPage` and `CountByPortfolio`, so **`total` reflects the
+filtered count** — the frontend can render "1–20 of 42" over the filtered
+set. The repository builds a dynamic parameterized `WHERE` from the filter
+(placeholders numbered by a counter, values only ever bind parameters —
+never interpolated); date bounds compare `t.date::date` against the parsed
+days so the match is calendar-day based and inclusive on both ends (the
+column is `TIMESTAMPTZ`). Ordering and pagination semantics are unchanged.
+A non-empty `filter.Type` outside the allowed set is rejected by the service
+with `ErrInvalidInput` even when the caller bypasses the HTTP parser.
+
 ### The per-portfolio TWR chart (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
 
 `GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`

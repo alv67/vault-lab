@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/url"
 	"testing"
 	"time"
 
@@ -367,8 +368,12 @@ type fakeTransactionRepo struct {
 	minDates map[uuid.UUID]time.Time
 	// txs backs FindByPortfoliosAsc so the cash-flow paths (dashboard
 	// performance) can be tested with a fixed transaction ledger. It also
-	// backs the paginated read, which slices it honoring limit/offset.
+	// backs the paginated read, which filters it (mirroring the SQL WHERE)
+	// and slices it honoring limit/offset.
 	txs []model.TransactionWithAsset
+	// lastFilter records the filter of the most recent paged/count call so
+	// tests can assert the service threads it through.
+	lastFilter model.TransactionFilter
 }
 
 func (f *fakeTransactionRepo) Create(ctx context.Context, tx *model.Transaction) (*model.Transaction, error) {
@@ -377,18 +382,48 @@ func (f *fakeTransactionRepo) Create(ctx context.Context, tx *model.Transaction)
 func (f *fakeTransactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error) {
 	return nil, nil
 }
-func (f *fakeTransactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, limit, offset int) ([]model.TransactionWithAsset, error) {
-	if offset >= len(f.txs) {
+func (f *fakeTransactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, filter model.TransactionFilter, limit, offset int) ([]model.TransactionWithAsset, error) {
+	f.lastFilter = filter
+	matched := f.matchTxs(filter)
+	if offset >= len(matched) {
 		return nil, nil
 	}
 	end := offset + limit
-	if end > len(f.txs) {
-		end = len(f.txs)
+	if end > len(matched) {
+		end = len(matched)
 	}
-	return f.txs[offset:end], nil
+	return matched[offset:end], nil
 }
-func (f *fakeTransactionRepo) CountByPortfolio(ctx context.Context, portfolioID uuid.UUID) (int64, error) {
-	return int64(len(f.txs)), nil
+func (f *fakeTransactionRepo) CountByPortfolio(ctx context.Context, portfolioID uuid.UUID, filter model.TransactionFilter) (int64, error) {
+	f.lastFilter = filter
+	return int64(len(f.matchTxs(filter))), nil
+}
+
+// matchTxs applies the filter the same way the SQL WHERE does: exact type
+// and asset id, inclusive bounds on the transaction's calendar date.
+func (f *fakeTransactionRepo) matchTxs(filter model.TransactionFilter) []model.TransactionWithAsset {
+	var out []model.TransactionWithAsset
+	for _, tx := range f.txs {
+		if filter.Type != "" && string(tx.Type) != filter.Type {
+			continue
+		}
+		if filter.AssetID != nil && tx.AssetID != *filter.AssetID {
+			continue
+		}
+		day := startOfUTCDay(tx.Date)
+		if filter.From != nil && day.Before(startOfUTCDay(*filter.From)) {
+			continue
+		}
+		if filter.To != nil && day.After(startOfUTCDay(*filter.To)) {
+			continue
+		}
+		out = append(out, tx)
+	}
+	return out
+}
+
+func startOfUTCDay(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 func (f *fakeTransactionRepo) FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error) {
 	return f.txs, nil
@@ -4115,7 +4150,7 @@ func TestListTransactionsPaged_FirstPageAndTotal(t *testing.T) {
 	ledger := pagedTxLedger(pid, 5)
 	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: ledger})
 
-	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 2, 0)
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 2, 0, model.TransactionFilter{})
 	if err != nil {
 		t.Fatalf("ListTransactionsPaged: %v", err)
 	}
@@ -4141,7 +4176,7 @@ func TestListTransactionsPaged_OffsetBeyondEndYieldsEmptyPageWithTotal(t *testin
 	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
 	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 3)})
 
-	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 50)
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 50, model.TransactionFilter{})
 	if err != nil {
 		t.Fatalf("ListTransactionsPaged: %v", err)
 	}
@@ -4162,7 +4197,7 @@ func TestListTransactionsPaged_LimitDefaultsAndClamps(t *testing.T) {
 	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
 	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 3)})
 
-	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 0, 0)
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 0, 0, model.TransactionFilter{})
 	if err != nil {
 		t.Fatalf("ListTransactionsPaged (default): %v", err)
 	}
@@ -4170,7 +4205,7 @@ func TestListTransactionsPaged_LimitDefaultsAndClamps(t *testing.T) {
 		t.Fatalf("default limit = %d, want 20", page.Limit)
 	}
 
-	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 500, 0)
+	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 500, 0, model.TransactionFilter{})
 	if err != nil {
 		t.Fatalf("ListTransactionsPaged (clamp): %v", err)
 	}
@@ -4188,10 +4223,10 @@ func TestListTransactionsPaged_RejectsNegativePagination(t *testing.T) {
 	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
 	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 1)})
 
-	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, -1, 0); !errors.Is(err, ErrInvalidInput) {
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, -1, 0, model.TransactionFilter{}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("negative limit err = %v, want ErrInvalidInput", err)
 	}
-	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, -5); !errors.Is(err, ErrInvalidInput) {
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, -5, model.TransactionFilter{}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("negative offset err = %v, want ErrInvalidInput", err)
 	}
 }
@@ -4203,7 +4238,260 @@ func TestListTransactionsPaged_NonOwnerForbidden(t *testing.T) {
 	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
 	svc := newTransactionPageTestService(t, pf, &fakeTransactionRepo{txs: pagedTxLedger(pid, 3)})
 
-	if _, err := svc.ListTransactionsPaged(context.Background(), pid, stranger, 10, 0); !errors.Is(err, ErrForbidden) {
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, stranger, 10, 0, model.TransactionFilter{}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("non-owner err = %v, want ErrForbidden", err)
+	}
+}
+
+// filterTxLedger builds a seven-row mixed ledger in the order the filtered
+// SQL would return it (newest first): types and assets alternate, dates step
+// back one day per row, and row 3 carries a 15:30 UTC time-of-day so the
+// date-only inclusive bounds are exercised against a real timestamp.
+func filterTxLedger(portfolioID, assetA, assetB uuid.UUID) []model.TransactionWithAsset {
+	base := time.Date(2024, 12, 7, 0, 0, 0, 0, time.UTC)
+	rows := []struct {
+		typ   model.TransactionType
+		asset uuid.UUID
+		days  int
+		hours int
+	}{
+		{model.TxBuy, assetA, 0, 0},
+		{model.TxSell, assetB, 1, 0},
+		{model.TxDividend, assetA, 2, 0},
+		{model.TxBuy, assetB, 3, 15},
+		{model.TxFee, assetA, 4, 0},
+		{model.TxBuy, assetA, 5, 0},
+		{model.TxSplit, assetB, 6, 0},
+	}
+	txs := make([]model.TransactionWithAsset, 0, len(rows))
+	for i, row := range rows {
+		date := base.AddDate(0, 0, -row.days).Add(time.Duration(row.hours) * time.Hour)
+		txs = append(txs, model.TransactionWithAsset{
+			ID:          uuid.New(),
+			PortfolioID: portfolioID,
+			AssetID:     row.asset,
+			AssetTicker: "ACME",
+			Type:        row.typ,
+			Quantity:    decimal.NewFromInt(1),
+			Price:       decimal.NewFromInt(int64(100 + i)),
+			Date:        date,
+			CreatedAt:   date,
+		})
+	}
+	return txs
+}
+
+func newFilterTestService(t *testing.T, owner, pid uuid.UUID, ledger []model.TransactionWithAsset) (*Service, *fakeTransactionRepo) {
+	t.Helper()
+	pf := &fakePortfolioRepo{portfolio: perfPortfolio(owner, pid, "EUR")}
+	rx := &fakeTransactionRepo{txs: ledger}
+	return newTransactionPageTestService(t, pf, rx), rx
+}
+
+func mustFilterDate(t *testing.T, raw string) *time.Time {
+	t.Helper()
+	d, err := model.ParseTransactionDate(raw)
+	if err != nil {
+		t.Fatalf("mustFilterDate(%q): %v", raw, err)
+	}
+	return &d
+}
+
+func txIDs(txs []model.TransactionWithAsset) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(txs))
+	for _, tx := range txs {
+		out = append(out, tx.ID)
+	}
+	return out
+}
+
+func TestListTransactionsPaged_FilterByType(t *testing.T) {
+	owner, pid, assetA, assetB := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	ledger := filterTxLedger(pid, assetA, assetB)
+	svc, rx := newFilterTestService(t, owner, pid, ledger)
+
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, model.TransactionFilter{Type: "sell"})
+	if err != nil {
+		t.Fatalf("ListTransactionsPaged: %v", err)
+	}
+	if page.Total != 1 {
+		t.Fatalf("total = %d, want 1 (filtered)", page.Total)
+	}
+	if len(page.Transactions) != 1 || page.Transactions[0].ID != ledger[1].ID {
+		t.Fatalf("page = %v, want only the sell row", txIDs(page.Transactions))
+	}
+	if rx.lastFilter.Type != "sell" {
+		t.Fatalf("repo received filter %+v, want Type=sell", rx.lastFilter)
+	}
+}
+
+func TestListTransactionsPaged_FilterByAssetID(t *testing.T) {
+	owner, pid, assetA, assetB := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	ledger := filterTxLedger(pid, assetA, assetB)
+	svc, _ := newFilterTestService(t, owner, pid, ledger)
+
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, model.TransactionFilter{AssetID: &assetA})
+	if err != nil {
+		t.Fatalf("ListTransactionsPaged: %v", err)
+	}
+	if page.Total != 4 {
+		t.Fatalf("total = %d, want 4 assetA rows", page.Total)
+	}
+	want := txIDs([]model.TransactionWithAsset{ledger[0], ledger[2], ledger[4], ledger[5]})
+	got := txIDs(page.Transactions)
+	if len(got) != len(want) {
+		t.Fatalf("page size = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("row %d = %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
+func TestListTransactionsPaged_FilterDatesAreInclusiveCalendarDays(t *testing.T) {
+	owner, pid, assetA, assetB := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	ledger := filterTxLedger(pid, assetA, assetB)
+	svc, _ := newFilterTestService(t, owner, pid, ledger)
+	row := func(i int) uuid.UUID { return ledger[i].ID }
+
+	// from = the 12-04 boundary must include row 3 (12-04 at 15:30 UTC).
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, model.TransactionFilter{From: mustFilterDate(t, "2024-12-04")})
+	if err != nil {
+		t.Fatalf("from: %v", err)
+	}
+	if page.Total != 4 || page.Transactions[3].ID != row(3) {
+		t.Fatalf("from bound: total=%d page=%v, want 4 rows ending at the boundary row", page.Total, txIDs(page.Transactions))
+	}
+
+	// to = the same day must include that same intra-day row and its older siblings.
+	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, model.TransactionFilter{To: mustFilterDate(t, "2024-12-04")})
+	if err != nil {
+		t.Fatalf("to: %v", err)
+	}
+	if page.Total != 4 {
+		t.Fatalf("to bound: total = %d, want 4", page.Total)
+	}
+
+	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, model.TransactionFilter{
+		From: mustFilterDate(t, "2024-12-05"),
+		To:   mustFilterDate(t, "2024-12-06"),
+	})
+	if err != nil {
+		t.Fatalf("window: %v", err)
+	}
+	want := txIDs([]model.TransactionWithAsset{ledger[1], ledger[2]})
+	got := txIDs(page.Transactions)
+	if page.Total != 2 || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("window: total=%d page=%v, want the 12-06 and 12-05 rows", page.Total, got)
+	}
+}
+
+func TestListTransactionsPaged_CombinedFiltersPaginateTheFilteredSet(t *testing.T) {
+	owner, pid, assetA, assetB := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	ledger := filterTxLedger(pid, assetA, assetB)
+	svc, _ := newFilterTestService(t, owner, pid, ledger)
+
+	// buy + assetA leaves exactly the newest (12-07) and 12-02 rows; the
+	// 12-03..12-06 window keeps only the newest of them.
+	filter := model.TransactionFilter{Type: "buy", AssetID: &assetA}
+	page, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 1, 1, filter)
+	if err != nil {
+		t.Fatalf("combined: %v", err)
+	}
+	if page.Total != 2 {
+		t.Fatalf("total = %d, want 2 (filtered count, not ledger size)", page.Total)
+	}
+	if len(page.Transactions) != 1 || page.Transactions[0].ID != ledger[5].ID {
+		t.Fatalf("second page = %v, want only the 12-02 buy row", txIDs(page.Transactions))
+	}
+
+	narrowed := model.TransactionFilter{
+		Type:    "buy",
+		AssetID: &assetA,
+		From:    mustFilterDate(t, "2024-12-03"),
+		To:      mustFilterDate(t, "2024-12-07"),
+	}
+	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, narrowed)
+	if err != nil {
+		t.Fatalf("narrowed: %v", err)
+	}
+	if page.Total != 1 || page.Transactions[0].ID != ledger[0].ID {
+		t.Fatalf("narrowed: total=%d page=%v, want only the 12-07 buy row", page.Total, txIDs(page.Transactions))
+	}
+
+	// An offset past the end of the filtered set yields an empty page with
+	// the filtered total.
+	page, err = svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 5, filter)
+	if err != nil {
+		t.Fatalf("past end: %v", err)
+	}
+	if page.Transactions == nil || len(page.Transactions) != 0 || page.Total != 2 {
+		t.Fatalf("past end: total=%d len=%d, want empty page with filtered total 2", page.Total, len(page.Transactions))
+	}
+}
+
+func TestListTransactionsPaged_RejectsUnknownFilterType(t *testing.T) {
+	owner, pid, assetA, assetB := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	svc, rx := newFilterTestService(t, owner, pid, filterTxLedger(pid, assetA, assetB))
+
+	if _, err := svc.ListTransactionsPaged(context.Background(), pid, owner, 10, 0, model.TransactionFilter{Type: "withdraw"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("bad type err = %v, want ErrInvalidInput", err)
+	}
+	if rx.lastFilter != (model.TransactionFilter{}) {
+		t.Fatalf("repo must not be queried after a rejected filter, saw %+v", rx.lastFilter)
+	}
+}
+
+func TestParseTransactionFilter(t *testing.T) {
+	asset := uuid.New()
+	t.Run("all filters", func(t *testing.T) {
+		f, err := model.ParseTransactionFilter(url.Values{
+			"type":     {"dividend"},
+			"asset_id": {asset.String()},
+			"from":     {"2024-12-01"},
+			"to":       {"2024-12-31"},
+		})
+		if err != nil {
+			t.Fatalf("ParseTransactionFilter: %v", err)
+		}
+		if f.Type != "dividend" || f.AssetID == nil || *f.AssetID != asset {
+			t.Fatalf("filter = %+v, want dividend + asset %s", f, asset)
+		}
+		if f.From == nil || !f.From.Equal(time.Date(2024, 12, 1, 0, 0, 0, 0, time.UTC)) {
+			t.Fatalf("from = %v, want 2024-12-01 UTC midnight", f.From)
+		}
+		if f.To == nil || !f.To.Equal(time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC)) {
+			t.Fatalf("to = %v, want 2024-12-31 UTC midnight", f.To)
+		}
+	})
+	t.Run("empty query yields zero filter", func(t *testing.T) {
+		f, err := model.ParseTransactionFilter(url.Values{})
+		if err != nil {
+			t.Fatalf("ParseTransactionFilter: %v", err)
+		}
+		if f != (model.TransactionFilter{}) {
+			t.Fatalf("filter = %+v, want zero value", f)
+		}
+	})
+	cases := []struct {
+		name  string
+		query url.Values
+		want  string
+	}{
+		{"bad type", url.Values{"type": {"withdraw"}}, "invalid type"},
+		{"bad asset id", url.Values{"asset_id": {"not-a-uuid"}}, "invalid asset_id"},
+		{"impossible date", url.Values{"from": {"2024-13-01"}}, "invalid from: date must be YYYY-MM-DD"},
+		{"unpadded date", url.Values{"from": {"2024-1-5"}}, "invalid from: date must be YYYY-MM-DD"},
+		{"datetime not accepted", url.Values{"to": {"2024-12-01T00:00"}}, "invalid to: date must be YYYY-MM-DD"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := model.ParseTransactionFilter(tc.query); err == nil {
+				t.Fatalf("err = nil, want %q", tc.want)
+			} else if err.Error() != tc.want {
+				t.Fatalf("err = %q, want %q", err, tc.want)
+			}
+		})
 	}
 }

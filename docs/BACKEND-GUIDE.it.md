@@ -357,6 +357,31 @@ transazioni del portafoglio, non la dimensione della pagina: una pagina
 oltre la fine restituisce semplicemente un array `transactions` vuoto con
 il `total` corretto.
 
+Dalla **EPIC K.4c** l'elenco accetta anche quattro filtri opzionali e
+liberamente combinabili (assenti = comportamento di cui sopra, piena
+retrocompatibilità):
+
+| Parametro | Significato | Valore non valido |
+|-----------|-------------|-------------------|
+| `type` | tipo esatto: `buy`, `sell`, `dividend`, `split`, `fee` | 400 `invalid type` |
+| `asset_id` | UUID esatto dell'asset | 400 `invalid asset_id` |
+| `from` | data iniziale inclusiva, formato rigoroso `YYYY-MM-DD` | 400 `invalid from: date must be YYYY-MM-DD` |
+| `to` | data finale inclusiva, formato rigoroso `YYYY-MM-DD` | 400 `invalid to: date must be YYYY-MM-DD` |
+
+La query viene convertita in un `model.TransactionFilter` tipizzato
+(`Type string`, `AssetID *uuid.UUID`, `From/To *time.Time` a mezzanotte UTC)
+da `model.ParseTransactionFilter`; il service lo propaga sia a
+`FindByPortfolioPage` sia a `CountByPortfolio`, quindi **`total` riflette il
+conteggio filtrato** — il frontend può mostrare "1–20 di 42" sull'insieme
+filtrato. Il repository costruisce un `WHERE` dinamico e parametrizzato a
+partire dal filtro (i segnaposto sono numerati da un contatore, i valori
+viaggiano solo come bind parameter — mai interpolati); i confini di data
+confrontano `t.date::date` con i giorni parsati, quindi il confronto è sul giorno
+di calendario ed è inclusivo su entrambi i lati (la colonna è
+`TIMESTAMPTZ`). Ordine e semantica della paginazione restano invariati.
+Un `filter.Type` non vuoto fuori dall'insieme consentito è rifiutato dal
+service con `ErrInvalidInput` anche se la chiamata bypassa il parser HTTP.
+
 ### Il grafico TWR per singolo portafoglio (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
 
 `GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`

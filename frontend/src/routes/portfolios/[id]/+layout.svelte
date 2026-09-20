@@ -34,6 +34,12 @@
   import PnlValue from '$lib/components/ui/PnlValue.svelte'
   import Tabs from '$lib/components/ui/Tabs.svelte'
   import { setPortfolioPage, type PortfolioPageContext } from './context'
+  import {
+    parseTransactionFilters,
+    transactionFiltersSignature,
+    applyTransactionFilters,
+    type TransactionFilters,
+  } from './tx-filters'
 
   /**
    * Portfolio shell (EPIC K.4a, spec §4.2.2/§6.2): the single long portfolio
@@ -75,12 +81,74 @@
   // row window start; the page size mirrors the backend default (20). The
   // window now survives tab switches too (the layout never unmounts between
   // tabs), so Activity reopens exactly where it was left.
+  // Every fetch below additionally applies the K.4c URL-persisted filters
+  // (see `txFilters`), so the pagination total is the FILTERED count.
   const TX_PAGE_SIZE = 20
   let txPage = $state(1)
   let txLimit = $state(TX_PAGE_SIZE)
   let txOffset = $state(0)
   let txTotal = $state(0)
   let txLoading = $state(false)
+
+  // EPIC K.4c (spec §6.2/§6.4/§8.2): the Activity filters — transaction
+  // type, asset and date range — live in the tab's URL query
+  // (`?type=sell&asset=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD`) so a filtered
+  // window is shareable, survives reloads and deep links
+  // (`/portfolios/7/activity?type=sell` loads filtered from the start) and
+  // back/forward restores exactly the previous view. The URL is their ONLY
+  // storage: this derived reads it back on every change (including plain
+  // history navigations, which bypass `setTxFilters`), and every
+  // transaction fetch below funnels through it.
+  const txFilters = $derived(parseTransactionFilters(page.url.searchParams))
+
+  /** `txFilters` shaped as `transactionApi.list` params for the given row
+   * window (unset dimensions stay `undefined` and the client omits them).
+   * Read at CALL time, so the post-mutation refetch always honours the
+   * filters still in the URL. */
+  function txListQuery(offset: number) {
+    return {
+      limit: txLimit,
+      offset,
+      type: txFilters.type,
+      asset_id: txFilters.assetId,
+      from: txFilters.from,
+      to: txFilters.to,
+    }
+  }
+
+  /** Persist a new filter set into the URL (replaceState: chip clicks are
+   * refinements of the current view, not history landmarks — the back
+   * button therefore leaves the Activity tab instead of stepping through
+   * every chip). The watcher below performs the actual reset + refetch, so
+   * the flow stays identical for back/forward navigations too. */
+  function setTxFilters(next: TransactionFilters): void {
+    const url = new URL(page.url)
+    applyTransactionFilters(url, next)
+    if (url.search === page.url.search) return
+    // The URL is cloned from the CURRENT `page.url` (already resolved by
+    // SvelteKit; only the query is rewritten), same convention as the
+    // keyboard nav in `ui/Tabs`.
+    // eslint-disable-next-line svelte/no-navigation-without-resolve
+    void goto(url, { replaceState: true, keepFocus: true, noScroll: true })
+  }
+
+  // Changing any filter resets the window to the first page of the filtered
+  // result and refetches it — the only fetches a filter change invalidates
+  // (the KPIs/allocations/performance don't depend on the filter).
+  // `appliedFiltersSig` is a plain (non-reactive) baseline seeded from the
+  // mount-time URL: the initial window already comes back filtered from
+  // `load()`, and only a REAL change from that baseline re-queries.
+  let appliedFiltersSig = transactionFiltersSignature(
+    parseTransactionFilters(page.url.searchParams),
+  )
+  $effect(() => {
+    const sig = transactionFiltersSignature(txFilters)
+    if (sig === appliedFiltersSig) return
+    appliedFiltersSig = sig
+    txPage = 1
+    txOffset = 0
+    void loadTransactions()
+  })
 
   // Same "1–20 of 137" range label and footer layout as the health page.
   const txRangeLabel = $derived(
@@ -93,22 +161,22 @@
   // flips must never let a stale response overwrite the current window.
   let txReq = 0
 
-  /** Fetch the current transaction page into `transactions`/`txTotal`,
-   * touching nothing else on the page. If the window comes back empty while
-   * rows still exist (the last row of the last page was just deleted), step
-   * back to the previous page — clamped against the fresh total — and
-   * refetch it within the same call. */
+  /** Fetch the current transaction page (window + K.4c URL filters) into
+   * `transactions`/`txTotal`, touching nothing else on the page. If the
+   * window comes back empty while rows still exist (the last row of the
+   * last page was just deleted), step back to the previous page — clamped
+   * against the fresh total — and refetch it within the same call. */
   async function loadTransactions(): Promise<void> {
     if (!id) return
     const req = ++txReq
     txLoading = true
     try {
-      let res = await transactionApi.list(id, { limit: txLimit, offset: txOffset })
+      let res = await transactionApi.list(id, txListQuery(txOffset))
       if (req === txReq && res.transactions.length === 0 && res.total > 0 && txOffset > 0) {
         const maxPage = Math.max(1, Math.ceil(res.total / txLimit))
         txPage = Math.min(Math.max(1, txPage - 1), maxPage)
         txOffset = (txPage - 1) * txLimit
-        res = await transactionApi.list(id, { limit: txLimit, offset: txOffset })
+        res = await transactionApi.list(id, txListQuery(txOffset))
       }
       if (req === txReq) {
         transactions = res.transactions
@@ -186,16 +254,17 @@
   async function load(): Promise<void> {
     if (!id) return
     try {
-      const [p, s, txs, a] = await Promise.all([
+      // The transactions window rides `loadTransactions()` so the deep
+      // linked K.4c filters apply to the FIRST fetch too and the guarded
+      // write there stays the single owner of `transactions`/`txTotal`.
+      const [p, s, , a] = await Promise.all([
         portfolioApi.get(id),
         portfolioApi.summary(id),
-        transactionApi.list(id, { limit: txLimit, offset: txOffset }),
+        loadTransactions(),
         assetApi.list(),
       ])
       portfolio = p
       summary = s
-      transactions = txs.transactions
-      txTotal = txs.total
       assets = a
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load portfolio'
@@ -453,6 +522,10 @@
       return txRangeLabel
     },
     gotoTxPage,
+    get txFilters() {
+      return txFilters
+    },
+    setTxFilters,
     openAddTransaction,
     editTransaction,
     get classAlloc() {

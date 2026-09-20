@@ -14,6 +14,8 @@ export const it = {
     /** Etichette generiche dei dialoghi di conferma (es. eliminazione portafoglio). */
     delete: 'Elimina',
     cancel: 'Annulla',
+    /** Chiusura di sheet/dialoghi (es. sheet transazione, K.4c). */
+    close: 'Chiudi',
   },
   nav: {
     main: 'Principale',
@@ -139,6 +141,30 @@ export const it = {
     deleteConfirm: 'Eliminare questo portafoglio? Tutte le sue transazioni andranno perse.',
     deleted: 'Portafoglio eliminato',
     viewAllocation: 'Vedi allocazione completa',
+  },
+  activity: {
+    typeGroup: 'Filtra per tipo di transazione',
+    typeAll: 'Tutte',
+    typeBuy: 'Acquisto',
+    typeSell: 'Vendita',
+    typeDividend: 'Dividendo',
+    typeSplit: 'Split',
+    typeFee: 'Commissione',
+    asset: 'Asset',
+    assetAll: 'Tutti gli asset',
+    assetUnknown: 'Asset (non presente in questo portafoglio)',
+    from: 'Dal',
+    to: 'Al',
+    clearFilters: 'Cancella filtri',
+    emptyFiltered: 'Nessuna transazione corrisponde ai filtri',
+    emptyFilteredHint: 'Prova a estendere le date o a rimuovere un filtro.',
+  },
+  tx: {
+    titleNew: 'Nuova transazione',
+    titleEdit: 'Modifica transazione',
+    deleted: 'Transazione eliminata',
+    undo: 'Annulla',
+    undoFailed: 'Impossibile ripristinare la transazione',
   },
   asset: {
     tabsLabel: 'Sezioni dettaglio asset',

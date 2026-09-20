@@ -175,9 +175,9 @@ export interface Transaction {
 }
 
 /** Envelope of the paginated `GET /portfolios/{id}/transactions` (EPIC I.9,
- * #88): one page of transactions (newest first), the portfolio-wide total
- * count and the `limit`/`offset` the backend actually applied (default
- * limit 20, clamped to a max of 100). */
+ * #88): one page of transactions (newest first), the total count of the
+ * (optionally filtered, K.4c) set and the `limit`/`offset` the backend
+ * actually applied (default limit 20, clamped to a max of 100). */
 export interface TransactionPage {
   transactions: Transaction[]
   total: number
@@ -732,13 +732,28 @@ export const transactionApi = {
   // EPIC I.9 (#88): paginated list returning the `TransactionPage` envelope.
   // `limit`/`offset` are only appended when provided; without them the
   // backend serves its default first page (limit 20, order date desc).
+  // EPIC K.4c adds the optional list filters of
+  // `GET /portfolios/{id}/transactions` (combinable, each omitted when
+  // unset/empty): `type`, `asset_id` (uuid), `from`/`to` (inclusive
+  // `YYYY-MM-DD` calendar-date bounds). `total` reflects the FILTERED count.
   list: (
     portfolioId: string,
-    params?: { limit?: number; offset?: number },
+    params?: {
+      limit?: number
+      offset?: number
+      type?: Transaction['type']
+      asset_id?: string
+      from?: string
+      to?: string
+    },
   ): Promise<TransactionPage> => {
     const query: Record<string, string> = {}
     if (params?.limit !== undefined) query.limit = String(params.limit)
     if (params?.offset !== undefined) query.offset = String(params.offset)
+    if (params?.type) query.type = params.type
+    if (params?.asset_id) query.asset_id = params.asset_id
+    if (params?.from) query.from = params.from
+    if (params?.to) query.to = params.to
     return request<TransactionPage>(`/portfolios/${portfolioId}/transactions`, { params: query })
   },
   create: (portfolioId: string, data: Partial<Transaction>) =>

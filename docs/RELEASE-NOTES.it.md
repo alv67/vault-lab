@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- La scheda Attività del portafoglio ora si può filtrare per tipo di transazione, asset e intervallo di date; i filtri restano nel link, quindi puoi condividere o salvare una vista filtrata e il pulsante indietro la riporta esattamente com'era
+- L'eliminazione di una transazione ora si può annullare direttamente dal toast di conferma (5 secondi); la finestra di conferma dell'eliminazione non c'è più
+- Sul telefono il form della transazione si apre come una sheet dal basso, con gli stessi campi del dialog su desktop
 - La pagina dell'asset ora è divisa in schede Panoramica, Esposizione e Dati, ognuna con un link proprio da condividere o salvare; ticker, dati identificativi e ultima quotazione restano fissi in alto mentre cambi scheda
 - La Panoramica dell'asset ora mostra "Dove è detenuto": quali dei tuoi portafogli possiedono l'asset, con quantità, costo, valore e guadagno/perdita — ogni portafoglio rimanda direttamente alla sua pagina
 - Le azioni sull'asset (aggiorna da Yahoo, recupera lo storico prezzi completo, elimina) ora si trovano nel menu ⋯ dell'header dell'asset, e sono ripetute nella zona pericolosa del tab Dati

@@ -8,6 +8,11 @@
    * `aria-live="polite"` (live regions must exist before content arrives);
    * error toasts additionally carry `role="alert"` so they interrupt.
    *
+   * Optional inline action (EPIC K.4c, decision D11): when a toast carries
+   * an `action`, a real `<button>` renders between the message and the ✕
+   * (keyboard-reachable in DOM order); clicking it runs the handler and
+   * dismisses the toast, so the undo window closes the moment the user acts.
+   *
    * Z-index: toasts sit at the top of the scale in $lib/components/ui/utils.ts
    * (dropdown 20 / drawer 30 / modal 40 / toast 50).
    */
@@ -33,6 +38,18 @@
     >
       <Icon class="mt-0.5 h-4 w-4 shrink-0 {iconColor[t.type]}" />
       <span class="min-w-0 flex-1">{t.message}</span>
+      {#if t.action}
+        <button
+          type="button"
+          onclick={() => {
+            t.action?.onclick()
+            toast.dismiss(t.id)
+          }}
+          class="focus-ring -my-1 shrink-0 rounded-control px-2 py-1 text-sm font-semibold text-accent-text hover:bg-muted"
+        >
+          {t.action.label}
+        </button>
+      {/if}
       <button
         type="button"
         onclick={() => toast.dismiss(t.id)}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,8 +13,8 @@ import (
 type TransactionRepository interface {
 	Create(ctx context.Context, tx *model.Transaction) (*model.Transaction, error)
 	FindByPortfolio(ctx context.Context, portfolioID uuid.UUID) ([]model.TransactionWithAsset, error)
-	FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, limit, offset int) ([]model.TransactionWithAsset, error)
-	CountByPortfolio(ctx context.Context, portfolioID uuid.UUID) (int64, error)
+	FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, filter model.TransactionFilter, limit, offset int) ([]model.TransactionWithAsset, error)
+	CountByPortfolio(ctx context.Context, portfolioID uuid.UUID, filter model.TransactionFilter) (int64, error)
 	FindByPortfoliosAsc(ctx context.Context, portfolioIDs []uuid.UUID) ([]model.TransactionWithAsset, error)
 	MinDateByAsset(ctx context.Context, assetIDs []uuid.UUID) (map[uuid.UUID]time.Time, error)
 	MinDateByCurrency(ctx context.Context) (map[string]time.Time, error)
@@ -162,21 +163,52 @@ func (r *transactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.
 	return txs, nil
 }
 
+// transactionFilterArgs builds the shared WHERE fragment for the filtered
+// paginated read and count. Placeholders are numbered from a trusted
+// counter; only the args slice carries user-supplied values, so the SQL
+// string never interpolates them. Date bounds compare t.date as a calendar
+// date (the column is TIMESTAMPTZ) and are inclusive on both ends.
+func transactionFilterArgs(portfolioID uuid.UUID, f model.TransactionFilter) (string, []any) {
+	where := "t.portfolio_id = $1"
+	args := []any{portfolioID}
+	if f.Type != "" {
+		args = append(args, f.Type)
+		where += fmt.Sprintf(" AND t.type = $%d", len(args))
+	}
+	if f.AssetID != nil {
+		args = append(args, *f.AssetID)
+		where += fmt.Sprintf(" AND t.asset_id = $%d", len(args))
+	}
+	if f.From != nil {
+		args = append(args, *f.From)
+		where += fmt.Sprintf(" AND t.date::date >= $%d::date", len(args))
+	}
+	if f.To != nil {
+		args = append(args, *f.To)
+		where += fmt.Sprintf(" AND t.date::date <= $%d::date", len(args))
+	}
+	return where, args
+}
+
 // FindByPortfolioPage returns one page of a portfolio's transactions with the
-// same projection as FindByPortfolio. The ordering is fully deterministic
-// (date, then creation time, then id — all DESC) so pages never overlap or
-// skip rows when two transactions share a date.
-func (r *transactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, limit, offset int) ([]model.TransactionWithAsset, error) {
-	rows, err := r.db.Query(ctx,
+// same projection as FindByPortfolio, narrowed by the (optional) filter. The
+// ordering is fully deterministic (date, then creation time, then id — all
+// DESC) so pages never overlap or skip rows when two transactions share a
+// date.
+func (r *transactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID uuid.UUID, filter model.TransactionFilter, limit, offset int) ([]model.TransactionWithAsset, error) {
+	where, args := transactionFilterArgs(portfolioID, filter)
+	args = append(args, limit, offset)
+	query := fmt.Sprintf(
 		`SELECT t.id, t.portfolio_id, t.asset_id, a.ticker, a.name, t.type,
 		        t.quantity, t.price, t.fees, t.date, t.notes, t.created_at
 		 FROM transactions t
 		 JOIN assets a ON a.id = t.asset_id
-		 WHERE t.portfolio_id = $1
+		 WHERE %s
 		 ORDER BY t.date DESC, t.created_at DESC, t.id DESC
-		 LIMIT $2 OFFSET $3`,
-		portfolioID, limit, offset,
+		 LIMIT $%d OFFSET $%d`,
+		where, len(args)-1, len(args),
 	)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -197,12 +229,17 @@ func (r *transactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID u
 	return txs, rows.Err()
 }
 
-func (r *transactionRepo) CountByPortfolio(ctx context.Context, portfolioID uuid.UUID) (int64, error) {
+func (r *transactionRepo) CountByPortfolio(ctx context.Context, portfolioID uuid.UUID, filter model.TransactionFilter) (int64, error) {
+	where, args := transactionFilterArgs(portfolioID, filter)
+	query := fmt.Sprintf(
+		`SELECT COUNT(*)
+		 FROM transactions t
+		 JOIN assets a ON a.id = t.asset_id
+		 WHERE %s`,
+		where,
+	)
 	var count int64
-	err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM transactions WHERE portfolio_id = $1`,
-		portfolioID,
-	).Scan(&count)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&count)
 	return count, err
 }
 

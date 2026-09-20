@@ -680,7 +680,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
-| **K.4 Entità → tab** | 🔄 *in corso — K.4a completata (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso).* e K.4b completata (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica).* Restano in K.4: filtri Attività + sheet edit (K.4c), undo toast (D11) | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
+| **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
@@ -907,6 +907,51 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > riservati); etichette tipo centralizzate in `format.ts`
 > (`ASSET_TYPE_LABELS`). **Restano a K.4**: filtri Attività in URL state +
 > editing in sheet + undo toast D11 (K.4c).
+
+> **K.4c — backend filtri elenco transazioni — ✅ completata (questo
+> branch)**: `GET /portfolios/{id}/transactions` accetta ora i parametri
+> opzionali e combinabili `type` (buy/sell/dividend/split/fee), `asset_id`
+> (UUID) e `from`/`to` (date `YYYY-MM-DD` esatte, bordi inclusivi); valori
+> non validi → 400 con il nome del parametro. Il `total` della risposta
+> riflette il conteggio **filtrato** (la paginazione del frontend dice
+> "1–20 di 42" riferito all'insieme filtrato); WHERE SQL dinamica e
+> parametrizzata, ordine/paginazione invariati, chiamate esistenti non
+> toccate. Il frontend K.4c è completato nella nota sotto →.
+
+> **K.4c — frontend: filtri Attività + form sheet + undo — ✅ completata
+> (questo branch)**: la tab Attività (spec §6.2/§6.4, decisioni D4/D11)
+> guadagna la riga di filtri — chip `ui/PeriodChips` per il tipo (Tutte/
+> Acquisto/Vendita/Dividendo/Split/Commissione), `ui/Select` sugli asset
+> registrati nel portafoglio (da `summary.holdings`, chiuse incluse) e input
+> nativi Dal/Al per l'intervallo — interamente **persistita nell'URL**
+> (`?type=sell&asset=<uuid>&from=YYYY-MM-DD&to=YYYY-MM-DD`, codec puro in
+> `routes/portfolios/[id]/tx-filters.ts`): l'URL è l'unica fonte di verità,
+> il layout lo interpreta (getter `txFilters` nel context) e ogni fetch
+> delle transazioni lo rispetta — deep link e reload partono già filtrati,
+> indietro/avanti ripristina la vista esatta, il piè di pagina mostra il
+> totale filtrato. `setTxFilters` scrive con `goto(..., { replaceState,
+> keepFocus, noScroll })` e un watcher sulla firma dei filtri riporta la
+> finestra alla prima pagina filtrata rifetchandola soltanto (via
+> `loadTransactions`, guard monotònico invariato); "Cancella filtri" e uno
+> stato vuoto dedicato (`EmptyState`, copy `activity.*`) chiudono il flusso.
+> `transactionApi.list` passa i nuovi parametri `type`/`asset_id`/`from`/`to`
+> (omessi quando non impostati; `TransactionPage` invariato). **Form
+> transazione responsivo (D4)**: `AddTransactionModal` renderizza gli
+> snippet condivisi `formBody`+`footer` dentro `ui/Modal` da `sm` in su e
+> dentro `ui/Sheet` (bottom sheet) sui telefoni, scelti con lo store
+> `viewport`; campi/validazione/totale live identici, `ui/Sheet` guadagna
+> `closeLabel` opzionale. **Undo sul delete (D11)**: il toast store accetta
+> ora `{ duration, action: { label, onclick } }` e `Toaster` renderizza
+> l'azione come pulsante inline (raggiungibile da tastiera, al click chiude
+> il toast); Elimina nel form agisce subito — niente più `ConfirmDialog` per
+> le transazioni (resta per portafogli/asset/import) — e "Annulla" (5 s)
+> ricrea la riga con `transactionApi.create` sul payload catturato: la
+> ricostruzione produce un **nuovo id** (accettato su scala familiare, i
+> dati economici — data/tipo/importi — sono identici); il refill post-
+> mutazione passa da `reloadAfterMutation`, quindi lista (con filtri
+> attivi), KPI, allocazioni e performance restano sincronizzati. Nuove
+> chiavi i18n EN/IT (shape identici): gruppo `activity.*`, gruppo `tx.*`,
+> `common.close`. Nessuna dipendenza nuova; desktop invariato.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

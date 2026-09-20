@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Features
+- The portfolio Activity tab can now be filtered by transaction type, asset and date range — the filters stay in the link, so you can share or bookmark a filtered view and the back button brings it back exactly as it was
+- Deleting a transaction can now be undone straight from the confirmation toast (5 seconds); the delete-confirmation dialog is gone
+- On phones the transaction form opens as a bottom sheet, with the same fields as the desktop dialog
 - The asset page is now split into Overview, Exposure and Data tabs, each with its own link you can share or bookmark; the ticker, its identity chips and the latest quote stay pinned at the top while you switch tabs
 - The asset Overview now shows "Where held": which of your portfolios hold the asset, with quantity, cost, value and gain/loss — each portfolio links straight to its page
 - Asset actions (update from Yahoo, backfill the full price history, delete) moved into the ⋯ menu in the asset header, and are repeated in the Data tab's danger zone

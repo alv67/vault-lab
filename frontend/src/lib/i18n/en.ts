@@ -19,6 +19,8 @@ export const en = {
     /** Generic confirm-dialog labels (used e.g. by the portfolio delete). */
     delete: 'Delete',
     cancel: 'Cancel',
+    /** Close affordance on sheets/dialogs (e.g. the transaction sheet, K.4c). */
+    close: 'Close',
   },
   nav: {
     /** Accessible name of the sidebar/drawer `<nav>` landmark. */
@@ -195,6 +197,48 @@ export const en = {
     deleted: 'Portfolio deleted',
     /** Overview allocation digest → link to the Allocation tab. */
     viewAllocation: 'View full allocation',
+  },
+  /**
+   * Portfolio Activity tab filter row (EPIC K.4c, spec §6.2/§8.2): type
+   * chips, asset picker and date range, persisted in the tab's URL query.
+   * The "Transactions" card heading predates the dictionary and stays
+   * hardcoded until the page's migration sweep (progressive, D1).
+   */
+  activity: {
+    /** Accessible name of the transaction-type chip radiogroup. */
+    typeGroup: 'Filter by transaction type',
+    typeAll: 'All',
+    typeBuy: 'Buy',
+    typeSell: 'Sell',
+    typeDividend: 'Dividend',
+    typeSplit: 'Split',
+    typeFee: 'Fee',
+    /** Visible inline label of the asset picker. */
+    asset: 'Asset',
+    assetAll: 'All assets',
+    /** Placeholder row for a deep-linked asset outside this portfolio. */
+    assetUnknown: 'Asset (not in this portfolio)',
+    /** Visible inline labels of the inclusive date-range inputs. */
+    from: 'From',
+    to: 'To',
+    clearFilters: 'Clear filters',
+    /** Filtered-empty state (the row exists but matches no filter). */
+    emptyFiltered: 'No transactions match these filters',
+    emptyFilteredHint: 'Try widening the date range or clearing a filter.',
+  },
+  /**
+   * Transaction form + delete feedback (EPIC K.4c): titles are shared by
+   * the `ui/Modal` (≥ `sm`) and the `ui/Sheet` (phone) containers; the
+   * delete strings drive the undo-based flow (decision D11). The form's
+   * inner field/button copy predates the dictionary (progressive sweep).
+   */
+  tx: {
+    titleNew: 'New Transaction',
+    titleEdit: 'Edit Transaction',
+    deleted: 'Transaction deleted',
+    /** Undo action inside the delete toast (5 s window). */
+    undo: 'Undo',
+    undoFailed: 'The transaction could not be restored',
   },
   /**
    * Asset-detail shell (EPIC K.4b, spec §6.3): sticky-header chrome, the

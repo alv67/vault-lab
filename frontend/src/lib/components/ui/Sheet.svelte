@@ -27,6 +27,7 @@
     onClose,
     title = undefined,
     class: className = '',
+    closeLabel = 'Close panel',
     headerActions = undefined,
     footer = undefined,
     children = undefined,
@@ -36,6 +37,9 @@
     onClose: () => void
     title?: string
     class?: string
+    /** Accessible name of the ✕ button (callers pass `t('common.close')`;
+     * defaults keep the pre-K.4c English label for untuned consumers). */
+    closeLabel?: string
     /** Snippet between title and ✕ (e.g. a secondary action). */
     headerActions?: Snippet
     footer?: Snippet
@@ -100,7 +104,7 @@
         {/if}
         <div class="flex shrink-0 items-center gap-1">
           {@render headerActions?.()}
-          <Button variant="ghost" size="icon" onclick={onClose} aria-label="Close panel">
+          <Button variant="ghost" size="icon" onclick={onClose} aria-label={closeLabel}>
             <X class="h-5 w-5" />
           </Button>
         </div>

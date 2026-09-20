@@ -261,7 +261,13 @@ func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
 		offset = v
 	}
 
-	page, err := h.svc.ListTransactionsPaged(r.Context(), portfolioID, claims.UserID, limit, offset)
+	filter, err := model.ParseTransactionFilter(r.URL.Query())
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	page, err := h.svc.ListTransactionsPaged(r.Context(), portfolioID, claims.UserID, limit, offset, filter)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrForbidden):
