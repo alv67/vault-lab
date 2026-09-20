@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- La pagina del portafoglio ora è divisa in schede Panoramica, Posizioni, Attività e Allocazione, ognuna con un link proprio da condividere o salvare; una fascia compatta con valore e utile resta fissa in alto mentre cambi scheda
+- Le azioni sul portafoglio (esporta, importa, elimina) ora si trovano nel menu ⋯ dell'header del portafoglio, accanto al pulsante "Aggiungi transazione" sempre visibile
 - Ogni card dei portafogli nella dashboard ora mostra un piccolo grafico dell'andamento del valore accanto ai numeri attuali
 - La dashboard ora si apre con il tuo valore netto come numero principale, un grafico valore contro investito con intervalli 1Y/3Y/TUTTO, un dettaglio attivo/chiuso apribile su richiesta, l'orario di aggiornamento dei prezzi e una nota sulla qualità dei dati quando qualcosa richiede attenzione (ad esempio posizioni escluse per il cambio mancante)
 - Su un vault nuovo la dashboard mostra una checklist guidata di primo avvio: crea un portafoglio, aggiungi un asset, registra una transazione — ogni passo rimanda direttamente alla pagina giusta

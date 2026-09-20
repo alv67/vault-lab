@@ -194,7 +194,13 @@ frontend/
         ├── assets/         # elenco titoli + creazione (autocomplete)
         ├── assets/[id]/    # dettaglio asset (B.10)
         ├── portfolios/     # elenco portafogli + CRUD + import
-        ├── portfolios/[id]/ # dettaglio portafoglio (transazioni, grafici)
+        ├── portfolios/[id]/ # shell del dettaglio portafoglio (K.4a): header
+        │                    # sticky, strip KPI, tab; tutto il data loading
+        │                    # + context condiviso
+        │   ├── +page.svelte        #   tab Panoramica (indice)
+        │   ├── positions/          #   tab Posizioni
+        │   ├── activity/           #   tab Attività (transazioni paginate)
+        │   └── allocation/         #   tab Allocazione
         ├── settings/       # profilo, password, whitelist valute
         └── admin/health/   # health dashboard dei prezzi — "Dati e sincronizzazione" (D7)
 ```
@@ -971,70 +977,125 @@ Endpoint chiamati: `portfolioApi.list()`, `settingsApi.listCurrencies()`.
   o **"overwrite"** (su un portafoglio esistente); dopo un import riuscito
   chiama `assetApi.sync()` così gli asset importati ricevono il backfill dello
   storico.
-- **Export** vive nella pagina di dettaglio (sotto).
+- L'**Export** vive nella pagina di dettaglio (nel menu `⋯` dell'header, sotto).
 
-### `/portfolios/[id]` — Dettaglio portafoglio (`routes/portfolios/[id]/+page.svelte`)
+### `/portfolios/[id]` — Dettaglio portafoglio (sotto-route a tab, EPIC K.4a)
 
-Endpoint chiamati: `portfolioApi.get`, `.summary`, `.performanceBuckets`,
-`.history`, `.classAllocation`, `.geographyAllocation`, `.sectorAllocation`,
-`transactionApi.list(id, { limit, offset })`, `assetApi.list`, poi il
-`pricesApi.refresh(id)` di sessione + summary fresco + refill dei bucket di
-performance.
+Struttura (spec di redesign §4.2/§6.2): il vecchio unico pagina lunga è
+diviso in una shell condivisa `routes/portfolios/[id]/+layout.svelte` +
+quattro tab profondamente linkabili, ognuna una propria route —
+**Panoramica** `+page.svelte` (indice), **Posizioni**
+`positions/+page.svelte`, **Attività** `activity/+page.svelte` e
+**Allocazione** `allocation/+page.svelte`. Le tab sono URL reali, non stato
+locale: condivisibili e salvabil, il pulsante indietro funziona e aprire
+direttamente `/portfolios/7/activity` carica comunque i dati della shell e
+mostra la tab Attività nello stato attivo. Le azioni sul portafoglio
+(export, import, eliminazione) vivono nel menu `⋯` dell'header, non in una
+quinta tab.
 
-- KPI: la `InvestmentsTable` condivisa (roll-up Active/Closed da `summary.active`
-  / `summary.closed`, in valuta portafoglio) più una riga attenuata con il numero
-  di asset (EPIC I.6 #85; sostituisce le vecchie `StatCard`
-  Valore/Realizzato/Gain-Loss/Asset).
-- Tabella **Positions** (`summary.holdings`, ticker che linka a
-  `/assets/{id}`, posizioni chiuse con badge "Closed" e `-`).
-- Card **Performance** (EPIC I.8, #87): la performance percentuale del
+Condivisione dei dati: **il layout possiede ogni fetch** ed espone lo stato
+reattivo + le azioni (paginazione, aggiungi/modifica transazione) alle tab
+tramite un **context** tipizzato di Svelte 5 (`context.ts`: `createContext` +
+`PortfolioPageContext`). I membri di stato sono getter che fanno da proxy al
+`$state` del layout, quindi le tab li osservano come fossero propri; le tab
+non rifetchano mai, derivano soltanto i dati di vista (righe posizioni, barre
+di esposizione, note di copertura) dai payload condivisi. Il layout resta
+montato tra una tab e l'altra: header, dati e finestra di transazioni
+sopravvivono alla navigazione.
+
+Endpoint chiamati (invariati): `portfolioApi.get`, `.summary`,
+`.performanceBuckets`, `.history`, `.classAllocation`, `.geographyAllocation`,
+`.sectorAllocation`, `transactionApi.list(id, { limit, offset })`,
+`assetApi.list`, poi il `pricesApi.refresh(id)` di sessione + summary fresco
++ refill dei bucket di performance; l'header aggiunge `portfolioApi.exportDoc`,
+`.delete` (menu ⋯) e riusa `ImportPortfolioModal` (import → refill completo
+della shell, transazioni riportate alla prima pagina).
+
+L'header sticky della shell (sotto l'header app, `top-14`):
+
+- Riga identità: link indietro a `/portfolios`, nome del portafoglio +
+  valuta (e descrizione se presente), l'azione primaria `[+ Transazione]`
+  (apre il modal, disponibile su ogni tab) e il menu `⋯`: **Esporta**
+  (`portfolioApi.exportDoc(id)` → download del file JSON
+  `vault-lab-<nome>.json` — invariato), **Importa** ed **Elimina** (dialogo
+  di conferma → API → toast → ritorno alla lista). All'import modal viene
+  dato *questo* portafoglio come unico target di sovrascrittura (il picker
+  completo resta nella pagina lista) e l'opzione "crea come nuovo" rimane.
+- Strip KPI (spec §6.2 "valore + P/L sempre visibili"): numero principale
+  `summary.active.value` in valuta portafoglio, P/L firmato con due
+  `PnlValue` (D6) e chip muted investito / realizzato / dividendi — la
+  stessa composizione della zona A dell'hero vault (K.3a), in versione
+  portafoglio.
+- Barra `ui/Tabs` (K.1c): Panoramica / Posizioni / Attività / Allocazione,
+  stato attivo derivato dalla route, scorribile orizzontalmente sui
+  telefoni; etichette e copia dell'header/menu passano da `t()`
+  (`portfolio.*`, D1).
+
+TAB **Panoramica** (i widget che la vecchia pagina impilava, tolti posizioni
+e transazioni, migrate alle rispettive tab):
+
+- Card KPI: la condivisa `InvestmentsTable` (roll-up Active/Closed da
+  `summary.active` / `summary.closed`, in valuta portafoglio) più una riga
+  attenuata con il numero di asset (EPIC I.6 #85).
+- Card **Performance** (EPIC I.8 #87): la performance percentuale del
   portafoglio, che riusa il `PerformanceChart` condiviso (barre `return`
   verdi/rosse + linea `twr` cumulata, entrambe percentuali). Una riga di
   intestazione contiene il titolo e un `SegmentedControl` ("Monthly" /
-  "Annual") legato a uno `$state` `granularity`; i bucket arrivano da
+  "Annual") la cui coppia getter/setter pilota lo `$state` `granularity` di
+  proprietà del layout; i bucket arrivano da
   `performanceBuckets(id, granularity)`
   (`GET /portfolios/{id}/performance/buckets`, nella **valuta del
   portafoglio**). Replica il ciclo di vita della card della dashboard: fetch
   al mount (default `month`), refill a ogni cambio del selettore con id di
   richiesta monotònico (le risposte obsolete vengono scartate), `Spinner` in
-  caricamento e stato vuoto "No data" del grafico in caso di errore. Viene
-  aggiornata anche dopo il `pricesApi.refresh(id)` di sessione e dopo ogni
-  mutazione di transazioni (la POST svuota la cache GET e i nuovi flussi
-  spostano i bucket).
+  caricamento e stato vuoto "No data" del grafico in caso di errore. Il
+  fetch vive nel layout perché il `pricesApi.refresh(id)` di sessione e ogni
+  mutazione di transazioni rifetchano i bucket da qualunque tab sia aperta
+  (E.9).
 - **Performance history** (vista secondaria, mantenuta sotto la nuova card
   dall'EPIC I.8 #87): `PositionChart` con un menu a tendina per passare dal
-  portafoglio al singolo asset (gli split sono disegnati sul grafico).
-- **Allocazione** (EPIC I.7 #86, replica la card "Allocazione complessiva"
-  della dashboard): una griglia `lg:grid-cols-2` di pannelli nella **valuta
-  del portafoglio** — **Classi di attività** (`ClassDonut` su
-  `classAllocation()`, chiavi delle classi mappate con `ASSET_CLASS_LABELS`
-  dal componente) e le barre orizzontali **Settori**, **Regioni** e **Paesi**,
-  solo equity (`ExposureBarChart` sui `sectors` di `sectorAllocation()` e sui
-  `regions` + `countries` di `geographyAllocation()` — il pannello paesi usa
-  `labelFor={countryDisplayName}` e `maxVisibleRows={10}`, esattamente come la
-  dashboard). I pannelli equity ricevono i metadati di copertura
-  `covered_value`/`excluded_value` e mostrano la didascalia "Universo
-  azionario: X% del portafoglio" quando ci sono holding non azionarie
-  escluse. Ogni endpoint è isolato nel suo try/catch: in caso di errore i suoi
-  pannelli mostrano "non disponibile" senza bloccare la sezione né il resto
-  della pagina (sostituisce la vecchia card ciambella `ExposurePie` + tabella
-  "Allocazione per classi" e le card `GeographyChart` / `SectorChart`
-  affiancate).
-- **Transazioni**: tabella paginata (data, asset, badge del tipo, quantità,
-  prezzo, totale), 20 righe per pagina (`$state` `txPage`/`txLimit`/`txOffset`
-  /`txTotal`, EPIC I.9 #88): la finestra viene caricata con
-  `transactionApi.list(id, { limit, offset })` e il piè di pagina sotto la
-  tabella — la stessa disposizione Previous/Next + intervallo "1–20 of 137"
-  della pagina health admin — ricarica solo le transazioni, mai l'intera
-  pagina. Form di aggiunta/modifica per **buy / sell / dividend** (il
-  dividendo chiede l'importo totale invece di quantità × prezzo; la quantità
-  viene inviata come `1`), eliminazione con conferma. Dopo ogni mutazione
-  vengono rifetchati la pagina CORRENTE delle transazioni (col totale; se
-  cancellando l'ultima riga dell'ultima pagina la finestra resta vuota, si
-  retrocede di una pagina con l'offset clampato al totale appena ricevuto),
-  il summary, lo storico, i bucket della card Performance e le allocazioni.
-- **Export**: `portfolioApi.exportDoc(id)` → download del file JSON
-  (`vault-lab-<nome>.json`).
+  portafoglio al singolo asset (gli split sono disegnati sul grafico); la
+  selezione è stato locale della tab.
+- **Digest allocazione** (nuovo in K.4a): la `ClassDonut` sul payload
+  condiviso delle classi (con il fallback "non disponibile" quando quello
+  endpoint fallisce) più un link all'Allocazione completa.
+
+TAB **Posizioni**: la tabella completa delle holding (`summary.holdings`,
+ticker che linka a `/assets/{id}`, posizioni chiuse con badge "Closed" e
+`-`) con le stesse colonne/prop di prima e la stessa riga "No positions"
+quando è vuota.
+
+TAB **Attività**: tabella paginata (data, asset, badge del tipo, quantità,
+prezzo, totale), 20 righe per pagina (`txPage`/`txLimit`/`txOffset`/`txTotal`
+— EPIC I.9 #88, ora di proprietà del layout, così la finestra corrente
+sopravvive ai cambi di tab): la finestra viene caricata con
+`transactionApi.list(id, { limit, offset })` e il piè di pagina sotto la
+tabella — la stessa disposizione Previous/Next + intervallo "1–20 of 137"
+della pagina health admin — ricarica solo le transazioni, mai l'intera
+pagina. Form di aggiunta/modifica per **buy / sell / dividend** (il
+dividendo chiede l'importo totale invece di quantità × prezzo; la quantità
+viene inviata come `1`), eliminazione con conferma — il modal è montato una
+volta nel layout. Dopo ogni mutazione vengono rifetchati la pagina CORRENTE
+delle transazioni (col totale; se cancellando l'ultima riga dell'ultima
+pagina la finestra resta vuota, si retrocede di una pagina con l'offset
+clampato al totale appena ricevuto), il summary, lo storico, i bucket della
+card Performance e le allocazioni. Filtri ed editing in sheet arrivano con
+K.4c.
+
+TAB **Allocazione** (EPIC I.7 #86, replica la card "Allocazione complessiva"
+della dashboard): una griglia `lg:grid-cols-2` di pannelli nella **valuta del
+portafoglio** — **Classi di attività** (`ClassDonut` su `classAllocation()`,
+chiavi delle classi mappate con `ASSET_CLASS_LABELS` dal componente) e le
+barre orizzontali **Settori**, **Regioni** e **Paesi**, solo equity
+(`ExposureBarChart` sui `sectors` di `sectorAllocation()` e sui `regions` +
+`countries` di `geographyAllocation()` — il pannello paesi usa
+`labelFor={countryDisplayName}` e `maxVisibleRows={10}`, esattamente come la
+dashboard). I pannelli equity ricevono i metadati di copertura
+`covered_value`/`excluded_value` e mostrano la didascalia "Universo
+azionario: X% del portafoglio" quando ci sono holding non azionarie escluse.
+Ogni endpoint è isolato nel suo try/catch: in caso di errore i suoi pannelli
+mostrano "non disponibile" senza bloccare la sezione né il resto della
+pagina.
 
 ### `/assets` — Asset (`routes/assets/+page.svelte`)
 

@@ -680,7 +680,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
-| **K.4 Entità → tab** | Sotto-route portfolio/asset (Overview/Positions/Activity/Allocation/Data), filtri+sheet edit, undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
+| **K.4 Entità → tab** | 🔄 *in corso — K.4a completata (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso).* Restano in K.4: tab dell'asset (K.4b: Overview/Exposure/Data), filtri Attività + sheet edit (K.4c), undo toast (D11), "Where held" | inventory holdings per-portafoglio (derivabile) |
 | **K.5 Power layer** | ⌘K command palette, drill-down drawer, "view as table", toggle CVD (D6) | endpoint contribuzione drill-down (`dim+key` → asset) |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
@@ -826,6 +826,36 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > all" resta rinviato (non esiste ancora una vista allocazione dedicata;
 > la card "Allocazione complessiva" è invariata). Nuove chiavi i18n EN/IT
 > (shape identici): `sparkline.trend`, `sparkline.valueTrend`.
+
+> **K.4a — Dettaglio portafoglio → tab annidati — ✅ completata (questo
+> branch)**: la pagina unica `routes/portfolios/[id]/+page.svelte` (568 righe)
+> è divisa in una shell `+layout.svelte` + quattro tab nested-route (spec
+> §4.2/§6.2): **Overview** (`+page.svelte`: card `InvestmentsTable` + conteggio
+> asset, card Performance I.8 col toggle Mensile/Annuale, "Performance
+> history" `PositionChart`, digest allocazione `ClassDonut` + link),
+> **Positions** (`positions/`: tabella holding completa), **Activity**
+> (`activity/`: tabella transazioni paginata I.9, piè di pagina Previous/Next
+> invariato), **Allocation** (`allocation/`: griglia I.7 ciambella classi +
+> barre regioni/settori/paesi con stati d'errore isolati). Le tab sono URL
+> reali (`ui/Tabs` K.1c, stato attivo derivato dalla route, scroll orizzontale
+> su telefono): deep-link e pulsante indietro funzionano; le azioni del
+> portafoglio (export, import — con *questo* portafoglio come unico target di
+> sovrascrittura — ed elimina con conferma + redirect alla lista) vivono nel
+> menu `⋯` dell'header, non in una quinta tab. **Condivisione dati**: il
+> layout possiede ogni fetch (portfolio, summary, finestra transazioni, bucket
+> TWR, storico, tre allocazioni, refresh prezzi una-volta-per-sessione +
+> refill E.9 post-mutazione) e lo espone tramite **context** tipizzato Svelte 5
+> (`context.ts`: `createContext`, membri in getter che fanno proxy al `$state`
+> del layout); le tab non rifetchano nulla e il layout restando montato
+> conserva dati e finestra di paginazione tra i cambi di tab. Header sticky:
+> link indietro, nome + (valuta), descrizione, `[+ Transazione]`, strip KPI
+> (valore + `PnlValue` + chip investito/realizzato/dividendi in valuta
+> portafoglio, composizione dell'hero K.3a). Nessuna API o logica di business
+> toccata; nessuna dipendenza nuova. Nuove chiavi i18n EN/IT (shape identici):
+> gruppo `portfolio.*` (etichette tab, back, azioni header/menu, conferma
+> eliminazione, link digest) e `common.delete`/`common.cancel`. **Restano a
+> K.4**: tab dell'asset (K.4b), filtri Attività in URL state + editing in
+> sheet + undo toast D11 (K.4c).
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Features
+- The portfolio page is now split into Overview, Positions, Activity and Allocation tabs, each with its own link you can share or bookmark; a compact value + P/L strip stays pinned at the top while you switch tabs
+- Portfolio actions (export, import, delete) moved into the ⋯ menu in the portfolio header, next to the always-visible "Add transaction" button
 - Each portfolio card on the dashboard now shows a small chart of its value trend alongside the current figures
 - The dashboard now opens with your net value as a single headline figure, a value-vs-invested chart with 1Y/3Y/ALL ranges, a breakdown you can expand on demand, a "prices as of" freshness stamp, and a data-quality note when something needs attention (like holdings excluded for a missing exchange rate)
 - On a fresh vault the dashboard shows a guided first-run checklist: create a portfolio, add an asset, record a transaction — each step links straight to the right page

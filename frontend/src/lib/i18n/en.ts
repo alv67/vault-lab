@@ -16,6 +16,9 @@
 export const en = {
   common: {
     language: 'Language',
+    /** Generic confirm-dialog labels (used e.g. by the portfolio delete). */
+    delete: 'Delete',
+    cancel: 'Cancel',
   },
   nav: {
     /** Accessible name of the sidebar/drawer `<nav>` landmark. */
@@ -167,6 +170,31 @@ export const en = {
     trend: 'Value trend',
     /** Per-card aria-label with the portfolio name interpolated. */
     valueTrend: '{name} value trend',
+  },
+  /**
+   * Portfolio-detail shell (EPIC K.4a, spec §6.2): sticky-header chrome and
+   * the four tier-2 tabs. Card/section copy that predates the dictionary
+   * stays hardcoded until the page's migration sweep (progressive, D1).
+   */
+  portfolio: {
+    /** Accessible name of the portfolio tab bar. */
+    tabsLabel: 'Portfolio sections',
+    tabOverview: 'Overview',
+    tabPositions: 'Positions',
+    tabActivity: 'Activity',
+    tabAllocation: 'Allocation',
+    /** Back link in the sticky header, to the portfolios list. */
+    back: 'All portfolios',
+    addTransaction: 'Add transaction',
+    /** Accessible name of the `⋯` actions menu in the sticky header. */
+    actionsMenu: 'Portfolio actions',
+    export: 'Export',
+    import: 'Import',
+    delete: 'Delete portfolio',
+    deleteConfirm: 'Delete this portfolio? All its transactions will be lost.',
+    deleted: 'Portfolio deleted',
+    /** Overview allocation digest → link to the Allocation tab. */
+    viewAllocation: 'View full allocation',
   },
 }
 

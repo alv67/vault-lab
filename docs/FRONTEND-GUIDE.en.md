@@ -185,7 +185,12 @@ frontend/
         ├── assets/         # securities list + creation (autocomplete)
         ├── assets/[id]/    # asset detail (B.10)
         ├── portfolios/     # portfolios list + CRUD + import
-        ├── portfolios/[id]/ # portfolio detail (transactions, charts)
+        ├── portfolios/[id]/ # portfolio detail shell (K.4a): sticky header,
+        │                    # KPI strip, tabs; all data loading + context
+        │   ├── +page.svelte        #   Overview tab (index)
+        │   ├── positions/          #   Positions tab
+        │   ├── activity/           #   Activity tab (paginated transactions)
+        │   └── allocation/         #   Allocation tab
         ├── settings/       # profile, password, currency whitelist
         └── admin/health/   # price-sync health dashboard — "Data & Sync" (D7)
 ```
@@ -931,66 +936,117 @@ Called endpoints: `portfolioApi.list()`, `settingsApi.listCurrencies()`.
   and imports it in mode **"new"** (with a chosen name) or **"overwrite"**
   (over an existing portfolio); after a successful import it calls
   `assetApi.sync()` so the imported assets get their history backfilled.
-- **Export** lives on the detail page (below).
+- **Export** lives on the detail page (in its `⋯` header menu, below).
 
-### `/portfolios/[id]` — Portfolio detail (`routes/portfolios/[id]/+page.svelte`)
+### `/portfolios/[id]` — Portfolio detail (nested tab routes, EPIC K.4a)
 
-Called endpoints: `portfolioApi.get`, `.summary`, `.performanceBuckets`,
-`.history`, `.classAllocation`, `.geographyAllocation`, `.sectorAllocation`,
-`transactionApi.list(id, { limit, offset })`, `assetApi.list`, then the session
-`pricesApi.refresh(id)` + fresh summary + a performance-buckets refetch.
+Structure (redesign spec §4.2/§6.2): the old single long page is split into
+a shared shell `routes/portfolios/[id]/+layout.svelte` + four deep-linkable
+tab pages, each its own route — **Overview** `+page.svelte` (index),
+**Positions** `positions/+page.svelte`, **Activity** `activity/+page.svelte`
+and **Allocation** `allocation/+page.svelte`. Tabs are real URLs, not local
+state: they are shareable/bookmarkable, the back button behaves, and opening
+`/portfolios/7/activity` directly still loads the shell data and renders the
+Activity tab in its active state. Portfolio-level actions (export, import,
+delete) live in the `⋯` menu of the header, not in a fifth tab.
 
-- KPI: the shared `InvestmentsTable` card (Active/Closed roll-ups from
-  `summary.active` / `summary.closed`, in the portfolio currency) plus a muted
-  asset-count line (EPIC I.6 #85; replaced the old Value/Realized/Open G-L/Assets
-  `StatCard`s).
-- **Positions** table (`summary.holdings`, ticker linking to `/assets/{id}`,
-  closed positions shown with a "Closed" badge and `-`).
-- **Performance** card (EPIC I.8, #87): the portfolio's own percentage
-  performance, reusing the shared `PerformanceChart` (green/red `return` bars
-  + the cumulative `twr` line, both pure percentages). A header row holds the
-  title and a `SegmentedControl` ("Monthly" / "Annual") bound to a
-  `granularity` `$state`; the buckets come from
-  `performanceBuckets(id, granularity)`
-  (`GET /portfolios/{id}/performance/buckets`, in the **portfolio currency**).
-  It mirrors the dashboard card's lifecycle: fetched on mount (default
-  `month`), refetched on every toggle change guarded by a monotonic request id
-  (stale responses discarded), a `Spinner` while loading and the chart's "No
-  data" empty state on failure. It is refreshed after the session
-  `pricesApi.refresh(id)` and after any transaction mutation (the POST clears
-  the GET cache and new flows move the buckets).
-- **Performance history** (secondary view, kept below the new card since
-  EPIC I.8 #87): `PositionChart` with a dropdown to switch between the
-  portfolio and each asset (splits drawn on the chart).
-- **Allocazione** (EPIC I.7 #86, mirrors the dashboard "Allocazione
-  complessiva" card): a `lg:grid-cols-2` grid of panels in the **portfolio
-  currency** — **Classi di attività** (`ClassDonut` over `classAllocation()`,
-  class keys mapped through `ASSET_CLASS_LABELS` by the component) and the
-  equity-only **Settori**, **Regioni** and **Paesi** horizontal bars
-  (`ExposureBarChart` over `sectorAllocation()`'s `sectors` and
-  `geographyAllocation()`'s `regions` + `countries` — the country panel uses
-  `labelFor={countryDisplayName}` and `maxVisibleRows={10}`, exactly like the
-  dashboard). The equity panels receive the
-  `covered_value`/`excluded_value` coverage metadata and show the
-  "Universo azionario: X% del portafoglio" note when non-equity holdings are
-  excluded. Each endpoint is isolated in its own try/catch: on failure its
-  panels show "non disponibile" without blocking the section or the rest of
-  the page (replaces the old `ExposurePie` class donut + table card and the
-  `GeographyChart` / `SectorChart` cards).
-- **Transactions**: paginated table (date, asset, type badge, quantity, price,
-  total), 20 rows per page (`txPage`/`txLimit`/`txOffset`/`txTotal` `$state`,
-  EPIC I.9 #88): the window is fetched with
-  `transactionApi.list(id, { limit, offset })` and the footer under the table —
-  same Previous/Next + "1–20 of 137" range layout as the admin health page —
-  only refetches the transactions, never the whole page. Add/edit form for
-  **buy / sell / dividend** (dividend asks the total amount instead of
-  quantity × price; quantity is sent as `1`), delete with confirm. After each
-  mutation the CURRENT transactions page (plus the total; if deleting the last
-  row of the last page empties the window the page steps back to the previous
-  one, clamped to the fresh total), the summary, the history, the Performance
-  card buckets and the allocations are refetched.
-- **Export**: `portfolioApi.exportDoc(id)` → JSON file download
-  (`vault-lab-<name>.json`).
+Data sharing: the **layout owns every fetch** and exposes the reactive
+state + actions (pagination, add/edit transaction) to the tab pages through
+a typed Svelte 5 **context** (`context.ts`: `createContext` +
+`PortfolioPageContext`). The state members are getters proxying the layout's
+`$state`, so tabs track them like their own; tabs never fetch, they only
+re-derive view data (position rows, exposure bar rows, coverage notes) from
+the shared payloads. The layout stays mounted across tab switches, so the
+header, the data and the transactions page survive navigation.
+
+Called endpoints (unchanged): `portfolioApi.get`, `.summary`,
+`.performanceBuckets`, `.history`, `.classAllocation`, `.geographyAllocation`,
+`.sectorAllocation`, `transactionApi.list(id, { limit, offset })`,
+`assetApi.list`, then the session `pricesApi.refresh(id)` + fresh summary + a
+performance-buckets refetch; the header adds `portfolioApi.exportDoc`,
+`.delete` (⋯ menu) and reuses `ImportPortfolioModal` (import → full shell
+reload, transactions reset to the first page).
+
+The sticky shell header (below the app header, `top-14`):
+
+- Identity row: back link to `/portfolios`, portfolio name + currency (and
+  description when present), the `[+ Transaction]` primary action (opens the
+  modal, available on every tab) and the `⋯` actions menu: **Export**
+  (`portfolioApi.exportDoc(id)` → JSON file download, `vault-lab-<name>.json`
+  — unchanged), **Import** and **Delete** (confirm dialog → API → toast →
+  back to the list). The import modal is given *this* portfolio as its only
+  overwrite target (the all-portfolios picker stays on the list page) and
+  still offers "create as new".
+- KPI strip (spec §6.2 "value + P/L always visible"): headline
+  `summary.active.value` in the portfolio currency, signed P/L via two
+  `PnlValue`s (D6) and muted invested / realized / dividends chips — the
+  same composition as the vault hero zone A (K.3a), portfolio-scoped.
+- `ui/Tabs` (K.1c) bar: Overview / Positions / Activity / Allocation,
+  route-derived active state, horizontally scrollable on phones; labels and
+  the header/menu copy go through `t()` (`portfolio.*`, D1).
+
+TAB **Overview** (the widgets the old page stacked, minus positions and
+transactions which moved to their tabs):
+
+- KPI card: the shared `InvestmentsTable` (Active/Closed roll-ups from
+  `summary.active` / `summary.closed`, in the portfolio currency) plus a
+  muted asset-count line (EPIC I.6 #85; replaced the old
+  Value/Realized/Open G-L/Assets `StatCard`s).
+- **Performance** card (EPIC I.8 #87): the portfolio's own percentage
+  performance, reusing the shared `PerformanceChart` (green/red `return`
+  bars + the cumulative `twr` line, both pure percentages). A header row holds
+  the title and a `SegmentedControl` ("Monthly" / "Annual") whose
+  getter/setter pair drives the layout-owned `granularity` `$state`; the
+  buckets come from `performanceBuckets(id, granularity)`
+  (`GET /portfolios/{id}/performance/buckets`, in the **portfolio
+  currency**). It mirrors the dashboard card's lifecycle: fetched on mount
+  (default `month`), refetched on every toggle change guarded by a monotonic
+  request id (stale responses discarded), a `Spinner` while loading and the
+  chart's "No data" empty state on failure. The fetch lives in the layout
+  because the session `pricesApi.refresh(id)` and any transaction mutation
+  refetch the buckets from whichever tab is open (E.9).
+- **Performance history** (secondary view, kept below the percentage chart
+  since EPIC I.8 #87): `PositionChart` with a dropdown to switch between the
+  portfolio and each asset (splits drawn on the chart); the selection is
+  local state of this tab.
+- **Allocation digest** (new in K.4a): the `ClassDonut` over the shared
+  class-allocation payload (same "non disponibile" fallback when that
+  endpoint fails) plus a link to the full Allocation tab.
+
+TAB **Positions**: the full holdings table (`summary.holdings`, ticker
+linking to `/assets/{id}`, closed positions shown with a "Closed" badge and
+`-`) with the previous columns/props, and the same "No positions" line when
+empty.
+
+TAB **Activity**: paginated table (date, asset, type badge, quantity, price,
+total), 20 rows per page (`txPage`/`txLimit`/`txOffset`/`txTotal` — EPIC I.9
+#88, now layout-owned, so the current window survives tab switches): the
+window is fetched with `transactionApi.list(id, { limit, offset })` and the
+footer under the table — same Previous/Next + "1–20 of 137" range layout as
+the admin health page — only refetches the transactions, never the whole
+portfolio. Add/edit form for **buy / sell / dividend** (dividend asks the
+total amount instead of quantity × price; quantity is sent as `1`), delete
+with confirm — the modal is mounted once in the layout. After each mutation
+the CURRENT transactions page (plus the total; if deleting the last row of
+the last page empties the window the page steps back to the previous one,
+clamped to the fresh total), the summary, the history, the Performance card
+buckets and the allocations are refetched. Filters and sheet-based editing
+are planned for K.4c.
+
+TAB **Allocation** (EPIC I.7 #86, mirrors the dashboard "Allocazione
+complessiva" card): a `lg:grid-cols-2` grid of panels in the **portfolio
+currency** — **Classi di attività** (`ClassDonut` over `classAllocation()`,
+class keys mapped through `ASSET_CLASS_LABELS` by the component) and the
+equity-only **Settori**, **Regioni** and **Paesi** horizontal bars
+(`ExposureBarChart` over `sectorAllocation()`'s `sectors` and
+`geographyAllocation()`'s `regions` + `countries` — the country panel uses
+`labelFor={countryDisplayName}` and `maxVisibleRows={10}`, exactly like the
+dashboard). The equity panels receive the
+`covered_value`/`excluded_value` coverage metadata and show the
+"Universo azionario: X% del portafoglio" note when non-equity holdings are
+excluded. Each endpoint is isolated in its own try/catch: on failure its
+panels show "non disponibile" without blocking the section or the rest of
+the page.
 
 ### `/assets` — Assets (`routes/assets/+page.svelte`)
 

@@ -11,6 +11,9 @@ import type { Dictionary } from './en'
 export const it = {
   common: {
     language: 'Lingua',
+    /** Etichette generiche dei dialoghi di conferma (es. eliminazione portafoglio). */
+    delete: 'Elimina',
+    cancel: 'Annulla',
   },
   nav: {
     main: 'Principale',
@@ -120,5 +123,21 @@ export const it = {
   sparkline: {
     trend: 'Andamento del valore',
     valueTrend: 'Andamento del valore di {name}',
+  },
+  portfolio: {
+    tabsLabel: 'Sezioni del portafoglio',
+    tabOverview: 'Panoramica',
+    tabPositions: 'Posizioni',
+    tabActivity: 'Attività',
+    tabAllocation: 'Allocazione',
+    back: 'Tutti i portafogli',
+    addTransaction: 'Aggiungi transazione',
+    actionsMenu: 'Azioni sul portafoglio',
+    export: 'Esporta',
+    import: 'Importa',
+    delete: 'Elimina portafoglio',
+    deleteConfirm: 'Eliminare questo portafoglio? Tutte le sue transazioni andranno perse.',
+    deleted: 'Portafoglio eliminato',
+    viewAllocation: 'Vedi allocazione completa',
   },
 } satisfies Dictionary
