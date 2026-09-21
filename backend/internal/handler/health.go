@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/amelamela/vault-lab/internal/service"
+	"github.com/alv67/vault-lab/internal/service"
 )
 
 type HealthHandler struct {

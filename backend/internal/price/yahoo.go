@@ -15,8 +15,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 
-	"github.com/amelamela/vault-lab/internal/model"
-	"github.com/amelamela/vault-lab/internal/repository"
+	"github.com/alv67/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/repository"
 )
 
 // HealthRecorder defines the interface for logging price fetch events.

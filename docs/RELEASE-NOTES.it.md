@@ -1,5 +1,33 @@
 # Release Notes
 
+## Unreleased
+
+### Nuove funzionalità
+- Clicca una fetta o una barra delle allocazioni — la ciambella delle classi di attività o le barre di settori, regioni e paesi, in dashboard e nel tab Allocazione di un portafoglio — per aprire un pannello laterale (una sheet dal basso sul telefono) con gli asset che la compongono, il loro valore, contributo e quota di quella fetta
+- Ogni grafico ora si può passare alla vista tabella degli stessi dati con il nuovo controllo Grafico/Tabella sulla card: i numeri che prima si leggevano solo passando sul grafico, ora riga per riga, su qualsiasi dispositivo e anche con gli screen reader
+- Apri il nuovo pannello comandi con ⌘K/Ctrl+K (o con il pulsante di ricerca nell'header, su ogni dispositivo): vai a una qualsiasi pagina, portafoglio o asset, cerca su Yahoo ed esegui le azioni rapide — aggiungi transazione, aggiorna prezzi, cambia tema, attiva la palette per daltonici — senza lasciare la pagina in cui sei
+- Palette utile/perdita opzionale per daltonici: da Impostazioni → Preferenze puoi sostituire i colori verde/rosso con una coppia blu/arancione in tutta l'app, testi e grafici inclusi — i segni +/− e le frecce ▲▼ ci sono sempre, e il tema scelto non cambia
+- La scheda Attività del portafoglio ora si può filtrare per tipo di transazione, asset e intervallo di date; i filtri restano nel link, quindi puoi condividere o salvare una vista filtrata e il pulsante indietro la riporta esattamente com'era
+- L'eliminazione di una transazione ora si può annullare direttamente dal toast di conferma (5 secondi); la finestra di conferma dell'eliminazione non c'è più
+- Sul telefono il form della transazione si apre come una sheet dal basso, con gli stessi campi del dialog su desktop
+- La pagina dell'asset ora è divisa in schede Panoramica, Esposizione e Dati, ognuna con un link proprio da condividere o salvare; ticker, dati identificativi e ultima quotazione restano fissi in alto mentre cambi scheda
+- La Panoramica dell'asset ora mostra "Dove è detenuto": quali dei tuoi portafogli possiedono l'asset, con quantità, costo, valore e guadagno/perdita — ogni portafoglio rimanda direttamente alla sua pagina
+- Le azioni sull'asset (aggiorna da Yahoo, recupera lo storico prezzi completo, elimina) ora si trovano nel menu ⋯ dell'header dell'asset, e sono ripetute nella zona pericolosa del tab Dati
+- La pagina del portafoglio ora è divisa in schede Panoramica, Posizioni, Attività e Allocazione, ognuna con un link proprio da condividere o salvare; una fascia compatta con valore e utile resta fissa in alto mentre cambi scheda
+- Le azioni sul portafoglio (esporta, importa, elimina) ora si trovano nel menu ⋯ dell'header del portafoglio, accanto al pulsante "Aggiungi transazione" sempre visibile
+- Ogni card dei portafogli nella dashboard ora mostra un piccolo grafico dell'andamento del valore accanto ai numeri attuali
+- La dashboard ora si apre con il tuo valore netto come numero principale, un grafico valore contro investito con intervalli 1Y/3Y/TUTTO, un dettaglio attivo/chiuso apribile su richiesta, l'orario di aggiornamento dei prezzi e una nota sulla qualità dei dati quando qualcosa richiede attenzione (ad esempio posizioni escluse per il cambio mancante)
+- Su un vault nuovo la dashboard mostra una checklist guidata di primo avvio: crea un portafoglio, aggiungi un asset, registra una transazione — ogni passo rimanda direttamente alla pagina giusta
+- Dalla header della dashboard puoi ora passare tra l'intero vault e un singolo portafoglio
+- Nuova navigazione adattiva: sul telefono una barra in basso (Panoramica, Portafogli, Asset, Altro) più un pulsante ⊕ con le azioni rapide (aggiungi transazione, aggiungi asset, aggiorna prezzi), sul tablet una sottile rail di icone e sul desktop la familiare barra laterale espandibile — con un header compatto che si restringe durante lo scroll
+- La pagina di stato della sincronizzazione prezzi ora si chiama "Dati e sincronizzazione"
+- L'app ora segue di default il tema del sistema: chiaro e scuro sono entrambi di prima classe, e puoi comunque fissare il tuo preferito dall'header
+- Nuovo font per l'interfaccia (Inter) e un font monospazio dedicato per ticker e codici — entrambi incorporati nell'app, nulla viene scaricato da servizi di terzi
+- Nuova pagina Impostazioni → Preferenze: scegli il tema (Chiaro/Scuro/Sistema) e la lingua dell'interfaccia (Italiano/Inglese); l'app ora usa di default il tema del sistema e la lingua italiana, e ricorda le tue scelte su questo dispositivo
+
+### Correzioni
+- Il recupero dell'esposizione di un asset da Morningstar ora funziona anche per i fondi quotati su più mercati: se la quotazione di un mercato non ha dati, viene usata automaticamente la quotazione successiva dello stesso ISIN
+
 ## v0.5.0 — 17 Set 2026
 
 ### Nuove funzionalità

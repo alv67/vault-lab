@@ -15,8 +15,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/amelamela/vault-lab/internal/geo"
-	"github.com/amelamela/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/geo"
+	"github.com/alv67/vault-lab/internal/model"
 )
 
 // ETFFetcher resolves the geographic and sector exposure of an ETF from its ISIN

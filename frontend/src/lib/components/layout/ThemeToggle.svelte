@@ -1,12 +1,16 @@
 <script lang="ts">
   import { Check, Monitor, Moon, Sun } from 'lucide-svelte'
   import { afterNavigate } from '$app/navigation'
+  import { t } from '$lib/i18n/index.svelte'
   import { resolved, setThemeMode, theme, type ThemeMode } from '$lib/stores/theme.svelte'
   import Button from '../ui/Button.svelte'
 
   /**
    * Three-state theme picker (EPIC D.3): Light / Dark / System, bound to the
    * theme store (`setThemeMode` persists + syncs `<html class="dark">`).
+   * Labels are translated (EPIC K.1b: the shared `theme.*` dictionary group,
+   * the same keys the Preferences page uses), so the popup and the trigger
+   * aria-label follow the locale.
    *
    * The trigger carries the icon of the *chosen* mode (never the resolved one
    * alone: "follow the OS" must stay visible as an intent); the popup exposes
@@ -19,21 +23,27 @@
    */
   type IconType = typeof Sun
 
-  const modes: { value: ThemeMode; label: string; icon: IconType }[] = [
-    { value: 'light', label: 'Light', icon: Sun },
-    { value: 'dark', label: 'Dark', icon: Moon },
-    { value: 'system', label: 'System', icon: Monitor },
-  ]
+  const modes: { value: ThemeMode; label: string; icon: IconType }[] = $derived([
+    { value: 'light', label: t('theme.light'), icon: Sun },
+    { value: 'dark', label: t('theme.dark'), icon: Moon },
+    { value: 'system', label: t('theme.system'), icon: Monitor },
+  ])
 
   let open = $state(false)
   let root = $state<HTMLDivElement | null>(null)
 
   const current = $derived(modes.find((m) => m.value === theme.mode) ?? modes[0])
 
+  // Mid-sentence labels are lower-cased inside the composed aria-labels
+  // ("Theme: dark" / "Tema: scuro"); the dictionary keys guarantee the
+  // `theme.<mode>` lookups exist for every mode and resolved theme.
   const triggerLabel = $derived(
     theme.mode === 'system'
-      ? `Theme: system, currently ${resolved()}`
-      : `Theme: ${current.label.toLowerCase()}`,
+      ? t('theme.ariaSystem', {
+          theme: t('theme.system').toLowerCase(),
+          resolved: t(`theme.${resolved()}`).toLowerCase(),
+        })
+      : t('theme.aria', { theme: t(`theme.${current.value}`).toLowerCase() }),
   )
 
   function toggle(): void {
@@ -90,7 +100,7 @@
   {#if open}
     <div
       role="group"
-      aria-label="Theme"
+      aria-label={t('theme.group')}
       class="absolute right-0 top-full z-20 mt-2 w-44 rounded-card border border-border bg-surface p-1 shadow-raised"
     >
       <div class="flex flex-col gap-0.5">

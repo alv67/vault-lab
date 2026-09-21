@@ -1,0 +1,1014 @@
+<script module lang="ts">
+  let sessionRefreshed = false
+</script>
+
+<script lang="ts">
+  import type { Snippet } from 'svelte'
+  import { onMount } from 'svelte'
+  import { afterNavigate, goto } from '$app/navigation'
+  import { resolve } from '$app/paths'
+  import { page } from '$app/state'
+  import { toast } from '$lib/stores/toast.svelte'
+  import { t } from '$lib/i18n/index.svelte'
+  import type { MessageKey } from '$lib/i18n/index.svelte'
+  import {
+    assetApi,
+    portfolioApi,
+    pricesApi,
+    type Asset,
+    type AssetExposure,
+    type AssetPatch,
+    type AssetQuote,
+    type ExposureRow,
+    type Price,
+    type SplitInfo,
+  } from '$lib/services/api'
+  import { formatCurrency, ASSET_CLASS_LABELS, ASSET_TYPE_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
+  import { ArrowLeft, History, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-svelte'
+  import Badge from '$lib/components/ui/Badge.svelte'
+  import Button from '$lib/components/ui/Button.svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import PnlValue from '$lib/components/ui/PnlValue.svelte'
+  import Spinner from '$lib/components/ui/Spinner.svelte'
+  import Tabs from '$lib/components/ui/Tabs.svelte'
+  import ExposureGeoModal from '$lib/components/ExposureGeoModal.svelte'
+  import ExposureSectorModal from '$lib/components/ExposureSectorModal.svelte'
+  import { setAssetPage, type AssetForm, type AssetPageContext, type HeldRow } from './context'
+  import { positiveCountries, sectorsList, withoutOther } from './exposure-utils'
+
+  /**
+   * Asset shell (EPIC K.4b, spec §4.2/§6.3): the single long asset page
+   * split into a sticky header + three deep-linkable nested-route tabs
+   * (Overview `/`, Exposure `/exposure`, Data `/data`). The header carries
+   * the identity row (back link, ticker + name + identity chips
+   * [type · class · currency · exchange], the non-Yahoo "no auto sync"
+   * warning and the `⋯` actions menu: update from Yahoo / backfill full
+   * history / delete — the same actions the old "Caratteristiche" `⋮` menu
+   * exposed, now also mirrored in the Data tab's danger zone), the quote
+   * strip in the asset currency (headline last close + compact 1D/1W/1M/
+   * 1Y/YTD delta chips, the old "Metriche quote" card promoted into the
+   * always-visible header) and the route-linked `ui/Tabs` bar; the tabs
+   * swap below via `{@render children()}` while this layout — and all of
+   * its data — stays mounted.
+   *
+   * Data ownership: every fetch the old page performed is performed here
+   * unchanged (asset + quote + prices + exposure + splits together, the
+   * once-per-session `pricesApi.refresh()` with the fresh quote/prices
+   * refetch, the metadata PATCH and the whole exposure save/prefill/derive
+   * machinery) and handed to the tab pages through the typed context in
+   * `./context.ts` — no tab re-fetches anything on its own. The geo/sector
+   * edit modals and the delete confirmation are mounted here (same
+   * contract as K.4a's transaction modal): their working-copy `$state`
+   * lists are bound natively, and the tabs only trigger them through
+   * `openGeoModal`/`openSectorModal`/`requestDelete`.
+   *
+   * New here: `loadHoldings()` — the isolated, non-blocking
+   * `portfolioApi.dashboard()` fetch that feeds the Overview tab's "Where
+   * held" rows (spec §4.2 decision 5): the endpoint already answers with
+   * `assets: PortfolioAssets[]` (per-portfolio `AssetPerformance[]`), so
+   * the "which of my portfolios hold this asset" view is derived
+   * client-side without any backend addition; a failure just flips
+   * `heldFailed` (the Overview tab then degrades the block to an
+   * "unavailable" note) and never toasts or blocks the page.
+   */
+  let { children }: { children: Snippet } = $props()
+
+  const id = $derived(page.params.id as string | undefined)
+
+  let loading = $state(true)
+  let asset = $state<Asset | null>(null)
+  let quote = $state<AssetQuote | null>(null)
+  let prices = $state<Price[]>([])
+  let splits = $state<SplitInfo[]>([])
+  let exposure = $state<AssetExposure | null>(null)
+  // "Where held" rows (see the docstring): `null` until the isolated
+  // dashboard fetch resolves, `heldFailed` when it did not.
+  let held = $state<HeldRow[] | null>(null)
+  let heldFailed = $state(false)
+  // Working copy of the modals. Prefill handlers write provider data here as a
+  // non-persisted preview: the page cards never read these lists, they render
+  // the stored `exposure` (see the Exposure tab's display* derivations), so an
+  // unsaved preview only lives inside the modal until the user presses Save.
+  // The pending copy is scoped to a single modal session: `openGeoModal`/
+  // `openSectorModal` re-hydrate these lists (and their provenance state)
+  // from the saved `exposure` before every open, so edits left unsaved when
+  // the modal was last closed are discarded on reopen.
+  let regionsEdit = $state<ExposureRow[]>([])
+  let sectorsEdit = $state<ExposureRow[]>([])
+  let countriesEdit = $state<ExposureRow[]>([])
+  // Data provenance for the geo/sector modal badges: which source currently
+  // owns each dimension ('manual' once the user edits it) and when it was
+  // last persisted. Hydrated from `ex.provenance` on load and re-hydrated on
+  // every modal reopen (see `openGeoModal`/`openSectorModal`), set by the
+  // prefill/dirty handlers and confirmed by every save. A null source means
+  // unknown (no badge); a null updatedAt means the shown source is not
+  // persisted yet (unsaved preview or fresh manual edit), so the badge shows
+  // the label without a date until the next successful save.
+  let countriesSource = $state<string | null>(null)
+  let regionsSource = $state<string | null>(null)
+  let sectorsSource = $state<string | null>(null)
+  let countriesUpdatedAt = $state<string | null>(null)
+  let regionsUpdatedAt = $state<string | null>(null)
+  let sectorsUpdatedAt = $state<string | null>(null)
+  let savingRegions = $state(false)
+  let savingSectors = $state(false)
+  let savingCountries = $state(false)
+  let saving = $state(false)
+  let prefilling = $state(false)
+  let fetchingETF = $state(false)
+  let fetchingMorningstar = $state(false)
+  let derivingRegions = $state(false)
+  let refreshingMeta = $state(false)
+  let backfillingHistory = $state(false)
+  let geoModalOpen = $state(false)
+  let sectorModalOpen = $state(false)
+
+  let form = $state<AssetForm>({
+    ticker: '',
+    isin: '',
+    name: '',
+    type: 'stock',
+    currency: 'USD',
+    exchange: '',
+    asset_class: 'other',
+    price_source: 'yahoo',
+  })
+
+  const currency = $derived(asset?.currency || 'USD')
+
+  const hasChanges = $derived.by(() => {
+    if (!asset) return false
+    return (
+      form.ticker !== asset.ticker ||
+      form.isin !== (asset.isin || '') ||
+      form.name !== asset.name ||
+      form.type !== asset.type ||
+      form.currency !== asset.currency ||
+      form.exchange !== (asset.exchange || '') ||
+      form.asset_class !== (asset.asset_class || 'other') ||
+      form.price_source !== (asset.price_source || 'yahoo')
+    )
+  })
+
+  // Totals are computed on the 2-decimal values that actually enter the edit
+  // lists (also mirrored in the modal footer): this keeps the displayed sum,
+  // the save validation and the persisted weights identical, so a provider
+  // total at float precision (e.g. 100.004) never trips the > 100 guard.
+  const sumRegions = $derived(
+    Math.round(regionsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100) / 100,
+  )
+  const sumSectors = $derived(
+    sectorsEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0),
+  )
+  const sumCountries = $derived(
+    Math.round(
+      countriesEdit.reduce((acc, r) => acc + (Number(r.weight) || 0), 0) * 100,
+    ) / 100,
+  )
+  // Countries and regions may legitimately sum below 100: for regions the
+  // backend folds the residual into «Other / Not Classified» at persist time;
+  // for countries the residual just stays unattributed (saving countries no
+  // longer re-derives the regions — that happens only via «Calcola da paesi»).
+  // Only a sum above 100 (± float epsilon) blocks saving. Sectors still
+  // require 100 ±0.5.
+  const regionsValid = $derived(sumRegions <= 100 + 1e-9)
+  const sectorsValid = $derived(Math.abs(sumSectors - 100) <= 0.5)
+  const countriesValid = $derived(sumCountries <= 100 + 1e-9)
+
+  // 1D/1W/1M/1Y/YTD quote deltas of `AssetQuote`, as compact chips in the
+  // sticky header (spec §6.3; the old body-level "Metriche quote" card's
+  // five metrics — same values, same zero-muted coloring via `PnlValue`).
+  const METRICS: {
+    key: 'change_1d' | 'change_1w' | 'change_1m' | 'change_1y' | 'change_ytd'
+    label: MessageKey
+  }[] = [
+    { key: 'change_1d', label: 'asset.chip1d' },
+    { key: 'change_1w', label: 'asset.chip1w' },
+    { key: 'change_1m', label: 'asset.chip1m' },
+    { key: 'change_1y', label: 'asset.chip1y' },
+    { key: 'change_ytd', label: 'asset.chipYtd' },
+  ]
+
+  // Identity chips of the header (spec §6.3 `[ETF | equity | EUR | XETRA]`):
+  // type and class go through the central label maps, currency and exchange
+  // are shown raw (exchange only when known).
+  const identityChips = $derived.by(() => {
+    if (!asset) return [] as string[]
+    const chips: string[] = [ASSET_TYPE_LABELS[asset.type] ?? asset.type]
+    if (asset.asset_class) {
+      chips.push(ASSET_CLASS_LABELS[asset.asset_class] ?? asset.asset_class)
+    }
+    chips.push(asset.currency)
+    if (asset.exchange) chips.push(asset.exchange)
+    return chips
+  })
+
+  // The old header's non-Yahoo warning (kept verbatim): manual/no-price
+  // sources never participate in the automatic sync.
+  const priceSourceWarning = $derived(
+    asset?.price_source && asset.price_source !== 'yahoo'
+      ? `${PRICE_SOURCE_LABELS[asset.price_source] ?? asset.price_source} — nessun sync automatico`
+      : '',
+  )
+
+  function fillForm(a: Asset): void {
+    form = {
+      ticker: a.ticker,
+      isin: a.isin || '',
+      name: a.name,
+      type: a.type,
+      currency: a.currency,
+      exchange: a.exchange || '',
+      asset_class: a.asset_class || 'other',
+      price_source: a.price_source || 'yahoo',
+    }
+  }
+
+  onMount(load)
+
+  async function load(): Promise<void> {
+    if (!id) return
+    try {
+      const [a, q, ps, ex, sp] = await Promise.all([
+        assetApi.get(id),
+        assetApi.quote(id),
+        pricesApi.byAsset(id),
+        assetApi.exposure(id),
+        assetApi.splits(id),
+      ])
+      asset = a
+      quote = q
+      prices = ps
+      exposure = ex
+      splits = sp
+      regionsEdit = withoutOther(ex.regions)
+      sectorsEdit = sectorsList(ex.sectors)
+      countriesEdit = positiveCountries(ex.countries)
+      // Hydrate the persisted provenance per dimension (source + last-update
+      // date). Dimensions never persisted carry no provenance entry: badge
+      // hidden (source null).
+      countriesSource = ex.provenance?.countries?.source ?? null
+      countriesUpdatedAt = ex.provenance?.countries?.updated_at ?? null
+      regionsSource = ex.provenance?.regions?.source ?? null
+      regionsUpdatedAt = ex.provenance?.regions?.updated_at ?? null
+      sectorsSource = ex.provenance?.sectors?.source ?? null
+      sectorsUpdatedAt = ex.provenance?.sectors?.updated_at ?? null
+      fillForm(a)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load asset'
+      toast.error(message)
+      const status = (err as { status?: number } | null)?.status
+      if (status === 404) {
+        goto(resolve('/assets'), { replaceState: true })
+        return
+      }
+    } finally {
+      loading = false
+    }
+
+    // "Where held" (K.4b): fired alongside the refresh block below, never
+    // awaited — the tabs render as soon as the main payload is in.
+    void loadHoldings()
+
+    // Refresh prezzi una volta per sessione: la pagina può essere aperta come
+    // deep-link senza passare dalla dashboard, che normalmente fa il refresh.
+    if (!sessionRefreshed) {
+      sessionRefreshed = true
+      pricesApi.refresh()
+        .then((report) => {
+          if (report.rate_limited) {
+            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
+          } else if (report.issues.length > 0) {
+            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
+          }
+          return Promise.all([assetApi.quote(id), pricesApi.byAsset(id)])
+        })
+        .then(([freshQuote, freshPrices]) => {
+          quote = freshQuote
+          prices = freshPrices
+        })
+        .catch(() => { /* keep current data */ })
+    }
+  }
+
+  /** Fill `held` with one row per portfolio currently holding this asset
+   * (qty > 0: closed holdings are skipped), derived from the per-portfolio
+   * `assets` of `GET /dashboard`. Deliberately silent on failure — the
+   * block is supplementary and the Overview tab shows an "unavailable"
+   * note via `heldFailed` instead of ever blocking or toasting. */
+  async function loadHoldings(): Promise<void> {
+    if (!id) return
+    try {
+      const dash = await portfolioApi.dashboard()
+      const rows: HeldRow[] = []
+      for (const p of dash.assets ?? []) {
+        for (const a of p.assets ?? []) {
+          if (a.asset_id === id && Number(a.qty) > 0) {
+            rows.push({
+              portfolioId: p.portfolio_id,
+              portfolioName: p.portfolio_name,
+              currency: a.currency,
+              qty: a.qty,
+              invested: a.invested,
+              value: a.value,
+              gain_loss: a.gain_loss,
+              roi: a.roi,
+            })
+          }
+        }
+      }
+      // Richest holding first, like the dashboard's invested-assets table.
+      rows.sort((x, y) => Number(y.value) - Number(x.value))
+      held = rows
+    } catch {
+      heldFailed = true
+    }
+  }
+
+  async function saveAsset(): Promise<void> {
+    if (!id || !asset) return
+    if (!form.ticker.trim() || !form.name.trim() || !form.currency.trim()) {
+      toast.error('Ticker, Name e Currency sono obbligatori')
+      return
+    }
+    saving = true
+    const patch: AssetPatch = {
+      ticker: form.ticker.trim(),
+      isin: form.isin.trim(),
+      name: form.name.trim(),
+      type: form.type,
+      currency: form.currency.trim(),
+      exchange: form.exchange.trim(),
+      asset_class: form.asset_class,
+      price_source: form.price_source,
+    }
+    try {
+      const updated = await assetApi.update(id, patch)
+      asset = updated
+      fillForm(updated)
+      toast.success('Asset aggiornato')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      saving = false
+    }
+  }
+
+  async function refreshFromYahoo(): Promise<void> {
+    if (!asset) return
+    refreshingMeta = true
+    try {
+      // La classe arriva da meta; l'override manuale deve vincere: se l'asset
+      // ha già una classe diversa da "other"/vuota, il refresh non la sovrascrive.
+      const meta = await assetApi.meta(asset.ticker)
+      form = {
+        ...form,
+        name: meta.name || form.name,
+        type: meta.type || form.type,
+        currency: meta.currency || form.currency,
+        exchange: meta.exchange || form.exchange,
+        asset_class:
+          !asset.asset_class || asset.asset_class === 'other'
+            ? meta.asset_class || form.asset_class
+            : form.asset_class,
+      }
+      toast.success('Campi aggiornati da Yahoo')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Aggiornamento fallito'
+      toast.error(message)
+    } finally {
+      refreshingMeta = false
+    }
+  }
+
+  // Backfill sincrono: il POST può impiegare alcuni secondi, ma al 200 la cache
+  // GET del client è già stata invalidata (ogni non-GET svuota la cache), quindi
+  // il refetch di byAsset ritorna lo storico completo e aggiornato.
+  async function backfillHistory(): Promise<void> {
+    if (!id) return
+    backfillingHistory = true
+    try {
+      await assetApi.backfillHistory(id)
+      prices = await pricesApi.byAsset(id)
+      toast.success('Storico prezzi aggiornato')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Backfill fallito'
+      toast.error(message)
+    } finally {
+      backfillingHistory = false
+    }
+  }
+
+  // Prefill da JustETF: popola SOLO la lista paesi della modale (raw JustETF).
+  // È un'anteprima NON persistita: `exposure` (e quindi le card) resta ai dati
+  // salvati; solo «Salva paesi» invierà la lista al backend. L'ISIN arriva già
+  // persistito dal server, quindi lo sincronizziamo nel form.
+  async function prefillCountriesFromETF(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const preview = await assetApi.fetchETFExposure(id)
+      countriesEdit = positiveCountries(preview.countries)
+      countriesSource = 'justetf'
+      // Unsaved preview: no persisted date yet (badge shows the label only).
+      countriesUpdatedAt = null
+      if (preview.isin) form.isin = preview.isin
+      toast.success('Paesi precompilati da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
+    }
+  }
+
+  // Deriva le regioni canoniche dai paesi correnti (preview, non persistito).
+  async function deriveRegionsFromCountries(): Promise<void> {
+    if (!id || !asset) return
+    if (!countriesEdit.some((c) => Number(c.weight) > 0)) {
+      toast.error('Nessun paese con peso: aggiungi paesi prima')
+      return
+    }
+    derivingRegions = true
+    try {
+      const result = await assetApi.deriveRegions(id, countriesEdit)
+      regionsEdit = withoutOther(result.regions)
+      // The residual «Other / Not Classified» row is filtered out: the modal's
+      // totals line already explains what is left unattributed.
+      regionsSource = countriesSource === 'justetf' ? 'derived-etf' : 'derived'
+      // Preview only: drop any previously persisted date until it is saved.
+      regionsUpdatedAt = null
+      toast.success('Regioni ricalcolate dai paesi')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Calcolo fallito'
+      toast.error(message)
+    } finally {
+      derivingRegions = false
+    }
+  }
+
+  // Prefill da Morningstar: popola SOLO la lista regioni della modale con le
+  // regioni ufficiali Morningstar. Anteprima NON persistita: la card regioni
+  // continua a mostrare le regioni salvate finché non si preme «Salva regioni».
+  async function prefillRegionsFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const preview = await assetApi.fetchMorningstarExposure(id)
+      regionsEdit = withoutOther(preview.regions)
+      regionsSource = 'morningstar-regions'
+      regionsUpdatedAt = null
+      if (preview.isin) form.isin = preview.isin
+      toast.success('Regioni precompilate da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
+    }
+  }
+
+  // Prefill da JustETF: popola SOLO la lista settori della modale. Anteprima
+  // NON persistita: la card settori resta ai dati salvati finché non si salva.
+  async function prefillSectorsFromETF(): Promise<void> {
+    if (!id || !asset) return
+    fetchingETF = true
+    try {
+      const preview = await assetApi.fetchETFExposure(id)
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'justetf'
+      sectorsUpdatedAt = null
+      if (preview.isin) form.isin = preview.isin
+      toast.success('Distribuzione settoriale precompilata da JustETF')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingETF = false
+    }
+  }
+
+  // Prefill da Yahoo: popola SOLO la lista settori della modale (topHoldings).
+  // Per le azioni singole ricade sul settore unico al 100% (assetProfile).
+  // Anteprima NON persistita: la card settori mostra i dati salvati finché non
+  // si preme «Salva».
+  async function prefillSectorsFromYahoo(): Promise<void> {
+    if (!id) return
+    prefilling = true
+    try {
+      const preview = await assetApi.fetchExposure(id)
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'yahoo'
+      sectorsUpdatedAt = null
+      toast.success('Distribuzione settoriale precompilata da Yahoo')
+    } catch (err: unknown) {
+      const status = (err as { status?: number } | null)?.status
+      const message =
+        status === 502
+          ? 'Yahoo non ha risposto'
+          : err instanceof Error
+            ? err.message
+            : 'Prefill fallito'
+      toast.error(message)
+    } finally {
+      prefilling = false
+    }
+  }
+
+  // Prefill da Morningstar: popola SOLO la lista settori della modale. Anteprima
+  // NON persistita: la card settori resta ai dati salvati finché non si salva
+  // (stesso pattern dei prefill settori JustETF/Yahoo). L'endpoint è cachato per
+  // ISIN lato backend: se paesi/regioni sono già stati letti la chiamata è
+  // immediata.
+  async function prefillSectorsFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const preview = await assetApi.fetchMorningstarExposure(id)
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'morningstar'
+      sectorsUpdatedAt = null
+      if (preview.isin) form.isin = preview.isin
+      toast.success('Distribuzione settoriale precompilata da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
+    }
+  }
+
+  // Il backend salva ogni dimensione indipendentemente: ogni sezione invia
+  // SOLO la propria dimensione (l'altra viene omessa dal JSON → nil → non
+  // toccata) insieme alla sua fonte di provenienza (`*_source`; senza fonte
+  // il backend usa 'manual'). Dopo il successo la risposta canonica rinfresca
+  // `exposure` (quindi le card), risincronizza SOLO la lista di edit della
+  // dimensione salvata e ne riporta la provenance persistita (source +
+  // data): le altre liste di edit sono la working copy della modale e
+  // possono contenere modifiche pendenti non salvate, quindi non vanno
+  // mai toccate qui.
+  async function saveRegions(): Promise<void> {
+    if (!id || !exposure || !regionsValid) return
+    savingRegions = true
+    const sentSource = regionsSource ?? 'manual'
+    try {
+      const saved = await assetApi.saveExposure(id, {
+        regions: regionsEdit,
+        regions_source: sentSource,
+      })
+      exposure = saved
+      regionsEdit = withoutOther(saved.regions)
+      // Provenance confirmed by the canonical response; fall back to the
+      // sent source if the backend did not echo it, and drop the date when
+      // absent so the badge never shows a stale timestamp.
+      regionsSource = saved.provenance?.regions?.source ?? sentSource
+      regionsUpdatedAt = saved.provenance?.regions?.updated_at ?? null
+      toast.success('Distribuzione geografica salvata')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      savingRegions = false
+    }
+  }
+
+  async function saveSectors(): Promise<void> {
+    if (!id || !exposure || !sectorsValid) return
+    savingSectors = true
+    const sentSource = sectorsSource ?? 'manual'
+    try {
+      const saved = await assetApi.saveExposure(id, {
+        sectors: sectorsEdit,
+        sectors_source: sentSource,
+      })
+      exposure = saved
+      sectorsEdit = sectorsList(saved.sectors)
+      sectorsSource = saved.provenance?.sectors?.source ?? sentSource
+      sectorsUpdatedAt = saved.provenance?.sectors?.updated_at ?? null
+      toast.success('Distribuzione settoriale salvata')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      savingSectors = false
+    }
+  }
+
+  // Prefill da Morningstar: popola paesi e settori della modale (ETF only).
+  // Anteprima NON persistita: le card restano ai dati salvati; ogni dimensione
+  // va salvata con il proprio pulsante Salva.
+  async function prefillCountriesFromMorningstar(): Promise<void> {
+    if (!id || !asset) return
+    fetchingMorningstar = true
+    try {
+      const preview = await assetApi.fetchMorningstarExposure(id)
+      countriesEdit = positiveCountries(preview.countries)
+      countriesSource = 'morningstar'
+      countriesUpdatedAt = null
+      sectorsEdit = sectorsList(preview.sectors)
+      sectorsSource = 'morningstar'
+      sectorsUpdatedAt = null
+      if (preview.isin) form.isin = preview.isin
+      toast.success('Paesi e settori precompilati da Morningstar')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download fallito'
+      toast.error(message)
+    } finally {
+      fetchingMorningstar = false
+    }
+  }
+
+  async function saveCountries(): Promise<void> {
+    if (!id || !exposure || !countriesValid) return
+    savingCountries = true
+    const sentSource = countriesSource ?? 'manual'
+    try {
+      const saved = await assetApi.saveExposure(id, {
+        countries: countriesEdit,
+        countries_source: sentSource,
+      })
+      exposure = saved
+      countriesEdit = positiveCountries(saved.countries)
+      countriesSource = saved.provenance?.countries?.source ?? sentSource
+      countriesUpdatedAt = saved.provenance?.countries?.updated_at ?? null
+      // Regions and sectors are deliberately NOT touched here: saving one
+      // dimension must never clobber the other dimensions' edit lists, which
+      // are the modal's working copy and may hold unsaved pending edits
+      // (manual or from a prefill). The stored data still refreshes via
+      // `exposure` (cards), and regionsSource is left alone so the regions
+      // provenance badge keeps reflecting its real source.
+      toast.success('Distribuzione paesi salvata')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Save failed'
+      toast.error(message)
+    } finally {
+      savingCountries = false
+    }
+  }
+
+  // Provenance flips to 'manual' on the first user mutation of a dimension
+  // (invoked by the geo/sector modals at every add/remove/weight-edit point).
+  // The persisted date is dropped as well: the badge shows a date only once
+  // the new state has actually been saved.
+  function markCountriesManual(): void {
+    countriesSource = 'manual'
+    countriesUpdatedAt = null
+  }
+
+  function markRegionsManual(): void {
+    regionsSource = 'manual'
+    regionsUpdatedAt = null
+  }
+
+  function markSectorsManual(): void {
+    sectorsSource = 'manual'
+    sectorsUpdatedAt = null
+  }
+
+  // Open the geo modal after resetting its working copy from the SAVED
+  // exposure: the same hydration `load` performs (`withoutOther`/
+  // `positiveCountries` normalisation + persisted provenance with the `?? null`
+  // fallbacks). Any unsaved manual edits or prefill previews left over from
+  // the previous modal session — including a 'manual' provenance flip that was
+  // never persisted — are discarded here, so reopening always shows the
+  // stored data.
+  function openGeoModal(): void {
+    if (!exposure) return
+    regionsEdit = withoutOther(exposure.regions)
+    countriesEdit = positiveCountries(exposure.countries)
+    countriesSource = exposure.provenance?.countries?.source ?? null
+    countriesUpdatedAt = exposure.provenance?.countries?.updated_at ?? null
+    regionsSource = exposure.provenance?.regions?.source ?? null
+    regionsUpdatedAt = exposure.provenance?.regions?.updated_at ?? null
+    geoModalOpen = true
+  }
+
+  // Sector-modal counterpart of `openGeoModal`: restores `sectorsEdit` and the
+  // sectors provenance from the saved exposure before opening, so unsaved
+  // sector edits/previews never resurface on reopen.
+  function openSectorModal(): void {
+    if (!exposure) return
+    sectorsEdit = sectorsList(exposure.sectors)
+    sectorsSource = exposure.provenance?.sectors?.source ?? null
+    sectorsUpdatedAt = exposure.provenance?.sectors?.updated_at ?? null
+    sectorModalOpen = true
+  }
+
+  // Delete mirrors the portfolio shell and the assets list: confirm dialog →
+  // API → toast → leave the (now gone) asset. `goto` is deliberately not
+  // awaited so this handler never races the dialog's close-then-unmount.
+  let showDeleteDialog = $state(false)
+  let deleting = $state(false)
+
+  function requestDelete(): void {
+    menuOpen = false
+    showDeleteDialog = true
+  }
+
+  async function deleteAsset(): Promise<void> {
+    if (!id) return
+    deleting = true
+    try {
+      await assetApi.remove(id)
+      toast.success(t('asset.deleted'))
+      void goto(resolve('/assets'))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Delete failed'
+      toast.error(message)
+    } finally {
+      deleting = false
+    }
+  }
+
+  // `⋯` popup: same close contract as the portfolio shell's menu (Escape back
+  // to the trigger / outside pointerdown / route change — tab clicks
+  // navigate, so the strip swapping tabs also dismisses the menu).
+  let menuOpen = $state(false)
+  let menuRoot = $state<HTMLDivElement | null>(null)
+  let menuTrigger = $state<HTMLButtonElement | null>(null)
+
+  function handleMenuKeydown(event: KeyboardEvent): void {
+    if (!menuOpen) return
+    if (event.key === 'Escape') {
+      menuOpen = false
+      menuTrigger?.focus()
+    }
+  }
+
+  afterNavigate(() => (menuOpen = false))
+
+  $effect(() => {
+    if (!menuOpen) return
+    function handlePointerdown(event: PointerEvent): void {
+      if (menuRoot && event.target instanceof Node && !menuRoot.contains(event.target)) {
+        menuOpen = false
+      }
+    }
+    window.addEventListener('pointerdown', handlePointerdown)
+    return () => window.removeEventListener('pointerdown', handlePointerdown)
+  })
+
+  // --- Tabs (spec §4.2.2: nested routes, real URLs) ------------------------
+  // hrefs resolved per the repo convention; `ui/Tabs` derives the active
+  // tab from the URL, so deep links and the back button just work.
+  const tabItems = $derived(
+    id
+      ? [
+          { href: resolve(`/assets/${id}`), label: t('asset.tabOverview') },
+          { href: resolve(`/assets/${id}/exposure`), label: t('asset.tabExposure') },
+          { href: resolve(`/assets/${id}/data`), label: t('asset.tabData') },
+        ]
+      : [],
+  )
+
+  // --- Context for the tab pages (see ./context.ts) -------------------------
+  setAssetPage({
+    get id() {
+      return id
+    },
+    get loading() {
+      return loading
+    },
+    get asset() {
+      return asset
+    },
+    get quote() {
+      return quote
+    },
+    get prices() {
+      return prices
+    },
+    get splits() {
+      return splits
+    },
+    get exposure() {
+      return exposure
+    },
+    get currency() {
+      return currency
+    },
+    get held() {
+      return held
+    },
+    get heldFailed() {
+      return heldFailed
+    },
+    get refreshingMeta() {
+      return refreshingMeta
+    },
+    refreshFromYahoo,
+    get backfillingHistory() {
+      return backfillingHistory
+    },
+    backfillHistory,
+    requestDelete,
+    get form() {
+      return form
+    },
+    get hasChanges() {
+      return hasChanges
+    },
+    get saving() {
+      return saving
+    },
+    saveAsset,
+    openGeoModal,
+    openSectorModal,
+  } satisfies AssetPageContext)
+</script>
+
+<svelte:window onkeydown={handleMenuKeydown} />
+
+<div class="p-4 lg:p-6">
+  <!-- Sticky entity header (spec §5.1/§6.3): `top` follows the live
+       --app-header-h published by AppShell, so it stays flush while the app
+       header condenses 56px → 44px (no gap strip); the same transition makes
+       the two move in lockstep. The negative margins + padding are the
+       responsive mirror of the wrapper padding (= `<main>`'s), so the opaque
+       `bg-background` band spans the full content width at every size. -->
+  <header
+    class="sticky top-[var(--app-header-h)] z-10 -mx-4 -mt-4 mb-6 flex flex-col gap-3 bg-background px-4 pb-3 pt-4 transition-[top] duration-base ease-standard lg:-mx-6 lg:-mt-6 lg:px-6 lg:pt-6"
+  >
+    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div class="min-w-0">
+        <a
+          href={resolve('/assets')}
+          class="focus-ring -ml-1 inline-flex items-center gap-1 rounded-control text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft class="h-4 w-4 shrink-0" aria-hidden="true" />
+          {t('asset.back')}
+        </a>
+        {#if asset}
+          <h1 class="mt-1 flex flex-wrap items-baseline gap-x-2 text-2xl font-bold">
+            <span class="font-mono">{asset.ticker}</span>
+            <span class="min-w-0 text-sm font-medium text-muted-foreground">{asset.name}</span>
+          </h1>
+          <div class="mt-2 flex flex-wrap items-center gap-1.5">
+            {#each identityChips as chip (chip)}
+              <Badge>{chip}</Badge>
+            {/each}
+            {#if priceSourceWarning}
+              <Badge variant="warning">{priceSourceWarning}</Badge>
+            {/if}
+          </div>
+        {:else if loading}
+          <p class="mt-1 text-sm text-muted-foreground">Loading...</p>
+        {/if}
+      </div>
+      {#if asset}
+        <div class="flex shrink-0 items-center">
+          <div class="relative" bind:this={menuRoot}>
+            <button
+              bind:this={menuTrigger}
+              type="button"
+              aria-label={t('asset.actionsMenu')}
+              aria-haspopup="true"
+              aria-expanded={menuOpen}
+              onclick={() => (menuOpen = !menuOpen)}
+              class="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-control border border-input text-foreground transition-colors hover:bg-muted"
+            >
+              <MoreHorizontal class="h-4 w-4" aria-hidden="true" />
+            </button>
+            {#if menuOpen}
+              <div
+                class="absolute right-0 top-full z-20 mt-2 w-56 rounded-card border border-border bg-surface p-1 shadow-raised"
+              >
+                <Button
+                  variant="ghost"
+                  class="w-full"
+                  disabled={refreshingMeta}
+                  onclick={() => {
+                    menuOpen = false
+                    void refreshFromYahoo()
+                  }}
+                >
+                  <span class="flex w-full items-center gap-2">
+                    {#if refreshingMeta}
+                      <Spinner size="sm" aria-hidden="true" />
+                    {:else}
+                      <RefreshCw class="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {/if}
+                    {t('asset.refreshMeta')}
+                  </span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  class="w-full"
+                  disabled={backfillingHistory}
+                  onclick={() => {
+                    menuOpen = false
+                    void backfillHistory()
+                  }}
+                >
+                  <span class="flex w-full items-center gap-2">
+                    {#if backfillingHistory}
+                      <Spinner size="sm" aria-hidden="true" />
+                    {:else}
+                      <History class="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {/if}
+                    {t('asset.backfillHistory')}
+                  </span>
+                </Button>
+                <Button variant="ghost" class="w-full" onclick={requestDelete}>
+                  <span class="flex w-full items-center gap-2 text-negative">
+                    <Trash2 class="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {t('asset.delete')}
+                  </span>
+                </Button>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    {#if quote?.has_data}
+      <!-- Quote strip (spec §6.3 "identity chips + quote metrics"): the
+           headline last close in the ASSET currency followed by the compact
+           1D/1W/1M/1Y/YTD delta chips (signed ▲▼ via `PnlValue`, never
+           colour alone, D6) and the last price date. Same values as the old
+           body-level "Metriche quote" card, always visible while tabs swap. -->
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span class="text-xl font-bold tabular-nums">
+          {formatCurrency(quote.last_close, quote.currency)}
+        </span>
+        {#each METRICS as m (m.key)}
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-xs">
+            <span class="text-muted-foreground">{t(m.label)}</span>
+            <PnlValue value={quote[m.key]} kind="percent" size="sm" />
+          </span>
+        {/each}
+        <span class="text-xs text-muted-foreground">
+          {t('asset.priceUpdated', { date: new Date(quote.last_date).toLocaleDateString() })}
+        </span>
+      </div>
+    {:else if quote}
+      <p class="text-sm text-muted-foreground">Nessun dato prezzo</p>
+    {/if}
+
+    <Tabs items={tabItems} ariaLabel={t('asset.tabsLabel')} />
+  </header>
+
+  {@render children()}
+</div>
+
+{#if asset}
+  <ExposureGeoModal
+    bind:open={geoModalOpen}
+    onClose={() => (geoModalOpen = false)}
+    bind:regionsEdit
+    bind:countriesEdit
+    {sumRegions}
+    {sumCountries}
+    {savingRegions}
+    {savingCountries}
+    {saveRegions}
+    {saveCountries}
+    {fetchingETF}
+    {fetchingMorningstar}
+    {derivingRegions}
+    {prefillCountriesFromETF}
+    {deriveRegionsFromCountries}
+    {prefillRegionsFromMorningstar}
+    {prefillCountriesFromMorningstar}
+    {countriesSource}
+    {regionsSource}
+    {countriesUpdatedAt}
+    {regionsUpdatedAt}
+    onCountriesDirty={markCountriesManual}
+    onRegionsDirty={markRegionsManual}
+    assetType={asset.type}
+  />
+
+  <ExposureSectorModal
+    bind:open={sectorModalOpen}
+    onClose={() => (sectorModalOpen = false)}
+    bind:sectorsEdit
+    {sumSectors}
+    {sectorsValid}
+    {savingSectors}
+    {saveSectors}
+    {prefilling}
+    {fetchingETF}
+    {fetchingMorningstar}
+    {prefillSectorsFromETF}
+    {prefillSectorsFromYahoo}
+    {prefillSectorsFromMorningstar}
+    {sectorsSource}
+    {sectorsUpdatedAt}
+    onSectorsDirty={markSectorsManual}
+    assetType={asset.type}
+  />
+{/if}
+
+<ConfirmDialog
+  bind:open={showDeleteDialog}
+  variant="danger"
+  title={t('asset.delete')}
+  message={t('asset.deleteConfirm', { ticker: asset?.ticker ?? '' })}
+  confirmLabel={t('common.delete')}
+  cancelLabel={t('common.cancel')}
+  loading={deleting}
+  onconfirm={deleteAsset}
+/>

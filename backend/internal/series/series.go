@@ -13,9 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 
-	"github.com/amelamela/vault-lab/internal/model"
-	"github.com/amelamela/vault-lab/internal/position"
-	"github.com/amelamela/vault-lab/internal/repository"
+	"github.com/alv67/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/position"
+	"github.com/alv67/vault-lab/internal/repository"
 )
 
 // Recompute rebuilds the materialized daily series of a portfolio from its

@@ -10,7 +10,10 @@ resolver instead:
    from /api/v2/stores/maas/token. The bearer token is a JWT that authorizes the
    SAL service and expires after ~1 hour.
 2. ISIN -> securityId lookup: GET /api/v2/search?q={isin} (works with the WAF
-   cookies alone).
+   cookies alone). A fund is quoted on several markets and Morningstar exposes
+   one listing (securityID) per market, so the lookup keeps every fund result
+   matching the ISIN (in order, de-duplicated) and the data phase falls
+   through the candidates until one carries data.
 3. Data phase (plain requests, using the cached bearer + cookies):
       * https://www.us-api.morningstar.com/sal/sal-service/etf/portfolio/v2/sector/{sid}/data
         -> sector exposure, bucketed by asset class (EQUITY/FIXEDINCOME/...)
@@ -29,6 +32,15 @@ _retry_on_waf_challenge). Browser bootstrap crashes (a "session not created:
 Chrome instance exited" caused by orphaned Chromium processes left by earlier
 failed boots) are likewise retried once after a best-effort process cleanup
 (see _browser_bootstrap_with_cleanup / _kill_stale_browsers).
+
+WAF challenges and missing data are kept deliberately apart: some listings
+carry no SAL data at all (the service answers HTTP 206 / a text body saying
+"Can't get SecurityInfo"), which is a per-listing miss, not a revoked session.
+Such a listing raises MorningstarSecurityUnavailable and the fetch simply
+advances to the next candidate WITHOUT a browser re-bootstrap; only an
+undecodable HTML challenge page (a genuine JSONDecodeError) refreshes the
+session. When no candidate carries data the caller gets a plain
+MorningstarDataError, never a MorningstarWafError.
 
 Return-shape notes (confirmed from the live SAL service):
   * countries: name is a Morningstar camelCase country key (e.g. "southKorea",
@@ -107,6 +119,16 @@ class MorningstarWafError(MorningstarDataError):
     Signals that the cached session was revoked server-side (the APIs answered
     with an HTML challenge page instead of JSON) and one re-bootstrap retry
     already failed.
+    """
+
+
+class MorningstarSecurityUnavailable(MorningstarDataError):
+    """Raised when a Morningstar securityID has no data in the SAL service.
+
+    Non-retryable per listing: SAL answers HTTP 206 / a "Can't get
+    SecurityInfo" text body for quotations it does not cover. The fetch must
+    advance to the next candidate listing; the WAF retry layer must NOT treat
+    this as a revoked session (no browser re-bootstrap).
     """
 
 
@@ -523,8 +545,15 @@ def _headers(bearer: str):
     }
 
 
-def _search_security_id(isin: str, cookies: dict) -> str:
-    """Resolves an ISIN to a Morningstar securityId via the v2 search API."""
+def _search_security_ids(isin: str, cookies: dict) -> list[str]:
+    """Resolves an ISIN to all its Morningstar securityIds via the v2 search API.
+
+    One listing per market quotes the same ISIN and not every listing carries
+    SAL data, so the caller gets every fund candidate (in search order,
+    de-duplicated by securityID) and falls through them. When no fund-type
+    result matches, any ISIN-matching listing is returned instead; a complete
+    miss is a MorningstarDataError.
+    """
     url = f"{_WWW}/api/v2/search"
     params = {"q": isin, "fields": "isin,name,securityId,investmentType", "limit": 10}
     search_headers = {
@@ -536,14 +565,24 @@ def _search_security_id(isin: str, cookies: dict) -> str:
     resp = requests.get(url, params=params, headers=search_headers, cookies=cookies, timeout=25)
     resp.raise_for_status()
     payload = resp.json()
+    fund_candidates = []
+    other_candidates = []
+    seen = set()
     for item in payload.get("results", []):
         value = item.get("value", {}) if isinstance(item, dict) else {}
-        if value.get("isin") == isin and value.get("investmentType") in ("FE", "FO", "FV", "FM"):
-            return value["securityID"]
-    if payload.get("results"):
-        value = payload["results"][0].get("value", {})
-        if value.get("isin") == isin:
-            return value["securityID"]
+        if value.get("isin") != isin:
+            continue
+        security_id = value.get("securityID")
+        if not security_id or security_id in seen:
+            continue
+        seen.add(security_id)
+        if value.get("investmentType") in _FUND_TYPES:
+            fund_candidates.append(security_id)
+        else:
+            other_candidates.append(security_id)
+    candidates = fund_candidates or other_candidates
+    if candidates:
+        return candidates
     raise MorningstarDataError(f"ISIN {isin} not found on Morningstar")
 
 
@@ -685,59 +724,97 @@ def _sal_get(bearer: str, cookies: dict, path: str, component: str) -> dict:
     }
     resp = requests.get(url, headers=_headers(bearer), params=params, cookies=cookies, timeout=30)
     resp.raise_for_status()
-    return resp.json()
+    try:
+        return resp.json()
+    except requests.exceptions.JSONDecodeError:
+        body = resp.text or ""
+        if resp.status_code == 206 or "Can't get SecurityInfo" in body:
+            raise MorningstarSecurityUnavailable(
+                f"No SAL {component} data for {path}: {body.strip()[:120]}"
+            )
+        # Undecodable body without a missing-data marker: most likely an HTML
+        # WAF challenge page. Re-raise so the retry layer refreshes the session.
+        raise
 
 
 def _fetch_exposure_once(isin: str) -> Exposure:
-    """Single full resolution pass: credentials, securityId, SAL fetch, parsing."""
+    """Single full resolution pass: credentials, securityIds, SAL fetch, parsing.
+
+    Tries every candidate listing quoting the ISIN in search order and returns
+    the first whose SAL payloads parse into countries. A listing without data
+    (MorningstarSecurityUnavailable, or no countries parsed) only advances to
+    the next candidate; a genuine JSONDecodeError (HTML WAF challenge) still
+    propagates so _retry_on_waf_challenge can refresh the session.
+    """
     bearer, cookies = _session_credentials()
-    security_id = _search_security_id(isin, cookies)
+    security_ids = _search_security_ids(isin, cookies)
 
-    try:
-        sector_data = _sal_get(
-            bearer, cookies, f"portfolio/v2/sector/{security_id}/data", "sal-mip-sector-exposure"
-        )
-        country_data = _sal_get(
-            bearer,
-            cookies,
-            f"portfolio/regionalSectorIncludeCountries/{security_id}/data",
-            "sal-mip-country-exposure",
-        )
-        region_data = _sal_get(
-            bearer, cookies, f"portfolio/regionalSector/{security_id}/data", "sal-mip-region"
-        )
-    except requests.exceptions.JSONDecodeError:
-        # WAF challenge page instead of JSON: let the retry layer refresh the
-        # session instead of wrapping it as a plain upstream failure.
-        raise
-    except requests.RequestException as exc:
-        raise MorningstarDataError(f"Morningstar upstream request failed: {exc}") from exc
+    last_error = None
+    for security_id in security_ids:
+        try:
+            sector_data = _sal_get(
+                bearer, cookies, f"portfolio/v2/sector/{security_id}/data", "sal-mip-sector-exposure"
+            )
+            country_data = _sal_get(
+                bearer,
+                cookies,
+                f"portfolio/regionalSectorIncludeCountries/{security_id}/data",
+                "sal-mip-country-exposure",
+            )
+            region_data = _sal_get(
+                bearer, cookies, f"portfolio/regionalSector/{security_id}/data", "sal-mip-region"
+            )
+        except MorningstarSecurityUnavailable as exc:
+            logger.info(
+                "morningstar listing %s has no SAL data for ISIN %s: %s", security_id, isin, exc
+            )
+            last_error = exc
+            continue
+        except requests.exceptions.JSONDecodeError:
+            # WAF challenge page instead of JSON: let the retry layer refresh the
+            # session instead of wrapping it as a plain upstream failure.
+            raise
+        except requests.RequestException as exc:
+            raise MorningstarDataError(f"Morningstar upstream request failed: {exc}") from exc
 
-    countries = _parse_countries(country_data)
-    sectors = _parse_sectors(sector_data)
-    regions = _parse_regions(region_data)
+        countries = _parse_countries(country_data)
+        if not countries:
+            logger.info(
+                "morningstar listing %s returned no countries for ISIN %s", security_id, isin
+            )
+            last_error = MorningstarSecurityUnavailable(
+                f"No country data for securityID {security_id}"
+            )
+            continue
 
-    if not countries:
-        raise MorningstarDataError(f"No country data found for ISIN {isin}")
+        sectors = _parse_sectors(sector_data)
+        regions = _parse_regions(region_data)
 
-    # Country weights are kept as reported (they may not sum to 100 because
-    # Morningstar buckets a residual share under "Other"); the backend absorbs
-    # the residual into the "Other / Not Classified" region when deriving the
-    # region dimension.
-    countries.sort(key=lambda r: r.weight, reverse=True)
-    sectors.sort(key=lambda r: r.weight, reverse=True)
-    regions.sort(key=lambda r: r.weight, reverse=True)
+        # Country weights are kept as reported (they may not sum to 100 because
+        # Morningstar buckets a residual share under "Other"); the backend absorbs
+        # the residual into the "Other / Not Classified" region when deriving the
+        # region dimension.
+        countries.sort(key=lambda r: r.weight, reverse=True)
+        sectors.sort(key=lambda r: r.weight, reverse=True)
+        regions.sort(key=lambda r: r.weight, reverse=True)
 
-    return Exposure(isin=isin, countries=countries, sectors=sectors, regions=regions)
+        return Exposure(isin=isin, countries=countries, sectors=sectors, regions=regions)
+
+    raise MorningstarDataError(
+        f"No SAL data found for ISIN {isin} on any of {len(security_ids)} Morningstar listings"
+    ) from last_error
 
 
 def fetch_morningstar_exposure(isin: str) -> Exposure:
     """Resolves a fund's country, sector, and region exposure from Morningstar.
 
-    Retries the whole flow once with a fresh WAF session when an endpoint
-    answers with a challenge page (stale cached credentials). Raises
-    MorningstarDataError if no usable country data can be retrieved or if the
-    WAF challenge persists, so the endpoint can map it to a 502. Regions may be
-    empty for funds without a regional breakdown and are not gated on.
+    Tries every Morningstar listing quoting the ISIN and returns the first one
+    with country data; a listing without SAL data only advances to the next
+    candidate. Retries the whole flow once with a fresh WAF session when an
+    endpoint answers with an HTML challenge page (stale cached credentials).
+    Raises MorningstarDataError if no listing carries usable country data or
+    if the WAF challenge persists, so the endpoint can map it to a 502.
+    Regions may be empty for funds without a regional breakdown and are not
+    gated on.
     """
     return _retry_on_waf_challenge(lambda: _fetch_exposure_once(isin), f"ISIN {isin}")

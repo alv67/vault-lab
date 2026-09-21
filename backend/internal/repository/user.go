@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/amelamela/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/model"
 )
 
 type UserRepository interface {

@@ -117,8 +117,11 @@
     <h2 class="mb-4 font-semibold">Valute gestite</h2>
 
     {#if availableCurrencies.length > 0}
-      <div class="mb-4 flex items-end gap-3">
-        <Field label="Code" class="w-64 shrink-0">
+      <!-- Stacked full-width on phones (EPIC K bug-fix): the fixed `w-64`
+           code picker + flex-1 name field + Add button overflowed 393px;
+           from `sm` the row keeps its original inline shape. -->
+      <div class="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
+        <Field label="Code" class="w-full shrink-0 sm:w-64">
           <Select value={newCode} onchange={(e) => selectCurrency(e.currentTarget.value)}>
             <option value="" disabled>Select a currency</option>
             {#each availableCurrencies as c (c.code)}
@@ -126,10 +129,10 @@
             {/each}
           </Select>
         </Field>
-        <Field label="Name" class="flex-1">
+        <Field label="Name" class="w-full flex-1 sm:w-auto">
           <Input placeholder="Optional" bind:value={newName} />
         </Field>
-        <Button onclick={addCurrency} disabled={!newCode || addingCurrency}>
+        <Button onclick={addCurrency} disabled={!newCode || addingCurrency} class="w-full sm:w-auto">
           {addingCurrency ? 'Adding...' : 'Add'}
         </Button>
       </div>

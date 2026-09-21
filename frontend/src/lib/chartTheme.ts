@@ -19,9 +19,10 @@ import { CHART_PALETTE, CHART_PALETTE_DARK } from '$lib/chartPalette'
 /** Keep in sync with `fontFamily.sans` in tailwind.config.js (the canvas
  *  cannot resolve the CSS font stack). */
 export const CHART_FONT_FAMILY =
-  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
 
-/** Space-separated HSL triples mirroring the semantic tokens of app.css. */
+/** Space-separated HSL triples mirroring the semantic tokens of app.css
+ *  (raw hex for `grid`, which mirrors the literal `--chart-grid` token). */
 interface ChartTokens {
   foreground: string
   muted: string
@@ -31,7 +32,11 @@ interface ChartTokens {
   ring: string
   surface: string
   surfaceRaised: string
+  grid: string
 }
+
+/** Gridline ink (`--chart-grid`) is painted as a whisper over the surface. */
+const GRID_LINE_OPACITY = 0.08
 
 const TOKENS: Record<ResolvedTheme, ChartTokens> = {
   light: {
@@ -43,6 +48,7 @@ const TOKENS: Record<ResolvedTheme, ChartTokens> = {
     ring: '221.2 83.2% 53.3%',
     surface: '0 0% 100%',
     surfaceRaised: '0 0% 100%',
+    grid: '#0f172a',
   },
   dark: {
     foreground: '210 40% 98%',
@@ -53,6 +59,7 @@ const TOKENS: Record<ResolvedTheme, ChartTokens> = {
     ring: '213.1 93.9% 67.8%',
     surface: '222.2 47.4% 11.2%',
     surfaceRaised: '217.2 32.6% 17.5%',
+    grid: '#cbd5e1',
   },
 }
 
@@ -67,7 +74,10 @@ function axisTheme(tokens: ChartTokens, splitLineShown: boolean) {
     axisLine: { show: true, lineStyle: { color: hsl(tokens.border) } },
     axisTick: { show: false, lineStyle: { color: hsl(tokens.border) } },
     axisLabel: { show: true, color: hsl(tokens.mutedForeground) },
-    splitLine: { show: splitLineShown, lineStyle: { color: hsl(tokens.border) } },
+    splitLine: {
+      show: splitLineShown,
+      lineStyle: { color: tokens.grid, opacity: GRID_LINE_OPACITY },
+    },
     splitArea: { show: false },
   }
 }

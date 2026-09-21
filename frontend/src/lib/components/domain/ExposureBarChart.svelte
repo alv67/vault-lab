@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
-  import { Chart } from 'svelte-echarts'
+  import { Chart, type ECMouseEvent } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
   import { BarChart } from 'echarts/charts'
   import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -9,6 +9,15 @@
   import { resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
+  import { t } from '$lib/i18n/index.svelte'
+  import { cx } from '$lib/components/ui/utils'
+  import ChartTableToggle from '$lib/components/ui/ChartTableToggle.svelte'
+  import Table from '$lib/components/ui/Table.svelte'
+  import THead from '$lib/components/ui/THead.svelte'
+  import TBody from '$lib/components/ui/TBody.svelte'
+  import Tr from '$lib/components/ui/Tr.svelte'
+  import Th from '$lib/components/ui/Th.svelte'
+  import Td from '$lib/components/ui/Td.svelte'
 
   use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
@@ -38,6 +47,8 @@
     colorFor = undefined as ((name: string) => string | undefined) | undefined,
     labelFor = undefined as ((name: string) => string) | undefined,
     maxVisibleRows = undefined as number | undefined,
+    showTableToggle = true,
+    onDrill = undefined,
   }: {
     rows?: ExposureBarRow[]
     currency?: string
@@ -54,10 +65,22 @@
      * tooltip shows both (e.g. "United States (US)"). Unset = labels are
      * rendered verbatim (sector charts). */
     labelFor?: (name: string) => string
-    /** When set, the canvas still renders every row at full height but is
-     * wrapped in a viewport capped at `maxVisibleRows` rows with vertical
-     * scrolling (dashboard country list). Unset = all rows visible. */
+    /** Collapse threshold (dashboard country list): the chart shows the first
+     * `maxVisibleRows` bars by default with a "Show all" control that expands
+     * in place to every row. There is deliberately NO inner scroll viewport —
+     * the page is the only scroll container (spec §5.3 "collapse, don't
+     * shrink"). Unset = all rows visible. */
     maxVisibleRows?: number
+    /** Hide the shared Chart ⇄ Table toggle (EPIC K.5b, spec §9.1). Only
+     * needed by callers that already render the same rows as a list right
+     * below the chart; every other card shows the toggle by default. */
+    showTableToggle?: boolean
+    /** Drill-down callback (EPIC K.5, spec §6.5): when set, clicking a bar
+     * opens the caller's drill panel with the row's RAW name (the axis may
+     * show a mapped label, e.g. a full country name, but the backend bucket
+     * key is the raw row name); drilled bars get a pointer cursor. Unset =
+     * the chart stays a plain visual with the default cursor. */
+    onDrill?: (rawName: string) => void
   } = $props()
 
   // Defensive shaping: drop non-positive rows and re-sort descending by value
@@ -83,13 +106,45 @@
 
   // One compact row per bar instead of a fixed canvas height.
   const ROW_HEIGHT = 30
-  const height = $derived(Math.max(150, sorted.length * ROW_HEIGHT + 10))
 
-  // Cap for the optional scroll viewport: the same height the canvas would
-  // have with exactly `maxVisibleRows` rows, so lists at or below the cap
-  // never show a scrollbar (undefined = no viewport, chart fully visible).
-  const scrollCap = $derived(
-    maxVisibleRows && maxVisibleRows > 0 ? maxVisibleRows * ROW_HEIGHT + 10 : undefined,
+  // Collapse (not scroll): when a cap is set and the list is longer, the
+  // chart shows the first `maxVisibleRows` bars plus a "Show all" control
+  // that expands in place. No inner scroll viewport exists — the page is the
+  // only scroll container (spec §5.3 "collapse, don't shrink").
+  let showAll = $state(false)
+  const capped = $derived(
+    !!(maxVisibleRows && maxVisibleRows > 0 && sorted.length > maxVisibleRows),
+  )
+  const visible = $derived(capped && !showAll ? sorted.slice(0, maxVisibleRows as number) : sorted)
+  const height = $derived(Math.max(150, visible.length * ROW_HEIGHT + 10))
+
+  // Drill-down click (EPIC K.5, spec §6.5): the svelte-echarts wrapper
+  // forwards the ECharts instance `click` event through its `onclick` prop,
+  // so the binding survives the `{#key}` theme re-init (the handlers are
+  // re-registered on every fresh instance). The `componentType` guard keeps
+  // axis/background clicks out; the bars are plotted from `visible` (the
+  // collapsed list), so the `dataIndex` maps back 1:1 to the rendered rows —
+  // their RAW names are exactly the bucket keys the drill endpoint expects
+  // (`US`, `North America`, `Financials`…), while the axis may show a
+  // mapped label.
+  function handleBarClick(event: ECMouseEvent): void {
+    if (!onDrill || event.componentType !== 'series') return
+    const row = visible[event.dataIndex]
+    if (row) onDrill(row.name)
+  }
+
+  // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
+  // The table renders the same shaped `sorted` rows the bars plot; switching
+  // to it unmounts the canvas (out of the a11y tree), and empty data keeps
+  // showing the plain empty state instead of an empty table. Table mode
+  // always renders every row (the page scrolls — no nested scroll area), so
+  // the chart-only `maxVisibleRows` collapse never hides rows here; below
+  // `sm` each row collapses to a stacked key–value grid so the table never
+  // needs its own horizontal scroll either (spec §5.3).
+  let view = $state<'chart' | 'table'>('chart')
+  const showTable = $derived(showTableToggle && view === 'table')
+  const caption = $derived(
+    label ? t('chartView.caption', { name: label }) : t('chartView.captionGeneric'),
   )
 
   const options = $derived.by((): EChartsOption => ({
@@ -100,13 +155,13 @@
       formatter: (params: unknown) => {
         const raw = Array.isArray(params) ? params : [params]
         const p = raw[0] as TooltipItem
-        const row = sorted[p.dataIndex]
+        const row = visible[p.dataIndex]
         if (!row) return ''
         // "United States (US)" when labelFor maps the raw name; plain name
         // (sector charts) when the label is the row name itself.
         const shown = displayName(row.name)
         const title = shown === row.name ? shown : `${shown} (${row.name})`
-        return `${p.marker}${title}<br/>Valore: <b>${formatCurrency(row.value, currency)}</b><br/>Peso: <b>${formatPercent(row.weight)}</b>`
+        return `${p.marker}${title}<br/>${t('chartView.colValue')}: <b>${formatCurrency(row.value, currency)}</b><br/>${t('chartView.colWeight')}: <b>${formatPercent(row.weight)}</b>`
       },
     },
     grid: { left: 8, right: 60, top: 8, bottom: 8, containLabel: true },
@@ -116,7 +171,7 @@
     yAxis: {
       type: 'category',
       inverse: true,
-      data: sorted.map((r) => displayName(r.name)),
+      data: visible.map((r) => displayName(r.name)),
       // Mapped labels (full country names) need more room than raw codes;
       // charts without `labelFor` keep the previous compact axis.
       axisLabel: { fontSize: 11, width: labelFor ? 140 : 110, overflow: 'truncate' },
@@ -125,9 +180,12 @@
     },
     series: [
       {
-        name: label ?? 'Esposizione',
+        name: label ?? t('chartView.seriesExposure'),
         type: 'bar',
         barMaxWidth: 18,
+        // Drilled charts invite the click with a pointer cursor (K.5);
+        // plain ones keep the default arrow.
+        cursor: onDrill ? 'pointer' : 'default',
         itemStyle: { borderRadius: [0, 4, 4, 0] },
         // Weight % printed at the end of each bar; the exact amount lives in
         // the tooltip.
@@ -138,11 +196,11 @@
           color: labelColor,
           formatter: (params: unknown) => {
             const p = params as BarLabelItem
-            const row = sorted[p.dataIndex]
+            const row = visible[p.dataIndex]
             return row ? formatPercent(row.weight) : ''
           },
         },
-        data: sorted.map((r, i) => ({
+        data: visible.map((r, i) => ({
           value: Number(r.value),
           itemStyle: { color: colorFor?.(r.name) ?? palette[i % palette.length] },
         })),
@@ -151,8 +209,20 @@
   }))
 </script>
 
-{#if label}
-  <h3 class="mb-1 font-semibold">{label}</h3>
+{#if label || (showTableToggle && sorted.length > 0)}
+  <div
+    class={cx(
+      'mb-1 flex flex-wrap items-center gap-2',
+      label ? 'justify-between' : 'justify-end',
+    )}
+  >
+    {#if label}
+      <h3 class="font-semibold">{label}</h3>
+    {/if}
+    {#if showTableToggle && sorted.length > 0}
+      <ChartTableToggle name={label} bind:view />
+    {/if}
+  </div>
 {/if}
 {#if note}
   <p class="mb-3 text-xs text-muted-foreground">{note}</p>
@@ -161,22 +231,68 @@
   <div class="w-full" style="height: {height}px">
     <!-- {#key} re-inits the chart when the theme flips so the ECharts theme
          object passed below is picked up (svelte-echarts only reads `theme`
-         at init time). -->
+         at init time). `onclick` is the wrapper's ECharts event prop (it
+         registers `chart.on('click')` at init), so the drill-down binding
+         is re-created together with each re-initialised instance. -->
     {#key resolved()}
-      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+      <Chart
+        {init}
+        {options}
+        theme={VAULTLAB_CHART_THEMES[resolved()]}
+        onclick={handleBarClick}
+      />
     {/key}
   </div>
 {/snippet}
 {#if sorted.length === 0}
   <div class="flex items-center justify-center text-sm text-muted-foreground" style="height: {height}px">
-    No data
+    {t('chartView.noData')}
   </div>
-{:else if scrollCap != null}
-  <!-- Capped view (e.g. the country bars): full-height canvas with all rows,
-       scrolled vertically inside a maxVisibleRows-tall viewport. -->
-  <div class="w-full overflow-y-auto" style="max-height: {scrollCap}px">
-    {@render canvas()}
-  </div>
+{:else if showTable}
+  <!-- No wrapper scroll container (EPIC K bug-fix): the page is the only
+       scroll container, so no nested scrollbar appears. The table is
+       `w-full` with wrapping names, and below `sm` rows collapse into a
+       stacked key–value grid (name spanning the full width, value and weight
+       sharing the second line) — spec §5.3 "collapse, don't shrink". -->
+  <Table class="max-sm:block table-fixed">
+    <caption class="sr-only">{caption}</caption>
+    <THead class="max-sm:block">
+      <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+        <Th class="max-sm:col-span-2 max-sm:py-0.5 break-words">{t('chartView.colName')}</Th>
+        <Th align="right" class="max-sm:py-0.5 max-sm:text-left whitespace-nowrap">{t('chartView.colValue')}</Th>
+        <Th align="right" class="max-sm:py-0.5 whitespace-nowrap">{t('chartView.colWeight')}</Th>
+      </Tr>
+    </THead>
+    <TBody class="max-sm:block">
+      {#each sorted as r (r.name)}
+        {@const shown = displayName(r.name)}
+        <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
+          <!-- Same label as the tooltip: friendly name plus the raw name
+               in parentheses when `labelFor` maps it (e.g. "US"). -->
+          <Td class="max-sm:col-span-2 max-sm:py-0.5 font-medium break-words">
+            {shown === r.name ? shown : `${shown} (${r.name})`}
+          </Td>
+          <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">
+            {formatCurrency(r.value, currency)}
+          </Td>
+          <Td align="right" class="max-sm:py-0.5 whitespace-nowrap">{formatPercent(r.weight)}</Td>
+        </Tr>
+      {/each}
+    </TBody>
+  </Table>
 {:else}
   {@render canvas()}
+  {#if capped}
+    <!-- Collapse control: expands the chart to every row in place, so the
+         card (and the page) grows instead of showing an inner scroll area. -->
+    <div class="mt-1 flex justify-end">
+      <button
+        type="button"
+        class="focus-ring rounded-control px-2 py-1 text-xs font-medium text-accent-text hover:underline"
+        onclick={() => (showAll = !showAll)}
+      >
+        {showAll ? t('chartView.showLess') : t('chartView.showAll', { count: sorted.length })}
+      </button>
+    </div>
+  {/if}
 {/if}
