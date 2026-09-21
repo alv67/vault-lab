@@ -1118,6 +1118,27 @@ otherwise continue".
   same FX conversion as the regions), only the **non-zero** buckets, sorted
   by value descending with `weight` summing to 100; empty (non-nil) when
   there is no country exposure.
+- Since EPIC K.5 the drill-down exposes the assets behind a single allocation
+  bucket: `GET /portfolios/{id}/allocation/drill?dim=&key=` (portfolio
+  currency) and `GET /dashboard/allocation/drill?dim=&key=` (base currency,
+  holdings aggregated by asset across all portfolios — one entry per asset
+  with the summed value). `dim` is one of `class`, `country`, `region` or
+  `sector` and `key` the bucket name: a canonical name with spaces (e.g.
+  `North America`, URL-decoded by the router), an ISO country code, an
+  investment class or the literal `Other` fallback bucket; an unknown `dim`
+  or an empty `key` answers 400. The `{currency, dim, key, total, assets[]}`
+  response lists the contributing assets sorted by descending `contribution`
+  (only positive ones), each with `asset_id`, `ticker`, `name`, the market
+  `value` in the reference currency, the asset's exposure `weight` for the
+  bucket (percentage points) and the `contribution` (= `value * weight /
+  100`); `total` is the sum of the contributions and matches the
+  corresponding bucket of the aggregation output exactly, because the drill
+  reuses the same machinery: the equity-universe eligibility filter, the
+  canonical weights, the stock domicile/sector defaults and the `Other`
+  fallback when no weight is stored. The `class` drill skips the eligibility
+  filter (the `bond` bucket drills down to bonds), like the class allocation
+  itself. Ownership is enforced as on the sibling portfolio allocation
+  reads (403/404) and the result is cached like the other stats.
 - The `python-service` microservice (B.5) fetches ETF exposure and resolves
   ISINs from tickers via JustETF; since B.14 it also exposes Morningstar
   exposure via `GET /api/v1/etf/{isin}/morningstar-exposure` (custom resolver:

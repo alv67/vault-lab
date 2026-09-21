@@ -1135,6 +1135,28 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   proprio `country` al 100%, con la stessa conversione FX delle regioni),
   solo i bucket **nonnulli**, ordinati per valore decrescente con `weight`
   che somma a 100; vuoto (non nil) quando non c'è esposizione per paese.
+- Da EPIC K.5 il drill-down espone gli asset dietro un singolo bucket di
+  allocazione: `GET /portfolios/{id}/allocation/drill?dim=&key=` (valuta del
+  portafoglio) e `GET /dashboard/allocation/drill?dim=&key=` (valuta base,
+  holding aggregate per asset su tutti i portafogli — una voce per asset col
+  valore sommato). `dim` è uno tra `class`, `country`, `region` o `sector` e
+  `key` è il nome del bucket: un nome canonico con spazi (es. `North
+  America`, decodificato dal router), un codice ISO di paese, una classe
+  d'investimento o il bucket letterale `Other` di ricaduta; `dim` sconosciuto
+  o `key` vuoto rispondono 400. La risposta `{currency, dim, key, total,
+  assets[]}` elenca gli asset contributori ordinati per `contribution`
+  decrescente (solo positive), ognuno con `asset_id`, `ticker`, `name`, il
+  `value` di mercato nella valuta di riferimento, il `weight` di esposizione
+  dell'asset per il bucket (punti percentuali) e la `contribution` (= `value
+  * weight / 100`); `total` è la somma dei contributi e coincide esattamente
+  con il bucket dell'output di allocazione corrispondente, perché il drill
+  riusa la stessa macchina: il filtro di ammissibilità equity-only, i pesi
+  canonici, i default di domicilio/settore per le azioni senza esposizione e
+  la ricaduta su `Other` quando nessun peso è salvato. Il drill `class`
+  salta il filtro di ammissibilità (il bucket `bond` scende ai bond), come
+  l'allocazione per classe stessa. Il controllo di proprietà è quello delle
+  letture di allocazione del portafoglio (403/404) e il risultato è cachato
+  come le altre statistiche.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; da B.14 espone anche l'esposizione Morningstar
   via `GET /api/v1/etf/{isin}/morningstar-exposure` (resolver custom: bootstrap

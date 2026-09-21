@@ -334,3 +334,29 @@ type DashboardAllocation struct {
 	Covered   decimal.Decimal      `json:"covered_value"`
 	Excluded  decimal.Decimal      `json:"excluded_value"`
 }
+
+// AllocationDrillAsset is one asset contributing to an allocation bucket:
+// its market value in the drill currency, its exposure weight for the bucket
+// (percentage points) and the value it places in the bucket
+// (value * weight / 100).
+type AllocationDrillAsset struct {
+	AssetID      string          `json:"asset_id"`
+	Ticker       string          `json:"ticker"`
+	Name         string          `json:"name"`
+	Value        decimal.Decimal `json:"value"`
+	Weight       decimal.Decimal `json:"weight"`
+	Contribution decimal.Decimal `json:"contribution"`
+}
+
+// AllocationDrill is the drill-down of one allocation bucket: dim is class,
+// country, region or sector and key the bucket name; Assets carries the
+// contributing assets sorted by contribution descending (only positive
+// ones) and Total is their sum, i.e. the bucket value of the corresponding
+// aggregation.
+type AllocationDrill struct {
+	Currency string                  `json:"currency"`
+	Dim      string                  `json:"dim"`
+	Key      string                  `json:"key"`
+	Total    decimal.Decimal         `json:"total"`
+	Assets   []*AllocationDrillAsset `json:"assets"`
+}

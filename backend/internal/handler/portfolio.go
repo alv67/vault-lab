@@ -453,6 +453,51 @@ func (h *Handler) GetPortfolioSectorAllocation(w http.ResponseWriter, r *http.Re
 	respond(w, http.StatusOK, allocation)
 }
 
+func (h *Handler) GetPortfolioAllocationDrill(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	portfolioID, err := parseUUID(id)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid portfolio id")
+		return
+	}
+
+	if _, err := h.svc.GetPortfolio(r.Context(), portfolioID, claims.UserID); err != nil {
+		if err == service.ErrForbidden {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		respondError(w, http.StatusNotFound, "portfolio not found")
+		return
+	}
+
+	query := r.URL.Query()
+	drill, err := h.svc.GetPortfolioAllocationDrill(r.Context(), portfolioID, query.Get("dim"), query.Get("key"))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "dim must be one of class, country, region, sector and key is required")
+			return
+		case errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, "portfolio not found")
+			return
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+		log.Error().Err(err).Msg("get portfolio allocation drill-down failed")
+		respondError(w, http.StatusInternalServerError, "allocation drill-down failed")
+		return
+	}
+
+	respond(w, http.StatusOK, drill)
+}
+
 func (h *Handler) GetPortfolioPerformance(w http.ResponseWriter, r *http.Request) {
 	claims := auth.GetClaims(r.Context())
 	if claims == nil {
@@ -643,6 +688,32 @@ func (h *Handler) GetDashboardAllocation(w http.ResponseWriter, r *http.Request)
 	}
 
 	respond(w, http.StatusOK, dashAlloc)
+}
+
+func (h *Handler) GetDashboardAllocationDrill(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetClaims(r.Context())
+	if claims == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	query := r.URL.Query()
+	drill, err := h.svc.GetDashboardAllocationDrill(r.Context(), claims.UserID, query.Get("dim"), query.Get("key"))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, http.StatusBadRequest, "dim must be one of class, country, region, sector and key is required")
+			return
+		case errors.Is(err, service.ErrNotFound):
+			respondError(w, http.StatusNotFound, "not found")
+			return
+		}
+		log.Error().Err(err).Msg("get dashboard allocation drill-down failed")
+		respondError(w, http.StatusInternalServerError, "dashboard allocation drill-down failed")
+		return
+	}
+
+	respond(w, http.StatusOK, drill)
 }
 
 func (h *Handler) GetDashboardPerformance(w http.ResponseWriter, r *http.Request) {
