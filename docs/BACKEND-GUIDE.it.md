@@ -357,6 +357,31 @@ transazioni del portafoglio, non la dimensione della pagina: una pagina
 oltre la fine restituisce semplicemente un array `transactions` vuoto con
 il `total` corretto.
 
+Dalla **EPIC K.4c** l'elenco accetta anche quattro filtri opzionali e
+liberamente combinabili (assenti = comportamento di cui sopra, piena
+retrocompatibilità):
+
+| Parametro | Significato | Valore non valido |
+|-----------|-------------|-------------------|
+| `type` | tipo esatto: `buy`, `sell`, `dividend`, `split`, `fee` | 400 `invalid type` |
+| `asset_id` | UUID esatto dell'asset | 400 `invalid asset_id` |
+| `from` | data iniziale inclusiva, formato rigoroso `YYYY-MM-DD` | 400 `invalid from: date must be YYYY-MM-DD` |
+| `to` | data finale inclusiva, formato rigoroso `YYYY-MM-DD` | 400 `invalid to: date must be YYYY-MM-DD` |
+
+La query viene convertita in un `model.TransactionFilter` tipizzato
+(`Type string`, `AssetID *uuid.UUID`, `From/To *time.Time` a mezzanotte UTC)
+da `model.ParseTransactionFilter`; il service lo propaga sia a
+`FindByPortfolioPage` sia a `CountByPortfolio`, quindi **`total` riflette il
+conteggio filtrato** — il frontend può mostrare "1–20 di 42" sull'insieme
+filtrato. Il repository costruisce un `WHERE` dinamico e parametrizzato a
+partire dal filtro (i segnaposto sono numerati da un contatore, i valori
+viaggiano solo come bind parameter — mai interpolati); i confini di data
+confrontano `t.date::date` con i giorni parsati, quindi il confronto è sul giorno
+di calendario ed è inclusivo su entrambi i lati (la colonna è
+`TIMESTAMPTZ`). Ordine e semantica della paginazione restano invariati.
+Un `filter.Type` non vuoto fuori dall'insieme consentito è rifiutato dal
+service con `ErrInvalidInput` anche se la chiamata bypassa il parser HTTP.
+
 ### Il grafico TWR per singolo portafoglio (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
 
 `GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`
@@ -1110,6 +1135,28 @@ frasi: "crea la connessione, se va male fermati e segnala, altrimenti continua".
   proprio `country` al 100%, con la stessa conversione FX delle regioni),
   solo i bucket **nonnulli**, ordinati per valore decrescente con `weight`
   che somma a 100; vuoto (non nil) quando non c'è esposizione per paese.
+- Da EPIC K.5 il drill-down espone gli asset dietro un singolo bucket di
+  allocazione: `GET /portfolios/{id}/allocation/drill?dim=&key=` (valuta del
+  portafoglio) e `GET /dashboard/allocation/drill?dim=&key=` (valuta base,
+  holding aggregate per asset su tutti i portafogli — una voce per asset col
+  valore sommato). `dim` è uno tra `class`, `country`, `region` o `sector` e
+  `key` è il nome del bucket: un nome canonico con spazi (es. `North
+  America`, decodificato dal router), un codice ISO di paese, una classe
+  d'investimento o il bucket letterale `Other` di ricaduta; `dim` sconosciuto
+  o `key` vuoto rispondono 400. La risposta `{currency, dim, key, total,
+  assets[]}` elenca gli asset contributori ordinati per `contribution`
+  decrescente (solo positive), ognuno con `asset_id`, `ticker`, `name`, il
+  `value` di mercato nella valuta di riferimento, il `weight` di esposizione
+  dell'asset per il bucket (punti percentuali) e la `contribution` (= `value
+  * weight / 100`); `total` è la somma dei contributi e coincide esattamente
+  con il bucket dell'output di allocazione corrispondente, perché il drill
+  riusa la stessa macchina: il filtro di ammissibilità equity-only, i pesi
+  canonici, i default di domicilio/settore per le azioni senza esposizione e
+  la ricaduta su `Other` quando nessun peso è salvato. Il drill `class`
+  salta il filtro di ammissibilità (il bucket `bond` scende ai bond), come
+  l'allocazione per classe stessa. Il controllo di proprietà è quello delle
+  letture di allocazione del portafoglio (403/404) e il risultato è cachato
+  come le altre statistiche.
 - Il microservizio `python-service` (B.5) scarica l'esposizione ETF e risolve
   gli ISIN dai ticker via JustETF; da B.14 espone anche l'esposizione Morningstar
   via `GET /api/v1/etf/{isin}/morningstar-exposure` (resolver custom: bootstrap

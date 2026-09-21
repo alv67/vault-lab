@@ -20,14 +20,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/amelamela/vault-lab/internal/auth"
-	"github.com/amelamela/vault-lab/internal/cache"
-	"github.com/amelamela/vault-lab/internal/config"
-	"github.com/amelamela/vault-lab/internal/handler"
-	"github.com/amelamela/vault-lab/internal/price"
-	"github.com/amelamela/vault-lab/internal/repository"
-	"github.com/amelamela/vault-lab/internal/series"
-	"github.com/amelamela/vault-lab/internal/service"
+	"github.com/alv67/vault-lab/internal/auth"
+	"github.com/alv67/vault-lab/internal/cache"
+	"github.com/alv67/vault-lab/internal/config"
+	"github.com/alv67/vault-lab/internal/handler"
+	"github.com/alv67/vault-lab/internal/price"
+	"github.com/alv67/vault-lab/internal/repository"
+	"github.com/alv67/vault-lab/internal/series"
+	"github.com/alv67/vault-lab/internal/service"
 )
 
 func main() {
@@ -203,11 +203,13 @@ func setupRoutes(r chi.Router, h *handler.Handler, jwtAuth *auth.JWTAuth) {
 			r.Get("/portfolios/{id}/allocation/class", h.GetPortfolioClassAllocation)
 			r.Get("/portfolios/{id}/allocation/geography", h.GetPortfolioGeographyAllocation)
 			r.Get("/portfolios/{id}/allocation/sector", h.GetPortfolioSectorAllocation)
+			r.Get("/portfolios/{id}/allocation/drill", h.GetPortfolioAllocationDrill)
 			r.Get("/portfolios/{id}/roi", h.GetPortfolioROI)
 			r.Get("/portfolios/{id}/history", h.GetPortfolioHistory)
 
 			r.Get("/dashboard", h.GetDashboard)
 			r.Get("/dashboard/allocation", h.GetDashboardAllocation)
+			r.Get("/dashboard/allocation/drill", h.GetDashboardAllocationDrill)
 			r.Get("/dashboard/performance", h.GetDashboardPerformance)
 
 			r.Get("/settings/currencies", h.ListCurrencies)

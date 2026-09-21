@@ -1,27 +1,48 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { t } from '$lib/i18n/index.svelte'
+  import { viewport } from '$lib/stores/viewport.svelte'
   import AppHeader from './AppHeader.svelte'
+  import BottomNav from './BottomNav.svelte'
+  import CommandPalette from './CommandPalette.svelte'
+  import Fab from './Fab.svelte'
   import MobileDrawer from './MobileDrawer.svelte'
   import Sidebar from './Sidebar.svelte'
   import UserMenu from './UserMenu.svelte'
 
   /**
-   * Responsive application shell (EPIC D.3) — replaces the old fixed-width
-   * Layout.svelte.
+   * Responsive application shell (EPIC D.3, adaptive since EPIC K.2) —
+   * replaces the old fixed-width Layout.svelte.
    *
-   * Layout: a `h-dvh` row with the desktop sidebar (`hidden lg:flex`, the
-   * 64px/16px collapsible rail) and a scrollable main column carrying the
-   * sticky AppHeader above the routed content. Below `lg` the sidebar is
-   * gone: the hamburger opens the MobileDrawer instead.
+   * Three device classes (spec §5.1, decision D2):
+   * - phone (< `sm`): no sidebar at all — a fixed `BottomNav` (Overview,
+   *   Portfolios, Assets, More) and the quick-actions `Fab` mount over the
+   *   content column, and `<main>` gets an extra bottom pad so nothing hides
+   *   behind the bar (56px + safe area + breathing room). The hamburger is
+   *   gone: `MobileDrawer` survives as the "More" sheet, opened only by the
+   *   bottom nav;
+   * - tablet (`sm`–`lg`): the sidebar is always the 64px icon rail — the
+   *   persisted expand preference deliberately only applies at `lg`+;
+   * - desktop (`lg`+): unchanged — expandable/collapsible sidebar, sticky
+   *   header with the collapse toggle, user menu in the sidebar footer.
    *
    * State owned here and pushed down:
    * - `collapsed` — persisted under `vaultlab-sidebar` so the rail survives
    *   reloads (the app is SPA-only: `export const ssr = false`, so reading
    *   localStorage at init never runs on the server);
-   * - `drawerOpen` — shared by the header hamburger (aria-expanded) and the
-   *   drawer itself (which handles its own close-on-navigation + focus trap).
-   */
+    * - `moreOpen` — the phone More sheet (the drawer handles its own
+    *   close-on-navigation + focus trap);
+     * - `condensed` — measured on the main scroll container past a small
+     *   threshold and published as the `--app-header-h` custom property (the
+     *   header height and every sticky page header derive their offsets from
+     *   it, §5.1 "condenses on scroll");
+    * - `paletteOpen` — the K.5a command palette (⌘K/Ctrl+K chord, the header
+    *   search trigger and Esc all share this one bindable state).
+    */
   const SIDEBAR_STORAGE_KEY = 'vaultlab-sidebar'
+
+  /** Scroll distance (px) after which the sticky header condenses. */
+  const CONDENSE_THRESHOLD = 16
 
   let { children }: { children: Snippet } = $props()
 
@@ -35,7 +56,15 @@
   }
 
   let collapsed = $state(readCollapsed())
-  let drawerOpen = $state(false)
+  let moreOpen = $state(false)
+  let condensed = $state(false)
+  let paletteOpen = $state(false)
+  let scrollContainer = $state<HTMLElement | null>(null)
+
+  // Tablet forces the rail (spec §5.1: on the `sm`–`lg` classes the sidebar
+  // *is* the rail); desktop keeps the persisted preference. Below `sm` the
+  // sidebar is not rendered at all.
+  const railCollapsed = $derived(viewport.isDesktop ? collapsed : true)
 
   function toggleCollapsed(): void {
     collapsed = !collapsed
@@ -45,37 +74,83 @@
       // Storage unavailable: the state still applies for this visit.
     }
   }
+
+  // The scrollable element is this shell column (not the window), so the
+  // condensing state must be measured here; passive listener because the
+  // handler never cancels the scroll (K.2 header).
+  $effect(() => {
+    const el = scrollContainer
+    if (!el) return
+    const update = () => (condensed = el.scrollTop > CONDENSE_THRESHOLD)
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    return () => el.removeEventListener('scroll', update)
+  })
+
+  // Live header height, published as a custom property on this column —
+  // the closest ancestor of both `AppHeader` and every page (so entity
+  // sticky headers stack with `top-[var(--app-header-h)]` and never leave a
+  // gap while the bar condenses 56px → 44px). Keep in sync with the
+  // `h-*`/`top-*` utilities and the `:root` fallback in app.css.
+  const headerHeight = $derived(condensed ? '2.75rem' : '3.5rem')
 </script>
 
 <a
   href="#content"
   class="focus-ring sr-only rounded-control bg-surface px-4 py-2 text-sm font-medium text-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50"
 >
-  Skip to content
+  {t('nav.skipToContent')}
 </a>
 
-<div class="flex h-dvh overflow-hidden bg-background text-foreground">
-  <aside class="hidden shrink-0 lg:flex">
-    <Sidebar {collapsed}>
+<div
+  class="fixed inset-x-0 top-0 flex h-dvh overflow-hidden bg-background text-foreground"
+>
+  <aside class="hidden shrink-0 sm:flex">
+    <Sidebar collapsed={railCollapsed}>
       {#snippet footer()}
-        <UserMenu compact={collapsed} />
+        <UserMenu compact={railCollapsed} />
       {/snippet}
     </Sidebar>
   </aside>
 
-  <div class="flex min-w-0 flex-1 flex-col overflow-y-auto">
+  <div
+    bind:this={scrollContainer}
+    class="flex min-w-0 flex-1 flex-col overflow-y-auto"
+    style={`--app-header-h: ${headerHeight}`}
+  >
     <AppHeader
       {collapsed}
-      {drawerOpen}
       ontogglecollapse={toggleCollapsed}
-      ontoggledrawer={() => (drawerOpen = !drawerOpen)}
+      onopenpalette={() => (paletteOpen = true)}
     />
-    <main id="content" class="min-w-0 flex-1 p-4 outline-none lg:p-6" tabindex="-1">
+    <!-- Longhand padding utilities only: `p-*` shorthand would fight the
+         phone-only `pb-[…]` clearance below the fixed bottom nav. -->
+    <main
+      id="content"
+      class="min-w-0 flex-1 px-4 pt-4 pb-[calc(6rem_+_env(safe-area-inset-bottom))] outline-none sm:pb-4 lg:px-6 lg:pt-6 lg:pb-6"
+      tabindex="-1"
+    >
       {@render children()}
     </main>
   </div>
+
+  <!-- Phone bottom chrome lives INSIDE the shell. The shell is
+       `position: fixed`, which forms a stacking context: keeping the bottom
+       nav here (instead of as a sibling) puts it in the same context as the
+       page overlays, so a `z-30` Drawer/Sheet paints above the `z-20` bar
+       rather than being trapped underneath it. Both are `position: fixed`,
+       so they still anchor to the viewport and do not join the flex row. -->
+  {#if viewport.isPhone}
+    <BottomNav {moreOpen} onopenmore={() => (moreOpen = true)} />
+    <Fab />
+  {/if}
 </div>
 
-<MobileDrawer bind:open={drawerOpen}>
+<MobileDrawer bind:open={moreOpen}>
   <Sidebar collapsed={false} />
 </MobileDrawer>
+
+<!-- Global command palette (EPIC K.5a, spec §8.1): mounted once here — the
+     ⌘K/Ctrl+K chord lives in the component, the header search button opens
+     it, and it borrows `toggleCollapsed` for its Toggle-sidebar action. -->
+<CommandPalette bind:open={paletteOpen} ontogglesidebar={toggleCollapsed} />

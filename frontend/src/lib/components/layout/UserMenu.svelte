@@ -2,6 +2,7 @@
   import { ChevronDown, LogOut } from 'lucide-svelte'
   import { afterNavigate } from '$app/navigation'
   import { auth, logout } from '$lib/stores/auth.svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import Button from '../ui/Button.svelte'
   import { cx } from '../ui/utils'
 
@@ -36,10 +37,10 @@
   let root = $state<HTMLDivElement | null>(null)
   let trigger = $state<HTMLButtonElement | null>(null)
 
-  const name = $derived(auth.user?.name || auth.user?.email || 'User')
+  const name = $derived(auth.user?.name || auth.user?.email || t('user.fallbackName'))
   // Non-compact: the visible name *is* the accessible label (label-in-name);
   // the compact trigger renders only initials, so it needs an explicit one.
-  const triggerLabel = $derived(compact ? 'Account menu' : undefined)
+  const triggerLabel = $derived(compact ? t('user.accountMenu') : undefined)
   const initials = $derived.by(() => {
     const parts = auth.user?.name?.trim().split(/\s+/).filter(Boolean)
     if (parts?.length) return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
@@ -116,14 +117,14 @@
       )}
     >
       <div class="border-b border-border px-4 py-3">
-        <div class="truncate text-sm font-medium text-foreground">{auth.user?.name || 'User'}</div>
+        <div class="truncate text-sm font-medium text-foreground">{auth.user?.name || t('user.fallbackName')}</div>
         <div class="truncate text-xs text-muted-foreground">{auth.user?.email}</div>
       </div>
       <div class="flex flex-col p-1">
         <Button variant="ghost" class="w-full" onclick={logout}>
           <span class="flex w-full items-center gap-2 text-negative">
             <LogOut class="h-4 w-4 shrink-0" />
-            Sign out
+            {t('user.signOut')}
           </span>
         </Button>
       </div>

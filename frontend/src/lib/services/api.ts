@@ -175,9 +175,9 @@ export interface Transaction {
 }
 
 /** Envelope of the paginated `GET /portfolios/{id}/transactions` (EPIC I.9,
- * #88): one page of transactions (newest first), the portfolio-wide total
- * count and the `limit`/`offset` the backend actually applied (default
- * limit 20, clamped to a max of 100). */
+ * #88): one page of transactions (newest first), the total count of the
+ * (optionally filtered, K.4c) set and the `limit`/`offset` the backend
+ * actually applied (default limit 20, clamped to a max of 100). */
 export interface TransactionPage {
   transactions: Transaction[]
   total: number
@@ -295,6 +295,35 @@ export interface DashboardAllocation {
   sectors: SectorAllocation[]
   covered_value?: string
   excluded_value?: string
+}
+
+/** Dimension of an allocation bucket the backend can decompose into its
+ * contributing assets (EPIC K.5 drill-down). */
+export type AllocationDrillDim = 'class' | 'country' | 'region' | 'sector'
+
+/** One asset's participation in a drill-down bucket (EPIC K.5): `weight`
+ * is the asset's exposure weight *within that bucket* (%), `contribution`
+ * = value × weight/100 is the amount it places into the bucket. Rows come
+ * back sorted by descending contribution, `value` in the drill currency. */
+export interface AllocationDrillAsset {
+  asset_id: string
+  ticker: string
+  name: string
+  value: string
+  weight: string
+  contribution: string
+}
+
+/** Response of `GET .../allocation/drill` (EPIC K.5): the contributing
+ * assets of one allocation bucket, in the currency of the allocation
+ * endpoint that produced it; `total` is the bucket total (Σ contributions)
+ * and `key` echoes the (possibly space-carrying) bucket identifier. */
+export interface AllocationDrill {
+  currency: string
+  dim: string
+  key: string
+  total: string
+  assets: AllocationDrillAsset[]
 }
 
 export interface PortfolioPerformance {
@@ -672,6 +701,14 @@ export const portfolioApi = {
   sectorAllocation: (id: string) =>
     request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
   dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
+  // EPIC K.5 drill-down: the contributing assets behind one allocation bucket.
+  // `key` is the raw bucket identifier exactly as the chart carries it (ISO
+  // country code, region/sector name, class key — it may contain spaces);
+  // `request`'s `params` takes care of the URL encoding.
+  allocationDrill: (id: string, dim: AllocationDrillDim, key: string) =>
+    request<AllocationDrill>(`/portfolios/${id}/allocation/drill`, { params: { dim, key } }),
+  dashboardAllocationDrill: (dim: AllocationDrillDim, key: string) =>
+    request<AllocationDrill>('/dashboard/allocation/drill', { params: { dim, key } }),
   // EPIC I.3: vault-wide P/L buckets in the user's base currency, monthly or
   // yearly (`period` = "YYYY-MM" / "YYYY", ascending, empty buckets omitted).
   dashboardPerformance: (granularity: 'month' | 'year') =>
@@ -732,13 +769,28 @@ export const transactionApi = {
   // EPIC I.9 (#88): paginated list returning the `TransactionPage` envelope.
   // `limit`/`offset` are only appended when provided; without them the
   // backend serves its default first page (limit 20, order date desc).
+  // EPIC K.4c adds the optional list filters of
+  // `GET /portfolios/{id}/transactions` (combinable, each omitted when
+  // unset/empty): `type`, `asset_id` (uuid), `from`/`to` (inclusive
+  // `YYYY-MM-DD` calendar-date bounds). `total` reflects the FILTERED count.
   list: (
     portfolioId: string,
-    params?: { limit?: number; offset?: number },
+    params?: {
+      limit?: number
+      offset?: number
+      type?: Transaction['type']
+      asset_id?: string
+      from?: string
+      to?: string
+    },
   ): Promise<TransactionPage> => {
     const query: Record<string, string> = {}
     if (params?.limit !== undefined) query.limit = String(params.limit)
     if (params?.offset !== undefined) query.offset = String(params.offset)
+    if (params?.type) query.type = params.type
+    if (params?.asset_id) query.asset_id = params.asset_id
+    if (params?.from) query.from = params.from
+    if (params?.to) query.to = params.to
     return request<TransactionPage>(`/portfolios/${portfolioId}/transactions`, { params: query })
   },
   create: (portfolioId: string, data: Partial<Transaction>) =>

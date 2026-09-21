@@ -13,6 +13,7 @@
    * subtle look; the provenance identity dots stay on the chart tokens.
    */
   import Badge from '$lib/components/ui/Badge.svelte'
+  import { t, type MessageKey } from '$lib/i18n/index.svelte'
 
   let {
     source = null as string | null,
@@ -20,49 +21,52 @@
   }: { source?: string | null; updatedAt?: string | null } = $props()
 
   interface Provenance {
-    label: string
+    /** `provenance.*Label` key: the pill text. */
+    labelKey: MessageKey
     /** Swatch background class: the chart tokens double as the provenance
      *  identity colors so the dot keeps working in both themes. */
     dot: string
-    /** Long explanation exposed via title/aria. */
-    description: string
+    /** `provenance.*Desc` key: long explanation exposed via title/aria. */
+    descKey: MessageKey
   }
 
+  // Keys (not strings) so both halves re-render when the locale flips
+  // (EPIC K bug-fix: the badge is user-visible copy).
   const PROVENANCE: Record<string, Provenance> = {
     manual: {
-      label: 'manuale',
+      labelKey: 'provenance.manualLabel',
       dot: 'bg-chart-muted',
-      description: 'Dati modificati manualmente',
+      descKey: 'provenance.manualDesc',
     },
     justetf: {
-      label: 'da JustETF',
+      labelKey: 'provenance.justetfLabel',
       dot: 'bg-chart-11',
-      description: 'Lista paesi importata da JustETF, non modificata manualmente',
+      descKey: 'provenance.justetfDesc',
     },
     morningstar: {
-      label: 'da Morningstar',
+      labelKey: 'provenance.morningstarLabel',
       dot: 'bg-chart-3',
-      description: 'Dati importati da Morningstar, non modificati manualmente',
+      descKey: 'provenance.morningstarDesc',
     },
     'morningstar-regions': {
-      label: 'da Morningstar (regioni ufficiali)',
+      labelKey: 'provenance.morningstarRegionsLabel',
       dot: 'bg-chart-3',
-      description: 'Regioni ufficiali importate da Morningstar, non modificate manualmente',
+      descKey: 'provenance.morningstarRegionsDesc',
     },
     yahoo: {
-      label: 'da Yahoo',
+      labelKey: 'provenance.yahooLabel',
       dot: 'bg-chart-12',
-      description: 'Settori importati da Yahoo, non modificati manualmente',
+      descKey: 'provenance.yahooDesc',
     },
     derived: {
-      label: 'calcolato dai paesi',
+      labelKey: 'provenance.derivedLabel',
       dot: 'bg-chart-5',
-      description: 'Regioni calcolate a partire dai pesi dei paesi',
+      descKey: 'provenance.derivedDesc',
     },
     'derived-etf': {
-      label: 'da JustETF via paesi',
+      labelKey: 'provenance.derivedEtfLabel',
       dot: 'bg-chart-5',
-      description: 'Regioni calcolate dai paesi importati da JustETF',
+      descKey: 'provenance.derivedEtfDesc',
     },
   }
 
@@ -70,9 +74,13 @@
 
   /** YYYY-MM-DD part of the last persisted update; '' when not persisted yet. */
   const date = $derived(updatedAt ? updatedAt.slice(0, 10) : '')
-  const label = $derived(info ? (date ? `${info.label} (${date})` : info.label) : '')
+  const label = $derived(info ? (date ? `${t(info.labelKey)} (${date})` : t(info.labelKey)) : '')
   const hint = $derived(
-    info ? (date ? `${info.description} — aggiornato al ${date}` : info.description) : '',
+    info
+      ? date
+        ? `${t(info.descKey)} — ${t('provenance.updatedTo', { date })}`
+        : t(info.descKey)
+      : '',
   )
 </script>
 

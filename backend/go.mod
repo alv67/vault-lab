@@ -1,4 +1,4 @@
-module github.com/amelamela/vault-lab
+module github.com/alv67/vault-lab
 
 go 1.23.0
 

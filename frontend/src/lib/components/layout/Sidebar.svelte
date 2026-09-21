@@ -5,11 +5,15 @@
   import { cx } from '../ui/utils'
 
   /**
-   * Sidebar column (EPIC D.3): brand + nav, with an optional footer slot
-   * (the shell passes the desktop `UserMenu` into it). Used twice:
-   * - desktop: inside AppShell's `hidden lg:flex` aside, width driven by the
-   *   persisted `collapsed` rail state;
-   * - mobile drawer: always full width (`collapsed={false}`).
+   * Sidebar column (EPIC D.3, adaptive in K.2): brand + nav, with an
+   * optional footer slot (the shell passes the `UserMenu` into it). Used
+   * three times:
+   * - desktop (`lg`+): inside AppShell's `sm:flex` aside, width driven by
+   *   the persisted `collapsed` rail state;
+   * - tablet (`sm`–`lg`): the same aside, but the shell always passes
+   *   `collapsed={true}` — the 64px icon rail (spec §5.1);
+   * - phone More sheet: inside the MobileDrawer, always full width
+   *   (`collapsed={false}`, no footer — the drawer chrome owns the header).
    */
   let {
     collapsed = false,

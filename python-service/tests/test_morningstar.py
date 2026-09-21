@@ -7,11 +7,13 @@ from app import morningstar
 from app.main import app
 from app.morningstar import (
     MorningstarDataError,
+    MorningstarSecurityUnavailable,
     MorningstarWafError,
     _jwt_expiry,
     _parse_countries,
     _parse_regions,
     _parse_sectors,
+    _search_security_ids,
     has_market_suffix,
     resolve_market_isin,
     fetch_morningstar_exposure,
@@ -23,16 +25,34 @@ ISIN = "IE00B4L5Y983"
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200):
+    """Mimics a requests.Response for the search/SAL endpoints.
+
+    Pass `payload` for a JSON answer; pass `text` (no payload) for a non-JSON
+    body (e.g. a 206 text/plain "Can't get SecurityInfo" or an HTML challenge)
+    whose json() raises JSONDecodeError after the body has been read.
+    """
+
+    def __init__(self, payload=None, status_code=200, text=None):
         self._payload = payload
         self.status_code = status_code
+        self.text = text if text is not None else json.dumps(payload)
 
     def json(self):
+        if self._payload is None:
+            raise requests.exceptions.JSONDecodeError("Expecting value", self.text, 0)
         return self._payload
 
     def raise_for_status(self):
         if self.status_code >= 400:
             raise requests.HTTPError(f"{self.status_code}")
+
+
+def unavailable_sal_response(security_id):
+    """SAL answer for a listing it does not cover: HTTP 206, text/plain body."""
+    return FakeResponse(
+        status_code=206,
+        text=f"...\nnull\n202102 Can't get SecurityInfo with {security_id}",
+    )
 
 
 def fake_search_payload(isin=ISIN, security_id="0P0000TSO8"):
@@ -47,6 +67,49 @@ def fake_search_payload(isin=ISIN, security_id="0P0000TSO8"):
                     "investmentType": "FE",
                 },
             }
+        ]
+    }
+
+
+def fake_two_listing_search_payload(isin=ISIN):
+    """One ISIN quoted on two markets (issue #76 pattern): two fund listings."""
+    return {
+        "results": [
+            {
+                "value": {
+                    "isin": isin,
+                    "name": "Fund Quote [XAMS]",
+                    "securityID": "0P00014DUI",
+                    "investmentType": "FE",
+                }
+            },
+            {
+                "value": {
+                    "isin": isin,
+                    "name": "Fund Quote [XFRA]",
+                    "securityID": "0P0000WX7U",
+                    "investmentType": "FE",
+                }
+            },
+        ]
+    }
+
+
+def fake_multi_listing_search_payload(isin=ISIN):
+    """Real-world search mix: matching fund listings plus noise to be filtered.
+
+    Covers the filtering contract of _search_security_ids: other ISINs are
+    dropped, duplicate securityIDs are collapsed, and the non-fund (EQ) match
+    stays out while at least one fund candidate exists.
+    """
+    return {
+        "results": [
+            {"value": {"isin": isin, "securityID": "0P00014DUI", "investmentType": "FE"}},
+            {"value": {"isin": "IE00OTHER001", "securityID": "0P00099999", "investmentType": "FE"}},
+            {"value": {"isin": isin, "securityID": "0P0000SIZM", "investmentType": "FO"}},
+            {"value": {"isin": isin, "securityID": "0P0000PWX8", "investmentType": "FV"}},
+            {"value": {"isin": isin, "securityID": "0P00014DUI", "investmentType": "FE"}},
+            {"value": {"isin": isin, "securityID": "0P000EQTY1", "investmentType": "EQ"}},
         ]
     }
 
@@ -550,6 +613,208 @@ def test_fetch_morningstar_exposure_connection_error_does_not_retry(monkeypatch)
     assert "upstream request failed" in str(err.value)
     # Non-WAF transport errors are wrapped immediately: no re-bootstrap loop.
     assert sessions["count"] == 1
+
+
+# ---------- multi-listing fallback (issue #76) ----------
+
+def test_search_security_ids_returns_all_candidates_in_order(monkeypatch):
+    monkeypatch.setattr(
+        "app.morningstar.requests.get",
+        lambda url, *a, **k: FakeResponse(fake_multi_listing_search_payload()),
+    )
+    # Other ISINs dropped, duplicates collapsed, non-fund types left for the
+    # fallback path; search order preserved.
+    assert _search_security_ids(ISIN, {}) == ["0P00014DUI", "0P0000SIZM", "0P0000PWX8"]
+
+
+def test_search_security_ids_falls_back_to_non_fund_matches(monkeypatch):
+    payload = {
+        "results": [
+            {"value": {"isin": ISIN, "securityID": "0P000EQTY1", "investmentType": "EQ"}},
+            {"value": {"isin": ISIN, "securityID": "0P000EQTY2", "investmentType": "CN"}},
+            {"value": {"isin": "IE00OTHER001", "securityID": "0P000ZZZZZ", "investmentType": "FE"}},
+        ]
+    }
+    monkeypatch.setattr(
+        "app.morningstar.requests.get", lambda url, *a, **k: FakeResponse(payload)
+    )
+    assert _search_security_ids(ISIN, {}) == ["0P000EQTY1", "0P000EQTY2"]
+
+
+def test_search_security_ids_raises_when_isin_not_found(monkeypatch):
+    payload = {
+        "results": [{"value": {"isin": "IE00OTHER001", "securityID": "X", "investmentType": "FE"}}]
+    }
+    monkeypatch.setattr(
+        "app.morningstar.requests.get", lambda url, *a, **k: FakeResponse(payload)
+    )
+    with pytest.raises(MorningstarDataError) as err:
+        _search_security_ids(ISIN, {})
+    assert "not found on Morningstar" in str(err.value)
+
+
+def test_fetch_exposure_falls_through_unavailable_first_listing(monkeypatch):
+    invalidations = {"count": 0}
+    sal_urls = []
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_two_listing_search_payload())
+        sal_urls.append(url)
+        if "0P00014DUI" in url:
+            # XAMS quotation without SAL data: 206 text/plain (issue #76).
+            return unavailable_sal_response("0P00014DUI")
+        if "portfolio/v2/sector/" in url:
+            return FakeResponse(fake_sector_payload())
+        if "regionalSectorIncludeCountries" in url:
+            return FakeResponse(fake_country_payload())
+        if "portfolio/regionalSector/" in url:
+            return FakeResponse(fake_region_payload())
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "test-bearer-token")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "{}")
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+    monkeypatch.setattr(
+        "app.morningstar._invalidate_bootstrap_cache",
+        lambda: invalidations.__setitem__("count", invalidations["count"] + 1),
+    )
+    monkeypatch.setattr(
+        "app.morningstar._browser_bootstrap",
+        lambda: pytest.fail("missing SAL data must not re-bootstrap the browser"),
+    )
+
+    exposure = fetch_morningstar_exposure(ISIN)
+    assert exposure.countries[0].name == "United States"
+    # The first listing is abandoned right after its first SAL miss; the full
+    # sector/countries/region triple is fetched from the second listing only.
+    assert sum("0P00014DUI" in u for u in sal_urls) == 1
+    assert sum("0P0000WX7U" in u for u in sal_urls) == 3
+    assert invalidations["count"] == 0
+
+
+def test_fetch_exposure_advances_when_listing_returns_no_countries(monkeypatch):
+    invalidations = {"count": 0}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_two_listing_search_payload())
+        if "0P00014DUI" in url:
+            # JSON answers without a usable country list must also advance.
+            return FakeResponse({"fundPortfolio": {"countries": []}})
+        if "portfolio/v2/sector/" in url:
+            return FakeResponse(fake_sector_payload())
+        if "regionalSectorIncludeCountries" in url:
+            return FakeResponse(fake_country_payload())
+        if "portfolio/regionalSector/" in url:
+            return FakeResponse(fake_region_payload())
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "test-bearer-token")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "{}")
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+    monkeypatch.setattr(
+        "app.morningstar._invalidate_bootstrap_cache",
+        lambda: invalidations.__setitem__("count", invalidations["count"] + 1),
+    )
+
+    exposure = fetch_morningstar_exposure(ISIN)
+    assert exposure.countries[0].name == "United States"
+    assert invalidations["count"] == 0
+
+
+def test_fetch_exposure_all_listings_unavailable_raises_data_error_not_waf(monkeypatch):
+    searches = {"count": 0}
+    invalidations = {"count": 0}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            searches["count"] += 1
+            return FakeResponse(fake_two_listing_search_payload())
+        for security_id in ("0P00014DUI", "0P0000WX7U"):
+            if security_id in url:
+                return unavailable_sal_response(security_id)
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "test-bearer-token")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "{}")
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+    monkeypatch.setattr(
+        "app.morningstar._invalidate_bootstrap_cache",
+        lambda: invalidations.__setitem__("count", invalidations["count"] + 1),
+    )
+    monkeypatch.setattr(
+        "app.morningstar._browser_bootstrap",
+        lambda: pytest.fail("missing SAL data must not re-bootstrap the browser"),
+    )
+
+    with pytest.raises(MorningstarDataError) as err:
+        fetch_morningstar_exposure(ISIN)
+    assert not isinstance(err.value, MorningstarWafError)
+    assert f"No SAL data found for ISIN {ISIN} on any of 2 Morningstar listings" in str(
+        err.value
+    )
+    # The final error is chained from the last listing's unavailability cause.
+    assert isinstance(err.value.__cause__, MorningstarSecurityUnavailable)
+    # The missing-data answer never touches the WAF retry machinery.
+    assert searches["count"] == 1
+    assert invalidations["count"] == 0
+
+
+def test_fetch_exposure_html_challenge_still_raises_waf_error(monkeypatch):
+    bootstraps = {"count": 0}
+
+    def fake_bootstrap():
+        bootstraps["count"] += 1
+        return f"bearer-{bootstraps['count']}", {}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_search_payload())
+        # Genuine WAF challenge: HTTP 200 with an HTML body, no missing-data marker.
+        return FakeResponse(
+            status_code=200, text="<html><title>Human Verification</title></html>"
+        )
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "")
+    monkeypatch.setattr("app.morningstar._bootstrap_cache", {})
+    monkeypatch.setattr("app.morningstar._browser_bootstrap", fake_bootstrap)
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+
+    with pytest.raises(MorningstarWafError) as err:
+        fetch_morningstar_exposure(ISIN)
+    assert "WAF challenge could not be passed" in str(err.value)
+    # One invalidation + browser re-bootstrap, then give up.
+    assert bootstraps["count"] == 2
+
+
+def test_fetch_exposure_challenge_page_recovers_with_fresh_session(monkeypatch):
+    sector_calls = {"count": 0}
+
+    def fake_get(url, *a, **k):
+        if "/api/v2/search" in url:
+            return FakeResponse(fake_search_payload())
+        if "portfolio/v2/sector/" in url:
+            sector_calls["count"] += 1
+            if sector_calls["count"] == 1:
+                # Stale session: the WAF serves an HTML page instead of JSON.
+                return FakeResponse(status_code=200, text="<html>challenge</html>")
+            return FakeResponse(fake_sector_payload())
+        if "regionalSectorIncludeCountries" in url:
+            return FakeResponse(fake_country_payload())
+        if "portfolio/regionalSector/" in url:
+            return FakeResponse(fake_region_payload())
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_BEARER", "test-bearer-token")
+    monkeypatch.setattr("app.morningstar._MORNINGSTAR_COOKIES", "{}")
+    monkeypatch.setattr("app.morningstar.requests.get", fake_get)
+
+    exposure = fetch_morningstar_exposure(ISIN)
+    # An HTML body re-raises JSONDecodeError: retried once through the WAF layer.
+    assert sector_calls["count"] == 2
+    assert exposure.countries[0].name == "United States"
 
 
 # ---------- browser bootstrap resilience (Chrome session crashes) ----------

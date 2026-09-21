@@ -59,6 +59,8 @@
 - [x] Morningstar exposure source: resolver custom (bootstrap Chromium headless per WAF+JWT, poi SAL service via requests), rotta backend `POST /assets/{id}/fetch-morningstar-exposure`, prefill frontend — **EPIC B.14 (#59)**
 - [x] Follow-up B.13/B.14: fetch provider come anteprima non persistente, cache Redis (TTL + `?refresh=1`), provenienza persistita (sorgente + data), prefill settori da Morningstar, redesign modali geo/settore (paesi-first, badge sorgente) — **PR #67**
 - [x] Design system & dark mode: token semantici + tema a 3 modalità (default dark), sweep colori, primitive `ui/`, AppShell responsive con sidebar collassabile e ThemeToggle — **EPIC D (#37)**
+- [ ] Nuove asset class: bond, certificati, fondi pensione, conti deposito — **EPIC J (#113)**: prezzo manuale (J.1 #105), metadati fixed income (J.2 #106), tipi `cash`/`certificate` (J.3 #107), esposizione fixed income (J.4 #108), maturazione interessi (J.5 #109), metriche bond (J.6 #110), allocazione credito (J.7 #111), piani pensionistici (J.8 #112)
+- [ ] Redesign UX/UI completo (navigazione, layout, design system) per PC/tablet/mobile — **EPIC K**, branch isolato `feat/K-ux-redesign`: fondazioni (K.1), shell adattiva (K.2), Overview (K.3), pagine entità a tab (K.4), power layer (K.5). Spec in `docs/UX-REDESIGN.en.md` / `.it.md`
 
 ### FASE 3 — Multi-tenancy & Family Sharing
 - [ ] Gestione permessi: utenti con ruoli (viewer, editor, admin)
@@ -86,6 +88,7 @@
 User         → id, email, name, password_hash, role, created_at
 Portfolio    → id, user_id, name, description, currency, created_at
 Asset        → id, isin, ticker, name, type, asset_class, price_source, country, exchange, currency, sector, industry
+               + maturity_date, issuer, issuer_country, attributes JSONB (fixed income, from EPIC J / J.2)
 Transaction  → id, portfolio_id, asset_id, type (buy/sell), quantity, price, date, fees, notes
 Price        → id, asset_id, date, open, high, low, close, volume, source
 FxHistory    → base_currency, quote_currency, date, rate, source
@@ -93,6 +96,7 @@ AssetRegion  → asset_id, region, weight
 AssetSector  → asset_id, sector, weight
 AssetCountry → asset_id, country, weight (ISO-3166 alpha-2, from B.13)
 AssetExposureProvenance → asset_id, dimension, source, updated_at (where each dimension came from + last update, from B.14)
+AssetCredit  → asset_id, rating, weight (credit exposure, post-MVP EPIC J / J.7)
 ```
 
 ### Finanza (Fase 4)
@@ -169,17 +173,23 @@ vault-lab/
     ├── BACKEND-GUIDE.en.md
     ├── BACKEND-GUIDE.it.md
     ├── DATABASE-GUIDE.en.md
-    └── DATABASE-GUIDE.it.md
+    ├── DATABASE-GUIDE.it.md
+    ├── FRONTEND-GUIDE.en.md
+    ├── FRONTEND-GUIDE.it.md
+    ├── UX-REDESIGN.en.md
+    └── UX-REDESIGN.it.md
 ```
 
 ---
 
-## Stato attuale (13 Set 2026)
+## Stato attuale (21 Set 2026)
 
-**Release v0.4.0** pubblicata su `main` (design system & dark mode, rebuild delle pagine e dei
-componenti di dominio, dashboard/portafoglio rinnovati, Health più chiaro, CI).
-Precedenti release: **v0.1.0** (25 Ago 2026), **v0.2.0** (30 Ago 2026, EPIC A + EPIC B) e
-**v0.3.0** (11 Set 2026, asset editing overhaul).
+**Release v0.6.0** pubblicata su `main` (redesign UX/UI, EPIC K: fondazioni token/font/tema,
+shell adattiva, dashboard con hero, pagine portafoglio/asset a tab, i18n IT/EN, command palette,
+vista tabella dei grafici, palette CVD, drill-down delle allocazioni).
+Precedenti release: **v0.1.0** (25 Ago 2026), **v0.2.0** (30 Ago 2026, EPIC A + EPIC B),
+**v0.3.0** (11 Set 2026, asset editing overhaul), **v0.4.0** (13 Set 2026, design system & dark
+mode, EPIC D/E) e **v0.5.0** (17 Set 2026, EPIC I — dashboard & portfolio v2).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
 procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
@@ -200,7 +210,17 @@ ed **EPIC C — metric di rischio**. **EPIC I completato** (I.1–I.9, PR #98, b
 `feat/I.1-base-currency`): valuta base, dashboard attivo/chiuso, grafico performance TWR +
 capitale, allocazioni per classe/paese, tabella asset investiti consolidata, KPI e allocazioni
 del dettaglio portafoglio allineati alla dashboard, performance a barre, transazioni paginate.
-Prossimo candidato: **EPIC C — metric di rischio**. La gestione del capitale disponibile
-(versamenti/prelievi, conto titoli) è tracciata a parte nell'issue #101. Vedi STATUS.md
-per lo stato dettagliato.
+Nuovo epico pianificato: **EPIC J — nuove asset class (#113)** — obbligazioni, certificati,
+fondi pensione e conti deposito, con prezzo manuale (J.1 #105), metadati fixed income (J.2 #106),
+tipi `cash`/`certificate` (J.3 #107) come prima PR consigliata, poi esposizione fixed income
+(J.4 #108), maturazione interessi (J.5 #109), metriche bond (J.6 #110), allocazione credito
+(J.7 #111) e piani pensionistici (J.8 #112). Altro candidato: **EPIC C — metric di rischio**.
+La gestione del capitale disponibile (versamenti/prelievi, conto titoli) è tracciata a parte
+nell'issue #101. Vedi STATUS.md per lo stato dettagliato.
+
+**Redesign UX/UI — EPIC K (rilasciata in v0.6.0)**: analisi UX/UI completa basata solo sulle
+funzionalità attuali e proposta di un'interfaccia moderna per PC/tablet/mobile
+(`docs/UX-REDESIGN.en.md` / `.it.md`); implementazione K.1–K.5 completata (fondazioni, shell
+adattiva, Overview, pagine portafoglio/asset a tab, command palette, vista tabella, palette CVD,
+drill-down delle allocazioni) e mergiata su `develop` (PR #115).
 

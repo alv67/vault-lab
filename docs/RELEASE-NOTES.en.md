@@ -1,5 +1,33 @@
 # Release Notes
 
+## v0.6.0 — 21 Sep 2026
+
+### Features
+- Click any allocation slice or bar — the asset-class donut or the sector, region and country bars, on the dashboard and on a portfolio's Allocation tab — to open a side panel (a bottom sheet on phones) listing the assets that make it up, with their value, contribution and share of that slice
+- Every chart can be switched to a table view of the same data with the new Chart/Table control on the card — the numbers you were hovering on the chart, now readable row by row, on any device and with a screen reader
+- Open the new command palette with ⌘K/Ctrl+K (or the search button in the header, on every device): jump to any page, portfolio or asset, search Yahoo, and run quick actions — add transaction, refresh prices, switch theme, toggle the color-blind palette — all without leaving where you are
+- Optional colour-blind-friendly gain/loss palette: from Settings → Preferences you can swap the green/red P/L colours for a blue/orange pair everywhere, text and charts included — the +/− signs and ▲▼ arrows are always shown, and your theme stays untouched
+- The portfolio Activity tab can now be filtered by transaction type, asset and date range — the filters stay in the link, so you can share or bookmark a filtered view and the back button brings it back exactly as it was
+- Deleting a transaction can now be undone straight from the confirmation toast (5 seconds); the delete-confirmation dialog is gone
+- On phones the transaction form opens as a bottom sheet, with the same fields as the desktop dialog
+- The asset page is now split into Overview, Exposure and Data tabs, each with its own link you can share or bookmark; the ticker, its identity chips and the latest quote stay pinned at the top while you switch tabs
+- The asset Overview now shows "Where held": which of your portfolios hold the asset, with quantity, cost, value and gain/loss — each portfolio links straight to its page
+- Asset actions (update from Yahoo, backfill the full price history, delete) moved into the ⋯ menu in the asset header, and are repeated in the Data tab's danger zone
+- The portfolio page is now split into Overview, Positions, Activity and Allocation tabs, each with its own link you can share or bookmark; a compact value + P/L strip stays pinned at the top while you switch tabs
+- Portfolio actions (export, import, delete) moved into the ⋯ menu in the portfolio header, next to the always-visible "Add transaction" button
+- Each portfolio card on the dashboard now shows a small chart of its value trend alongside the current figures
+- The dashboard now opens with your net value as a single headline figure, a value-vs-invested chart with 1Y/3Y/ALL ranges, a breakdown you can expand on demand, a "prices as of" freshness stamp, and a data-quality note when something needs attention (like holdings excluded for a missing exchange rate)
+- On a fresh vault the dashboard shows a guided first-run checklist: create a portfolio, add an asset, record a transaction — each step links straight to the right page
+- You can now switch between the whole vault and a single portfolio from the dashboard header
+- New adaptive navigation: on phones a bottom bar (Overview, Portfolios, Assets, More) plus a ⊕ button with quick actions (add transaction, add asset, refresh prices), on tablets a slim icon rail, and on desktop the familiar expandable sidebar — with a compact header that shrinks while you scroll
+- The price-sync health page is now called Data & Sync
+- The app now follows your system theme by default: light and dark are both first-class, and you can still pin your preferred one from the header
+- New interface font (Inter) plus a dedicated monospace font for tickers and codes — both bundled with the app, nothing is downloaded from third-party services
+- New Settings → Preferences page: choose theme (Light/Dark/System) and interface language (Italian/English); the app now defaults to the system theme and to Italian, and remembers your choices on this device
+
+### Fixes
+- Fetching an asset's exposure from Morningstar now also works for funds quoted on multiple markets: if one market's quotation carries no data, the next quotation of the same ISIN is used automatically
+
 ## v0.5.0 — 17 Sep 2026
 
 ### Features

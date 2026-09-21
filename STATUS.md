@@ -30,7 +30,13 @@ time-weighted (barre mensili/annuali + linea cumulata) e grafico del capitale, a
 classe/settore/paese/macro-regione, tabella asset investiti consolidata, KPI e allocazioni del
 dettaglio portafoglio allineati alla dashboard, performance a barre e transazioni paginate;
 inclusi i fix import di export vecchi (#99) e P/L fittizio -100% sulle posizioni chiuse (#100).
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0` su `main`.
+**v0.6.0** — sesta release su `main` (21 Set 2026): **EPIC K completa** (redesign UX/UI) —
+fondazioni (token, font self-hosted, tema di sistema, i18n IT/EN, primitive), shell adattiva
+(bottom nav + FAB su phone, rail su tablet, header condensante), dashboard con hero e chip
+periodo, pagine portafoglio/asset a tab, filtri Attività con undo e form a sheet, command
+palette ⌘K, vista tabella dei grafici, palette CVD e drill-down delle allocazioni; include i
+filtri transazioni e l'endpoint di drill-down lato backend.
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0`/`v0.6.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 
@@ -348,6 +354,23 @@ e Morningstar permette di cercare sul mercato esatto.
   al secondo crash risponde 502 con messaggio chiaro ("Chrome headless could not
   start in the sandbox; try again in a few seconds"). pytest aggiornato a 62
   test, tutti verdi.
+- **Fallback multi-listing Morningstar (fix #76)**: il resolver usava solo il
+  **primo** securityID restituito da `/api/v2/search`; se quel listing non ha
+  dati SAL (risposta `206`/`Can't get SecurityInfo`, es. la quotazione XAMS di
+  `IE00B5L8K969`/CSEMAS) il JSON non era decodificabile e il caso veniva
+  scambiato per challenge WAF → re-bootstrap del browser (con processi Chromium
+  orfani lasciati indietro) e 502 fuorviante "WAF challenge could not be
+  passed", nonostante gli altri listing dello stesso ISIN avessero dati validi.
+  Ora `_search_security_ids` restituisce **tutti** i securityID dei fondi che
+  matchano l'ISIN (in ordine di ricerca, deduplicati) e `_fetch_exposure_once`
+  li prova in sequenza fermandosi al primo con paesi validi; il nuovo errore
+  non ritentabile `MorningstarSecurityUnavailable` fa passare al candidato
+  successivo **senza** re-bootstrap, e se nessun listing ha dati l'errore è un
+  chiaro `MorningstarDataError` ("No SAL data found for ISIN … on any of N
+  Morningstar listings"), mai `MorningstarWafError`. Solo una pagina HTML di
+  challenge (JSON non decodificabile senza marcatore missing-data) resta
+  soggetta al retry con sessione fresca. pytest aggiornato a 70 test, tutti
+  verdi.
 - **Cache esposizione provider (post-B.14)**: `FetchETFExposure` e
   `FetchMorningstarExposure` cachano il payload grezzo del provider in Redis
   (chiave `vl:lookup:exposure:<source>:<ISIN>`, TTL `VAULT_EXPOSURE_CACHE_TTL`
@@ -597,6 +620,511 @@ Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investim
 Tutte le sub-issue **I.1–I.9 completate** e rilasciate in **v0.5.0** (PR #98 mergiata su
 `develop`/`main`). Nota: la gestione del **capitale disponibile / versamenti-prelievi** (conto
 titoli) è tracciata a parte nell'issue **#101** e sarà una PR separata.
+
+## EPIC J — Nuove asset class: bond, certificati, fondi pensione, conti deposito (#113) — pianificata
+
+Estendere VaultLab agli **investimenti a reddito fisso e non quotati**: obbligazioni (tipo, cedola,
+scadenza, esposizione geo/settoriale), certificati d'investimento (prodotti strutturati), piani
+pensionistici complementari (fondi pensione/PIP) e conti deposito. L'analisi finanziaria
+(30 Ago 2026) ha verificato che le quattro classi sono già tracciabili con il modello attuale
+(`price_source` `manual`/`none`, TWR al costo), a patto di colmare due gap trasversali:
+**inserimento prezzo manuale in UI** (assente) e tipo **`cash`** non selezionabile nel form di
+creazione.
+
+| Issue | Titolo | Componente | Priorità |
+|-------|--------|------------|----------|
+| #105 | J.1 — Inserimento prezzo manuale (endpoint + UI) | Backend + Frontend | MVP (sblocca tutte le classi) |
+| #106 | J.2 — Metadati asset fixed income (scadenza, emittente, `attributes` JSONB) | Backend + Frontend | MVP |
+| #107 | J.3 — Tipo `cash` in UI + nuovo tipo `certificate` | Backend + Frontend | MVP |
+| #108 | J.4 — Esposizione geo/settoriale per fixed income (opt-in `exposure_kind`) | Backend | Post-MVP |
+| #109 | J.5 — Maturazione interessi conti deposito | Backend + Frontend | Post-MVP |
+| #110 | J.6 — Metriche bond: duration, YTM, current yield | Backend | Post-MVP |
+| #111 | J.7 — Allocazione per merito di credito (`asset_credit_weights`) | Backend + Frontend | Post-MVP |
+| #112 | J.8 — Wrapper piani pensionistici (comparti/sub-fondi) | Backend + Frontend | Post-MVP (bassa) |
+
+**Prima PR consigliata**: J.1 + J.2 + J.3 insieme — set minimale e non regressivo che abilita
+un'esperienza first-class per tutte e quattro le classi.
+
+**Decisioni aperte** (da risolvere in implementazione): cedola vs dividendo come tipo a sé
+(MVP: `coupon` = `TxDividend` + note); `asset_class` dei certificati (`other` vs nuovo
+`structured`); policy di esposizione opt-in (`exposure_kind`) per non impattare i portafogli
+esistenti; gestione prezzo clean/dirty per i bond (MVP: prezzo inserito usato as-is).
+
+## EPIC K — Redesign UX/UI (in corso, branch separato)
+
+Bozza progettuale di revisione completa dell'interfaccia basata **solo sulle funzionalità**
+attuali (l'implementazione visiva è considerata sostituibile), per un'interfaccia moderna
+usabile su PC, tablet e mobile. **Spec completa**: `docs/UX-REDESIGN.en.md` / `.it.md`
+(chapter 1–12, wireframe ASCII, diagrammi mermaid, token, componenti, roadmap).
+
+> **Branch isolato `feat/K-ux-redesign`**: tutto il redesign vive qui e verrà mergiato solo
+> se il risultato convince; in caso contrario il branch si scarta senza impattare `develop`.
+
+**Fase 0 — ✅ completata (questo branch)**: stesura della specifica di design + aggiornamento
+STATUS/PLAN. Nessuna modifica al codice UI.
+
+**Decisioni registrate** (D1–D11, riflesse in tutta la spec):
+
+| # | Tema | Decisione |
+|---|------|-----------|
+| D1 | Lingua UI | i18n leggero IT+EN, **default IT**, fallback EN (introdotto in K.1) |
+| D2 | Nav mobile | **Bottom nav** (4) + **FAB** + "More" sheet; hamburger declassato |
+| D3 | Scope switcher | **Naviga** tra `/` (vault) e `/portfolios/:id` (non filtra) |
+| D4 | Ispezione righe | **Drawer** destro ≥ `lg`, **bottom sheet** < `lg` |
+| D5 | Font | **Inter + mono** self-hosted (`@fontsource`, no CDN) |
+| D6 | P/L a11y | Segno + ▲▼ sempre **+** toggle palette **CVD** (blu/arancio) in Preferenze |
+| D7 | Health prezzi | Voce separata "Data & Sync" ora; in futuro spostabile nel menu **Amministrazione** (admin, debug/log) |
+| D8 | Primo avvio | **Checklist guidata** portafoglio → asset → transazione |
+| D9 | Tema | **Default = segui sistema** (non più dark forzato); light/dark pari |
+| D10 | Range hero | **Bucket-driven** (mensile/annuale) ora; serie giornaliera vault come fast-follow |
+| D11 | Undo | **Toast ⟲ Undo** (5s) sul delete transazione |
+
+**Fasi di implementazione** (da delegare a `frontend`, richieste backend a `backend`):
+
+| Fase | Contenuto | Backend ask |
+|------|-----------|-------------|
+| **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
+| **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
+| **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
+| **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
+| **K.5 Power layer** | ✅ *completata — K.5c (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze), K.5b ("view as table" nei sei wrapper dati: toggle segmentato condiviso `ui/ChartTableToggle`, tabella accessibile con gli stessi dati, cap opt-out per i chiamanti che elencano già le righe), K.5a (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo), backend del drill-down (`GET /portfolios/{id}/allocation/drill` + `GET /dashboard/allocation/drill`: `dim`+`key` → contribuzioni per asset, totali identici ai bucket delle allocazioni) e K.5d (drill-down frontend: fette/barre cliccabili in `ClassDonut`/`ExposureBarChart` e `AllocationDrillPanel` drawer/sheet (D4) con gli asset contribuenti, montato una volta su dashboard e tab Allocazione).* | ✅ endpoint contribuzione drill-down (`dim+key` → asset) esposto; drawer frontend completato in K.5d |
+
+> **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
+> di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
+> `--surface-raised` mappati per compatibilità), token
+> semantico `--info`, `--chart-grid` cablato sulle griglie ECharts a ~8% di
+> opacità (mirror in `chartTheme.ts`), gradini tipografici `text-hero`/
+> `text-micro`, token di motion (`duration-fast/base/slow`, `ease-standard`,
+> neutralizzazione `prefers-reduced-motion`), font self-hosted **Inter +
+> JetBrains Mono** via `@fontsource` (D5) e **tema di default → system** (D9).
+> Nessun markup di componente toccato: restano da fare il resto di K.1
+> (primitive → completate in K.1c, i18n D1 → K.1b, palette CVD).
+
+> **K.1b — Livello i18n (D1) + pagina Preferenze — ✅ completata (questo branch)**:
+> layer i18n leggero senza dipendenze esterne in `frontend/src/lib/i18n/`:
+> runtime a rune `index.svelte.ts` (`SUPPORTED_LOCALES = ['it','en']`,
+> `DEFAULT_LOCALE = 'it'`, `locale` reattivo, `setLocale()` persistente in
+> `localStorage['vaultlab-locale']` + sync `<html lang>` + ascolto cross-tab,
+> `t(key, params)` con interpolazione `{name}`), dizionari `en.ts`
+> (canonico) / `it.ts` verificati con `satisfies Dictionary` (identità
+> strutturale garantita alla compile-time), chiavi annidate a due livelli
+> `group.key` esposte appiattite (`nav.dashboard`) e tipizzate come unione
+> `MessageKey`; chiave sconosciuta → chiave stessa con fallback EN (D1) e
+> warning solo in dev. `app.html` parte con `lang="it"` (valore statico =
+> DEFAULT_LOCALE, sincronizzato a runtime). Nuova pagina **Settings →
+> Preferenze** (`/settings/preferences`, tab tra Password e Valute come da
+> spec §6.6): tema Chiaro/Scuro/Sistema sullo store esistente (default
+> system, D9) e lingua IT/EN su `setLocale` (default italiano, D1), con
+> apply immediato e persistenza locale. Prima passata di migrazione:
+> navigation della shell tradotta (`SidebarNav`, `AppHeader`, `UserMenu`,
+> `ThemeToggle`, `SettingsTabs`, `MobileDrawer`, skip-link `AppShell`); le
+> altre pagine restano con la copia mista EN/IT fino alle rispettive fasi
+> (migrazione progressiva).
+
+> **K.1c — Primitive UI di base — ✅ completata (questo branch)**: sei nuove
+> primitive accessibili (WCAG 2.2 AA) e theme-aware in
+> `frontend/src/lib/components/ui/`, ancora non consumate da nessuna pagina
+> (l'adozione avviene con K.2–K.5): `PnlValue` (segno + ▲▼ + colore semantico,
+> zero neutro — D6), `AsyncCard` (stati loading/errore/vuoto/dati per singola
+> card, con Retry isolato), `PeriodChips` (radiogroup compatta per i periodi
+> dei grafici, navigazione con frecce), `Drawer` (drawer di ispezione ≥ `lg`,
+> focus-trap + Esc/backdrop + ripristino — D4), `Sheet` (bottom sheet < `lg`,
+> stessa API con handle decorativo) e `Tabs` (tablist ARIA legata alle route,
+> focus roving). Helper condivisi estratti: `ui/focus-trap.ts` e
+> `ui/transitions.ts` (transizioni sui token motion, `prefers-reduced-motion`
+> rispettato anche nelle transizioni JS); `Modal`/`MobileDrawer` restano
+> invariati. **`DataTable` e `KpiStrip` sono rinviati
+> deliberatamente a K.4**, dove verranno progettate attorno ai reali call
+> site. In K.1 resta solo la palette CVD (il toggle è pianificato per K.5);
+> i18n (D1) è completata in K.1b.
+
+> **K.2 — Shell adattiva — ✅ completata (questo branch)**: la shell
+> (`frontend/src/lib/components/layout/`) ora è davvero adattiva sulle tre
+> classi di dispositivi della spec §5.1–5.2, con desktop invariato. Nuovo
+> helper reattivo `lib/stores/viewport.svelte.ts` (`matchMedia` su 640/1024,
+> `isPhone`/`isTablet`/`isDesktop`, SSR-safe via `browser` + feature check,
+> fallback desktop). **Tablet `sm`–`lg`**: la sidebar è forzata a rail di
+> icone da 64px (`collapsed` forzato dalla shell; la preferenza persistita
+> `vaultlab-sidebar` vale solo da `lg` in su), niente hamburger né bottom
+> nav; menu utente nel footer del rail (in header resta solo il tema).
+> **Telefono < `sm`**: nessuna sidebar — `BottomNav` fissa con 4 destinazioni
+> (Panoramica · Portafogli · Asset · Altro, decisione D2, target ≥ 44px,
+> `env(safe-area-inset-bottom)`, stato attivo con la regola del prefisso più
+> lungo di `SidebarNav`) + `Fab` che apre la `QuickActionSheet` sul `ui/Sheet`
+> K.1c (Aggiungi transazione → portfolio picker via `portfolioApi.list()`,
+> Aggiungi asset → `/assets`, Aggiorna prezzi → `pricesApi.refresh()` con
+> toast, *Inserisci prezzo* disabilitato "In arrivo" finché non arriva J.1).
+> Il `MobileDrawer` è declassato a sheet "Altro" (focus trap/Esc/chiusura alla
+> navigazione intatti, ora rende la navigazione `Sidebar`); padding inferiore
+> extra in `<main>` sui telefoni. **Header condensante** (tutte le misure):
+> prop `condensed` misurata sulla scroll container della shell (soglia 16px,
+> listener passivo), altezza 56→44px con transizione CSS rispettosa di
+> `prefers-reduced-motion`. **D7**: la voce Admin "Health" diventa **"Dati e
+> sincronizzazione"** (`nav.dataSync`), definita in un unico punto di config
+> (`adminItems` di `SidebarNav`), route `/admin/health` invariata. Nuove
+> chiavi i18n EN/IT (shapes identici): `nav.overview`, `nav.more`,
+> `nav.bottomNav`, `nav.dataSync`, `fab.open`, il gruppo `quickActions.*`
+> (etichette, hint, "In arrivo", toast di refresh); rimosse le chiavi morte
+> dell'hamburger (`header.openMenu`/`closeMenu`, `nav.drawer`, `nav.health`).
+> **Rinviati a K.3** (come da task): `ScopeSwitcher`, `FreshnessStamp`,
+> `DataTable`/`KpiStrip` e i form globali di creazione/transazione.
+
+> **K.3a — Hero dell'Overview — ✅ completata (questo branch)**: la
+> dashboard (`routes/+page.svelte`) è ricostruita attorno al modello hero
+> (spec §6.1 zone A–B, decisioni D3/D8/D10) senza nuovi endpoint né dipendenze.
+> **Zona A**: numero unico — valore netto `summary.active.value` in
+> `base_currency` con il token `text-hero` + `tabular-nums` — riga P/L firmata
+> con due `PnlValue` (importo + % dell'active breakdown), chip secondari muted
+> (Realizzato via `PnlValue`, Dividendi, Investito) e **`FreshnessStamp`**
+> ("Prezzi alle HH:MM" da `finished_at` del refresh di sessione, tono
+> `--info`/muted, stato "in aggiornamento"; toast e semantica
+> una-volta-per-sessione invariati). A destra (stacked su telefono) il grafico
+> **valore vs investito**: `CapitalChart` nella nuova variante opt-in
+> `compact` (canvas 240px, niente slider dataZoom) alimentato dagli **stessi**
+> bucket `dashboardPerformance`; **chip periodo guidati dai bucket (D10)**:
+> `PeriodChips` finestre i bucket lato client — mensili → 1Y (ultimi 12) /
+> 3Y (ultimi 36) / TUTTO, annuali → solo TUTTO con chip nascosti; opzioni
+> derivate dalla `granularity` del payload, scelta persistita in
+> `localStorage['vaultlab-hero-period']`. L'`InvestmentsTable` Active/Closed
+> si apre in un `<details>` "Dettaglio" a divulgazione progressiva; la vecchia
+> card "Capital invested" è assorbita nell'hero. **Zona B**: card Performance
+> invariata (toggle Monthly/Annual che guida anche l'hero) ora in griglia
+> 2-colonne con il donut "Allocation by portfolio"; **strip qualità**
+> (`DataQualityStrip`, chip-link solo quando azionabile: FX mancante da
+> `summary.fx_missing_count/value` → `/settings/currencies`, esito refresh
+> rate-limit/issues/failed → `/admin/health`; i contatori missing-sector/
+> country/stale sono rinviati perché non esistono sul tipo `Dashboard` —
+> richiesta backend futura); **checklist primo avvio** (`FirstRunChecklist`,
+> D8: `<ol>` accessibile ①portafoglio ②asset ③transazione con stati
+> done/current/pending derivati solo dal payload, sparisce con portafogli
+> presenti); **`ScopeSwitcher`** (D3: `<select>` nativa da `dash.portfolios`,
+> "Tutti i portafogli (Vault)" + i portafogli, selezionarli **naviga** a
+> `/portfolios/{id}`). Zone C–E (card portafogli, Allocazione complessiva,
+> Invested assets) invariate; nessuna posizione fissa aggiunta (compatibile
+> con la bottom nav K.2). Nuove chiavi i18n EN/IT (shape identici): `hero.*`,
+> `period.*`, `quality.*`, `freshness.*`, `checklist.*`, `scope.*`. **Rinviati
+> a K.3b+**: sparkline nei card portafoglio, digest allocazione, tabelle in
+> card, `DataTable`/`KpiStrip`, skeletons `AsyncCard` per card.
+
+> **K.3b — Sparkline nei card portafoglio — ✅ completata (questo branch)**:
+> nuovo componente minimale `domain/Sparkline.svelte` — line chart ECharts
+> senza assi/legenda/tooltip/zoom (tree-shaking: solo `LineChart` +
+> `GridComponent` + `CanvasRenderer`), griglia a bordi zero e `yAxis scale`
+> per usare tutta l'altezza, colore semantico `marketValue` di default (prop
+> `color`), riempimento d'area discreto al 10% opzionale (`area`),
+> `sampling: 'lttb'` (pattern spec §9.2), serie `silent` (nessun hover),
+> strip d'altezza fissa via `heightClass` (default `h-10`); accetta numeri
+> semplici (asse indice) o punti `{date, value}` (asse temporale hidden, i
+> buchi di calendario restano veritieri) e **non renderizza nulla** sotto i
+> 2 punti; wrapper `role="img"` con `aria-label`; re-init al flip di tema
+> con il pattern `{#key resolved()}`. Le card portafoglio della dashboard
+> (zona C §6.1) mostrano ora lo strip dello storico del valore: gli esiti
+> arrivano da `portfolioApi.history(id)` (i `market_value` della serie
+> convertiti in punti `{date, value}`), caricati **in parallelo e in background**
+> dopo il payload della dashboard — le card si renderizzano subito e le
+> sparkline si aggiungono quando le risposte landano; guard monotònico
+> last-write-wins sul round (e store chiave-per-id) perché una risposta
+> obsoleta non possa finire dietro una più recente o sulla card sbagliata;
+> chiamate fallite silenziose (nessun toast, nessuno spazio riservato). A
+> scala familiare N GET parallele sono accettabili (la cache GET da 60s
+> deduplica il round post-refresh): l'endpoint batchato è il fast-follow
+> backend se il numero di portafogli cresce. Il digest allocazione "See
+> all" resta rinviato (non esiste ancora una vista allocazione dedicata;
+> la card "Allocazione complessiva" è invariata). Nuove chiavi i18n EN/IT
+> (shape identici): `sparkline.trend`, `sparkline.valueTrend`.
+
+> **K.4a — Dettaglio portafoglio → tab annidati — ✅ completata (questo
+> branch)**: la pagina unica `routes/portfolios/[id]/+page.svelte` (568 righe)
+> è divisa in una shell `+layout.svelte` + quattro tab nested-route (spec
+> §4.2/§6.2): **Overview** (`+page.svelte`: card `InvestmentsTable` + conteggio
+> asset, card Performance I.8 col toggle Mensile/Annuale, "Performance
+> history" `PositionChart`, digest allocazione `ClassDonut` + link),
+> **Positions** (`positions/`: tabella holding completa), **Activity**
+> (`activity/`: tabella transazioni paginata I.9, piè di pagina Previous/Next
+> invariato), **Allocation** (`allocation/`: griglia I.7 ciambella classi +
+> barre regioni/settori/paesi con stati d'errore isolati). Le tab sono URL
+> reali (`ui/Tabs` K.1c, stato attivo derivato dalla route, scroll orizzontale
+> su telefono): deep-link e pulsante indietro funzionano; le azioni del
+> portafoglio (export, import — con *questo* portafoglio come unico target di
+> sovrascrittura — ed elimina con conferma + redirect alla lista) vivono nel
+> menu `⋯` dell'header, non in una quinta tab. **Condivisione dati**: il
+> layout possiede ogni fetch (portfolio, summary, finestra transazioni, bucket
+> TWR, storico, tre allocazioni, refresh prezzi una-volta-per-sessione +
+> refill E.9 post-mutazione) e lo espone tramite **context** tipizzato Svelte 5
+> (`context.ts`: `createContext`, membri in getter che fanno proxy al `$state`
+> del layout); le tab non rifetchano nulla e il layout restando montato
+> conserva dati e finestra di paginazione tra i cambi di tab. Header sticky:
+> link indietro, nome + (valuta), descrizione, `[+ Transazione]`, strip KPI
+> (valore + `PnlValue` + chip investito/realizzato/dividendi in valuta
+> portafoglio, composizione dell'hero K.3a). Nessuna API o logica di business
+> toccata; nessuna dipendenza nuova. Nuove chiavi i18n EN/IT (shape identici):
+> gruppo `portfolio.*` (etichette tab, back, azioni header/menu, conferma
+> eliminazione, link digest) e `common.delete`/`common.cancel`. **Restano a
+> K.4**: filtri Attività in URL state + editing in
+> sheet + undo toast D11 (K.4c); il tab dell'asset è completato in K.4b
+> (nota sotto).
+
+> **K.4b — Dettaglio asset → tab annidati + "Dove è detenuto" — ✅ completata
+> (questo branch)**: la pagina unica `routes/assets/[id]/+page.svelte`
+> (1137 righe) è divisa in una shell `+layout.svelte` + tre tab nested-route
+> (spec §4.2/§6.3, stesso pattern e contesto tipizzato di K.4a):
+> **Panoramica** (`+page.svelte`: card `PriceChart` con selettore
+> 1M/3M/1Y/YTD/MAX, zoom in-place e marcatori di split invariati; **NUOVO**
+> blocco "Dove è detenuto"; griglia sola-lettura "Dati principali"),
+> **Esposizione** (`exposure/`: card Distribuzione geografica — barre top-15
+> paesi + donut regioni aperto — e Distribuzione settoriale, banner
+> equity-universe quando non applicabile) e **Dati** (`data/`: form
+> "Caratteristiche" con dirty-save e selettore `price_source`, "Zona
+> pericolosa", slot riservati EPIC J — prezzo manuale J.1 e attributi
+> obbligazionari J.2 — muti e senza comportamento). Le tab sono URL reali
+> (`ui/Tabs` K.1c, stato attivo dalla rotta, scroll orizzontale su telefono):
+> deep-link e pulsante indietro funzionano. **Condivisione dati**: il layout
+> possiede ogni fetch e mutazione — load iniziale combinato
+> (asset+quote+prices+exposure+splits, 404 → redirect a `/assets`), refresh
+> prezzi una-volta-per-sessione con refill di quote/prezzi, PATCH metadati
+> sul `form` condiviso (il tab Data vi si lega in binding diretto; i prefill
+> continuano a sincronizzare `form.isin`), e l'intera machinery exposure —
+> salvataggi per dimensione con fonte di provenienza, prefill
+> JustETF/Morningstar/Yahoo, derivazione regioni, guard sulle somme, badge di
+> provenienza, re-hydration all'apertura — esposta via getter nel context
+> (`context.ts`); le modali geo/sector e il `ConfirmDialog` di eliminazione
+> sono montati una sola volta nella shell (le liste `$bindable` restano
+> `$state` nativi del layout), la tab li apre con
+> `openGeoModal`/`openSectorModal`. Gli helper puri di normalizzazione
+> (`roundWeight`/`capAtHundred`/`positiveCountries`/`withoutOther`/
+> `sectorsList`) si spostano invariati in `exposure-utils.ts`, condiviso da
+> shell e tab. **Header sticky**: link indietro, ticker (mono) + nome, chip
+> identità tipo·classe·valuta·exchange, chip "nessun sync automatico" per
+> fonti non-Yahoo, strip quote (ultima chiusura + chip 1G/1S/1M/1Y/YTD via
+> `PnlValue`, dai vecchi "Metriche quote", + data ultimo prezzo) e menu `⋯`
+> (Aggiorna da Yahoo / Backfill storico completo / Elimina asset con conferma
+> e redirect) — stesse azioni e busy-flag rispecchiate nella zona pericolosa;
+> l'eliminazione asset sbarca così sulla pagina detail (prima solo in lista).
+> **"Dove è detenuto"**: una riga per portafoglio che detiene l'asset (link
+> al portafoglio, quantità, costo, valore, P&L firmato + ROI nella valuta
+> dell'asset) derivata client-side da `portfolioApi.dashboard()`
+> (`PortfolioAssets[] → AssetPerformance[]` filtrati sull'id corrente,
+> posizioni chiuse escluse) — nessun endpoint nuovo; fetch isolato e non
+> bloccante: in attesa il blocco non renderizza, errore → nota muted "non
+> disponibili", vuoto → "Non è detenuto in nessun portafoglio". Nessuna API
+> o logica di business toccata; nessuna dipendenza nuova. Nuove chiavi i18n
+> EN/IT (shape identici): gruppo `asset.*` (tab, header/menu/back, chip
+> quote, "Dove è detenuto", dati principali, zona pericolosa, slot
+> riservati); etichette tipo centralizzate in `format.ts`
+> (`ASSET_TYPE_LABELS`). **Restano a K.4**: filtri Attività in URL state +
+> editing in sheet + undo toast D11 (K.4c).
+
+> **K.4c — backend filtri elenco transazioni — ✅ completata (questo
+> branch)**: `GET /portfolios/{id}/transactions` accetta ora i parametri
+> opzionali e combinabili `type` (buy/sell/dividend/split/fee), `asset_id`
+> (UUID) e `from`/`to` (date `YYYY-MM-DD` esatte, bordi inclusivi); valori
+> non validi → 400 con il nome del parametro. Il `total` della risposta
+> riflette il conteggio **filtrato** (la paginazione del frontend dice
+> "1–20 di 42" riferito all'insieme filtrato); WHERE SQL dinamica e
+> parametrizzata, ordine/paginazione invariati, chiamate esistenti non
+> toccate. Il frontend K.4c è completato nella nota sotto →.
+
+> **K.4c — frontend: filtri Attività + form sheet + undo — ✅ completata
+> (questo branch)**: la tab Attività (spec §6.2/§6.4, decisioni D4/D11)
+> guadagna la riga di filtri — chip `ui/PeriodChips` per il tipo (Tutte/
+> Acquisto/Vendita/Dividendo/Split/Commissione), `ui/Select` sugli asset
+> registrati nel portafoglio (da `summary.holdings`, chiuse incluse) e input
+> nativi Dal/Al per l'intervallo — interamente **persistita nell'URL**
+> (`?type=sell&asset=<uuid>&from=YYYY-MM-DD&to=YYYY-MM-DD`, codec puro in
+> `routes/portfolios/[id]/tx-filters.ts`): l'URL è l'unica fonte di verità,
+> il layout lo interpreta (getter `txFilters` nel context) e ogni fetch
+> delle transazioni lo rispetta — deep link e reload partono già filtrati,
+> indietro/avanti ripristina la vista esatta, il piè di pagina mostra il
+> totale filtrato. `setTxFilters` scrive con `goto(..., { replaceState,
+> keepFocus, noScroll })` e un watcher sulla firma dei filtri riporta la
+> finestra alla prima pagina filtrata rifetchandola soltanto (via
+> `loadTransactions`, guard monotònico invariato); "Cancella filtri" e uno
+> stato vuoto dedicato (`EmptyState`, copy `activity.*`) chiudono il flusso.
+> `transactionApi.list` passa i nuovi parametri `type`/`asset_id`/`from`/`to`
+> (omessi quando non impostati; `TransactionPage` invariato). **Form
+> transazione responsivo (D4)**: `AddTransactionModal` renderizza gli
+> snippet condivisi `formBody`+`footer` dentro `ui/Modal` da `sm` in su e
+> dentro `ui/Sheet` (bottom sheet) sui telefoni, scelti con lo store
+> `viewport`; campi/validazione/totale live identici, `ui/Sheet` guadagna
+> `closeLabel` opzionale. **Undo sul delete (D11)**: il toast store accetta
+> ora `{ duration, action: { label, onclick } }` e `Toaster` renderizza
+> l'azione come pulsante inline (raggiungibile da tastiera, al click chiude
+> il toast); Elimina nel form agisce subito — niente più `ConfirmDialog` per
+> le transazioni (resta per portafogli/asset/import) — e "Annulla" (5 s)
+> ricrea la riga con `transactionApi.create` sul payload catturato: la
+> ricostruzione produce un **nuovo id** (accettato su scala familiare, i
+> dati economici — data/tipo/importi — sono identici); il refill post-
+> mutazione passa da `reloadAfterMutation`, quindi lista (con filtri
+> attivi), KPI, allocazioni e performance restano sincronizzati. Nuove
+> chiavi i18n EN/IT (shape identici): gruppo `activity.*`, gruppo `tx.*`,
+> `common.close`. Nessuna dipendenza nuova; desktop invariato.
+
+> **K.5b — "View as table" nei grafici (spec §9.1) — ✅ completata (questo branch)**:
+> nuova primitive `ui/ChartTableToggle.svelte`: disclosure segmentata
+> Grafico ⇄ Tabella che avvolge la `SegmentedControl` esistente (tablist di
+> veri pulsanti, quindi già raggiungibile da tastiera con `aria-selected`) e
+> espone `bind:view` (`'chart' | 'table'`, `$bindable`) più un `name`
+> opzionale che interpola il titolo del grafico nel nome accessibile della
+> tablist (fallback generico). Il toggle è incorporato **dentro** i sei
+> wrapper portatori di dati — `ExposureBarChart` (nome/valore/peso,
+> etichette come nei tooltip: nome leggibile + codice grezzo tra parentesi
+> via `labelFor`, e cap `maxVisibleRows` rispecchiato con viewport proprio),
+> `ClassDonut` (classe via `ASSET_CLASS_LABELS`/valore/peso), `ExposurePie`
+> (nome/peso), `PerformanceChart` (periodo/rendimento/TWR cumulativo, con
+> `pnlColorClass` come le barre), `CapitalChart` (periodo/investito/valore,
+> toggle attivo anche nella variante `compact` dell'hero) e
+> `AllocationDonut` (nome/valore/peso, colonna importo omessa con
+> `showValue={false}` come nel tooltip) — quindi ogni call site lo riceve
+> gratis; la prop `showTableToggle={false}` (default: mostrato) disattiva
+> solo dove sotto al grafico è già renderizzato l'elenco delle stesse righe:
+> le due ciambelle del tab Esposizione dell'asset (legenda completa
+> nome+peso) e le anteprime `mute` nelle due modali esposizione (la griglia
+> di pesi editabile *è* quella tabella). Le tabelle riusano le primitive
+> `ui/Table`/`Th`/`Td` con `<caption>` sr-only, `scope="col"`, celle
+> numeriche destre in `tabular-nums` e gli stessi formattatori dei tooltip;
+> il rendering di default resta il grafico (nessuna call-site rotation), in
+> vista tabella il canvas viene smontato (esce dall'albero di accessibilità)
+> e gli stati vuoti esistenti hanno precedenza sulla tabella (mai tabelle
+> vuote, e senza dati il toggle non appare). Non hanno avuto il toggle:
+> `PriceChart`/`PositionChart` (viste secondarie/storico prezzi, fuori
+> perimetro K.5b) e le `Sparkline` (forma pura, numeri già nella card).
+> **Rimandato** (poi arrivato): il drill-down paesi/regioni/settori → asset
+> contribuenti (click sulla riga/barra) aspettava solo il frontend — l'
+> endpoint di contribuzione (`dim`+`key` → asset) era già esposto (`GET
+> /portfolios/{id}/allocation/drill` e `GET /dashboard/allocation/drill`) e
+> il drawer è stato completato con K.5d, qui sotto.
+> Nuove chiavi i18n
+> EN/IT (shape identici): gruppo `chartView.*` (etichette del toggle, nomi
+> accessibili con/senza `{name}`, caption e intestazioni di colonna, nomi
+> dei grafici senza titolo proprio). Nessuna dipendenza nuova; dati e
+> backend intatti.
+
+> **K.5c — Toggle palette CVD (D6) — ✅ completata (questo branch)**:
+> nuovo store `lib/stores/palette.svelte.ts` a specchio di quello del tema:
+> `$state` reattivo `palette.cvd` (default `false`), persistenza in
+> `localStorage['vaultlab-cvd']`, `setCvd()` che commuta la classe `cvd` su
+> `<html>`, listener cross-tab e ri-assert al boot. `app.css` aggiunge gli
+> override `html.cvd`/`html.cvd.dark` di `--positive`/`--negative` con una
+> coppia blu/arancione derivata Okabe–Ito (tema chiaro `#0072b2`/`#c2410c`,
+> tema scuro `#56b4e9`/`#fb923c`; contrasto testo ≥ 4.7:1 su ogni superficie
+> dei rispettivi temi — AA) e selettore abbastanza specifico da battere sia
+> `:root` sia `.dark`: tutto il testo P&L (`pnlColorClass`/`PnlValue`,
+> varianti Badge/StatCard, progress bar) segue i token senza toccare un
+> componente, e i glifi segno+▲▼ restano (l'indipendenza dal colore è già
+> garantita dalla K.1c). Lato grafici: in `lib/chartPalette.ts` la tabella
+> `CHART_SEMANTIC_COLORS_CVD` (solo `positive`/`negative`;
+> `marketValue`/`costBasis`/`realized`/`splitMarkLine`/`other` invariati) e
+> `chartSemanticColors()` che legge lo store, quindi i `$derived` dei
+> chiamanti sono reattivi al flip; l'unico wrapper che dipinge la coppia è
+> `PerformanceChart`, il cui `{#key}` ora include anche la palette —
+> verificati gli altri (`PositionChart`, `Sparkline`, `CapitalChart`,
+> `ClassDonut`, `PriceChart`): non consumano colori P/L, nessun cambio.
+> Settings → Preferenze: seconda `SegmentedControl` «Colori utile/perdita»
+> (Classica/Accessibile ai daltonici) collegata a `setCvd`/`palette.cvd`,
+> apply immediato. Il bootstrap pre-paint di `app.html` applica anche la
+> classe `cvd` (niente flash verde/rosso al reload). Nuove chiavi i18n
+> EN/IT (shape identici): `preferences.colorGroup`,
+> `preferences.paletteClassic`, `preferences.paletteCvd`,
+> `preferences.paletteHint`. Nessuna dipendenza nuova; backend intatto.
+
+> **K.5a — ⌘K Command palette (spec §8.1) — ✅ completata (questo branch)**:
+> nuovo `layout/CommandPalette.svelte` montato una sola volta nell'`AppShell`
+> sul tier modale (z-40, sotto i toast); lo stato `open` `$bindable` resta
+> alla shell (`paletteOpen`), che lo condivide col nuovo trigger in
+> `AppHeader` — pulsante di ricerca presente a ogni misura: solo icona sotto
+> `lg` (affordance di ricerca sul telefono senza quinto elemento nella bottom
+> nav, decisione D2) e pill etichettato con l'accordo della piattaforma
+> (`⌘K`/`Ctrl K`, UA-detected) da `lg`. La chord globale ⌘K/Ctrl+K vive nel
+> componente (`<svelte:window>`, quindi solo dentro il gate di auth: il Login
+> non è toccato); Esc, backdrop e i cambi di rotta chiudono, e il
+> `ui/focus-trap.ts` condiviso di K.1c gestisce Tab-cycling e ripristino del
+> focus sul trigger (nessun focus orfano). Modello ARIA = combobox APG con
+> listbox raggruppata: dialog → un solo input `role="combobox"`
+> (`aria-expanded`/`aria-controls`/`aria-autocomplete="list"`/
+> `aria-activedescendant`) → `role="listbox"` di `role="group"` per sezione e
+> righe `role="option"` non focusabili (di proposito: l'unico tab stop è
+> l'input). Sezioni, rese solo se non vuote: **Vai a** = Panoramica,
+> Portafogli, Asset, Dati e sincronizzazione, Impostazioni + le quattro
+> sottosezioni `settingsTabs.*` (tutte via `resolve()` + `goto`) più i
+> portafogli da `portfolioApi.list()` → `/portfolios/{id}`; **Asset** =
+> asset registrati da `assetApi.list()` (label nome + hint ticker) →
+> `/assets/{id}`, seguiti dalla riga live «Cerca su Yahoo "…"» che invoca
+> `assetApi.lookup()` solo da 2 caratteri con debounce 300 ms, counter
+> anti-race e failure silenziose — la selezione naviga a `/assets` (creazione
+> fuori scope, come da task); **Azioni** = Aggiungi transazione (stessa
+> logica Fab K.2: portafoglio unico → dettaglione, altrimenti lista),
+> Aggiorna prezzi (`pricesApi.refresh()` + gli stessi toast
+> `quickActions.*`), Cambia tema (cicla chiaro → scuro → sistema sullo store
+> del tema; l'hint anticipa il target), Attiva/disattiva palette CVD
+> (`setCvd`, hint = variante risultante) e Mostra/nascondi barra laterale
+> (solo desktop, tramite il callback `ontogglesidebar` della shell che pilota
+> lo stato persistito `collapsed`). Matching senza dipendenze: matcher locale
+> ~15 righe con scoring prefisso > sottostringa > sottosequenza,
+> case-insensitive, su haystack `label + hint + keywords`; stato «Nessun
+> risultato» dedicato. Dati pigri: fetch solo a dialogo aperto (assorbito
+> dalla cache GET 60 s di `services/api.ts`, che ogni mutazione già invalida
+> → self-refresh senza hook), cap 8 per sezione dinamica a query vuota,
+> fallimenti silenziosi (le sezioni statiche restano utili). Tastiera: ↑/↓
+> con wrap, Home/End, Invio eseguito con guardia `isComposing`, Esc chiude;
+> la lista segue la riga attiva con `scrollIntoView({ block: 'nearest' })`.
+> Motion: solo fade del backdrop via `backdropFade()` (0 ms con
+> `prefers-reduced-motion`), nessuna animazione del pannello; layout
+> centrato `max-w-lg`/`max-h-[70dvh]` su `bg-overlay/50`. Header condensante
+> intatto (trigger `size="icon"` h-9 ≤ h-11). Nuove chiavi i18n EN/IT (shape
+> identici): gruppo `commandPalette.*` (title, trigger, inputLabel,
+> placeholder, sectionGoTo/sectionAssets/sectionActions, noResults, yahooRow
+> con `{query}`, searching, toggleTheme/toggleCvd/toggleSidebar, hintNavigate/
+> hintSelect/hintClose); le label di destinazioni e azioni riusano i gruppi
+> esistenti. Nessuna dipendenza nuova; backend e pagine invariate.
+
+> **K.5d — Drill-down allocazioni frontend (spec §6.5, decisione D4) — ✅
+> completata (questo branch)**: i grafici di allocazione sono diventati
+> punti d'ingresso: prop opzionale `onDrill` in `ClassDonut` (chiave classe
+> grezza della fetta cliccata) e `ExposureBarChart` (nome grezzo della riga
+> — `US`, `North America`, `Financials` — anche quando `labelFor` mappa
+> l'etichetta dell'asse); il click arriva dal prop `onclick` (evento ECharts)
+> del wrapper svelte-echarts, quindi il binding si rigenera con l'istanza
+> alla re-init `{#key}` senza rompere il re-init, e con drill attivo
+> fette/barre mostrano il cursore `pointer` (default altrimenti). Nessun
+> drill per `ExposurePie` (composizione di un singolo asset, non un
+> aggregato) né per le modali esposizione. Nuovo componente
+> `domain/AllocationDrillPanel.svelte`: elenca gli asset contribuenti di
+> un bucket renderizzando `ui/Drawer` (≥ `lg`) o `ui/Sheet` (< `lg`) via lo
+> store `viewport`; controllato (`open`/`onClose` della pagina), carica alla
+> apertura e a ogni cambio di `dim`/`key` con un `fetcher` iniettato per
+> scope (`dashboardAllocationDrill` per il vault, `allocationDrill(id, …)`
+> per il portafoglio — `GET /dashboard/allocation/drill` e
+> `GET /portfolios/{id}/allocation/drill`, chiave URL-encoded da `params`
+> quindi a posto anche con spazi), request id monotònico contro le risposte
+> stale e stati secondo le convenzioni `ui/AsyncCard` (skeleton, errore su
+> una riga + Riprova, vuoto «Nessun asset in questa fetta», dati). Tabella
+> `ui/Table`/`Th`/`Td` con caption sr-only e cinque colonne — Asset (ticker
+> linkato a `/assets/{id}` + nome muted su seconda riga), Valore, Peso
+> (dentro il bucket), Contributo e Quota della fetta (contributo ÷ totale
+> del bucket, con guardia a trattino per bucket vuoti) — nell'ordine
+> decrescente di contributo già servito dal backend; sotto `sm` le righe
+> si impilano in chiave–valore e nessun viewport scrollabile annidato
+> (scorre solo il corpo del drawer/sheet). Dashboard e tab Allocazione
+> montano UN pannello ciascuno con stato condiviso (`drillOpen`/`drillDim`/
+> `drillKey`/`drillTitle`): `key` è il valore grezzo del grafico, `title`
+> l'etichetta che il grafico mostra (`ASSET_CLASS_LABELS` per le classi,
+> `countryDisplayName` per i paesi, verbatim per regioni/settori).
+> Allineato `ui/Drawer` alla controparte `ui/Sheet`: nuovo prop `closeLabel`
+> per il nome accessibile della ✕ (default invariato, nessun consumatore
+> rotto). Nuove chiavi i18n EN/IT (shape identici): gruppo `drill.*`
+> (caption `{name}`, contributingAssets `{count}`, colAsset/
+> colContribution/colShare, empty, error, retry); le intestazioni
+> Valore/Peso riusano `chartView.colValue`/`chartView.colWeight` e la ✕
+> `common.close`. I dati di allocazione delle pagine restano gli stessi;
+> nessuna dipendenza nuova; backend intatto.
+
+**Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
+J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di
+rischio) in una card **Insights** su Overview/portafoglio; Fase 3 (sharing/ruoli) nel
+ScopeSwitcher ("Shared with me") e in Settings → Members.
+
+**Rinviato / slot riservati**: Activity consolidata cross-portafoglio (slot in "More"),
+benchmark overlay (EPIC C), density toggle (fuori MVP), passkey/2FA (solo slot).
 
 ## Fase 3 — Pianificata
 

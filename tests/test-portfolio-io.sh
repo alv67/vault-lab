@@ -113,7 +113,10 @@ CODE=$(code_of "$RESP"); PF=$(body_of "$RESP")
 RESP=$(http GET "/portfolios/$PID/transactions")
 CODE=$(code_of "$RESP"); TXS=$(body_of "$RESP")
 [ "$CODE" = "200" ] && ok "GET transactions -> 200" || bad "GET transactions -> $CODE (atteso 200)"
-[ "$(jq 'length' <<<"$TXS")" = "2" ] && ok "2 transazioni importate" || bad "transazioni importate: $(jq 'length' <<<"$TXS") (atteso 2)"
+# Since EPIC I.9 the endpoint returns a page envelope
+# ({transactions,total,limit,offset}), not a bare array: count the rows inside.
+TX_COUNT=$(jq '.transactions | length' <<<"$TXS")
+[ "$TX_COUNT" = "2" ] && ok "2 transazioni importate" || bad "transazioni importate: $TX_COUNT (atteso 2)"
 
 # --- default applicati agli asset creati ----------------------------------------
 note "Asset importati ricevono i default (price_source=yahoo)"

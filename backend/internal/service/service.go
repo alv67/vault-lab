@@ -15,13 +15,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/amelamela/vault-lab/internal/auth"
-	"github.com/amelamela/vault-lab/internal/cache"
-	"github.com/amelamela/vault-lab/internal/geo"
-	"github.com/amelamela/vault-lab/internal/model"
-	"github.com/amelamela/vault-lab/internal/price"
-	"github.com/amelamela/vault-lab/internal/repository"
-	"github.com/amelamela/vault-lab/internal/series"
+	"github.com/alv67/vault-lab/internal/auth"
+	"github.com/alv67/vault-lab/internal/cache"
+	"github.com/alv67/vault-lab/internal/geo"
+	"github.com/alv67/vault-lab/internal/model"
+	"github.com/alv67/vault-lab/internal/price"
+	"github.com/alv67/vault-lab/internal/repository"
+	"github.com/alv67/vault-lab/internal/series"
 	"github.com/rs/zerolog/log"
 	"github.com/shopspring/decimal"
 )
@@ -1428,12 +1428,18 @@ const (
 )
 
 // ListTransactionsPaged returns one page of a portfolio's transactions plus
-// the total count, newest first. Negative limit/offset are rejected with
-// ErrInvalidInput; limit is defaulted and clamped as per the constants above.
-// Ownership is enforced like on the other portfolio-scoped reads: missing
-// portfolios yield ErrNotFound, someone else's portfolio yields ErrForbidden.
-func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID uuid.UUID, limit, offset int) (*model.TransactionPage, error) {
+// the total count of the filtered set, newest first. The filter is optional
+// in every dimension (zero value = unfiltered); a type outside the allowed
+// set is rejected with ErrInvalidInput even though the HTTP parser already
+// gates it. Negative limit/offset are rejected the same way; limit is
+// defaulted and clamped as per the constants above. Ownership is enforced
+// like on the other portfolio-scoped reads: missing portfolios yield
+// ErrNotFound, someone else's portfolio yields ErrForbidden.
+func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID uuid.UUID, limit, offset int, filter model.TransactionFilter) (*model.TransactionPage, error) {
 	if limit < 0 || offset < 0 {
+		return nil, ErrInvalidInput
+	}
+	if filter.Type != "" && !model.ValidTransactionType(filter.Type) {
 		return nil, ErrInvalidInput
 	}
 	if limit == 0 {
@@ -1454,14 +1460,14 @@ func (s *Service) ListTransactionsPaged(ctx context.Context, portfolioID, userID
 		return nil, ErrForbidden
 	}
 
-	txs, err := s.repos.Transaction.FindByPortfolioPage(ctx, portfolioID, limit, offset)
+	txs, err := s.repos.Transaction.FindByPortfolioPage(ctx, portfolioID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	if txs == nil {
 		txs = []model.TransactionWithAsset{}
 	}
-	total, err := s.repos.Transaction.CountByPortfolio(ctx, portfolioID)
+	total, err := s.repos.Transaction.CountByPortfolio(ctx, portfolioID, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -1906,6 +1912,227 @@ func buildBuckets(holdings []*model.Holding, rates map[string]decimal.Decimal, c
 	return byBucket, total, cov
 }
 
+// allocationDrillDim describes one drillable allocation dimension: the
+// canonical bucket names, the per-asset stock default and the stored-rows
+// loader, mirroring the dimension wiring of the geography/sector
+// aggregations. A nil loader marks the class dimension, which has no
+// exposure rows: the asset's whole value sits in its own class.
+type allocationDrillDim struct {
+	names       []string
+	defaultName func(*model.Holding) string
+	rows        func(ctx context.Context, repos *repository.Repository, holdings []*model.Holding) (map[string][]model.ExposureRow, error)
+}
+
+var allocationDrillDims = map[string]allocationDrillDim{
+	"class": {},
+	"region": {
+		names:       geo.Regions,
+		defaultName: func(h *model.Holding) string { return geo.RegionForCountry(h.Country) },
+		rows: func(ctx context.Context, repos *repository.Repository, holdings []*model.Holding) (map[string][]model.ExposureRow, error) {
+			return repos.Exposure.FindRegionsByAssets(ctx, holdingAssetIDs(holdings))
+		},
+	},
+	"country": {
+		names:       geo.Countries,
+		defaultName: func(h *model.Holding) string { return h.Country },
+		rows: func(ctx context.Context, repos *repository.Repository, holdings []*model.Holding) (map[string][]model.ExposureRow, error) {
+			return repos.Exposure.FindCountriesByAssets(ctx, holdingAssetIDs(holdings))
+		},
+	},
+	"sector": {
+		names:       geo.GICSSectors,
+		defaultName: func(h *model.Holding) string { return geo.NormalizeSector(h.Sector) },
+		rows: func(ctx context.Context, repos *repository.Repository, holdings []*model.Holding) (map[string][]model.ExposureRow, error) {
+			return repos.Exposure.FindSectorsByAssets(ctx, holdingAssetIDs(holdings))
+		},
+	},
+}
+
+// drillBucketWeight returns the holding's weight (in percentage points) in
+// one allocation bucket with the same semantics as buildBuckets: only
+// equity-universe eligible holdings participate on the exposure dimensions
+// (the class dimension has no eligibility filter), stocks without stored
+// rows default to 100% of their canonical default bucket, and when the
+// canonical rows carry no weight at all the whole value falls into "Other".
+// fullValue mirrors the other buildBuckets branch: the buckets that receive
+// the asset's whole value (the class itself and the "Other" fallback) are
+// fed with the raw value, without the value*weight/100 rounding.
+func drillBucketWeight(h *model.Holding, d allocationDrillDim, key string, stored []model.ExposureRow) (weight decimal.Decimal, fullValue bool) {
+	if d.rows == nil {
+		class := h.AssetClass
+		if class == "" {
+			class = "other"
+		}
+		if class != key {
+			return decimal.Zero, false
+		}
+		return decimal.NewFromInt(100), true
+	}
+	if !exposureEligible(h) {
+		return decimal.Zero, false
+	}
+	rows := canonicalExposureRows(d.names, stored, h.Type == model.AssetTypeStock, d.defaultName(h))
+	var sum decimal.Decimal
+	for _, r := range rows {
+		sum = sum.Add(r.Weight)
+	}
+	if !sum.IsPositive() {
+		if key == "Other" {
+			return decimal.NewFromInt(100), true
+		}
+		return decimal.Zero, false
+	}
+	for _, r := range rows {
+		if r.Name == key {
+			return r.Weight, false
+		}
+	}
+	return decimal.Zero, false
+}
+
+// buildAllocationDrill values the holdings in the reference currency with
+// the same rules the allocation aggregations use (priced, positive quantity,
+// available FX factor, positive value) and keeps, per asset, the ones
+// contributing to the bucket. The same asset held in several portfolios
+// merges into a single entry whose value is the sum; its weight is the
+// asset's exposure weight, identical across portfolios. The bucket total is
+// the sum of the contributions, so it matches the corresponding bucket of
+// the aggregation output.
+func (s *Service) buildAllocationDrill(ctx context.Context, d allocationDrillDim, dim, key, currency string, holdings []*model.Holding) (*model.AllocationDrill, error) {
+	rates, err := series.LoadRates(ctx, s.repos, holdings, currency)
+	if err != nil {
+		return nil, err
+	}
+	var exposures map[string][]model.ExposureRow
+	if d.rows != nil {
+		if exposures, err = d.rows(ctx, s.repos, holdings); err != nil {
+			return nil, err
+		}
+	}
+
+	type drillAgg struct {
+		holding      *model.Holding
+		value        decimal.Decimal
+		weight       decimal.Decimal
+		contribution decimal.Decimal
+	}
+	byAsset := map[string]*drillAgg{}
+	for _, h := range holdings {
+		if !h.Qty.IsPositive() || !h.HasPrice {
+			continue
+		}
+		value := h.Qty.Mul(h.LastClose)
+		factor, ok := series.FxFactor(rates, h.Currency, currency)
+		if !ok {
+			continue
+		}
+		value = value.Mul(factor)
+		if !value.IsPositive() {
+			continue
+		}
+		weight, fullValue := drillBucketWeight(h, d, key, exposures[h.AssetID])
+		if !weight.IsPositive() {
+			continue
+		}
+		contribution := value
+		if !fullValue {
+			contribution = value.Mul(weight).Div(decimal.NewFromInt(100))
+		}
+		agg, ok := byAsset[h.AssetID]
+		if !ok {
+			agg = &drillAgg{holding: h, weight: weight}
+			byAsset[h.AssetID] = agg
+		}
+		agg.value = agg.value.Add(value)
+		agg.contribution = agg.contribution.Add(contribution)
+	}
+
+	assets := make([]*model.AllocationDrillAsset, 0, len(byAsset))
+	var total decimal.Decimal
+	for assetID, agg := range byAsset {
+		if !agg.contribution.IsPositive() {
+			continue
+		}
+		total = total.Add(agg.contribution)
+		assets = append(assets, &model.AllocationDrillAsset{
+			AssetID:      assetID,
+			Ticker:       agg.holding.Ticker,
+			Name:         agg.holding.Name,
+			Value:        agg.value,
+			Weight:       agg.weight,
+			Contribution: agg.contribution,
+		})
+	}
+	sort.Slice(assets, func(i, j int) bool {
+		if !assets[i].Contribution.Equal(assets[j].Contribution) {
+			return assets[i].Contribution.GreaterThan(assets[j].Contribution)
+		}
+		return assets[i].AssetID < assets[j].AssetID
+	})
+	return &model.AllocationDrill{Currency: currency, Dim: dim, Key: key, Total: total, Assets: assets}, nil
+}
+
+// GetPortfolioAllocationDrill returns the per-asset contributions behind one
+// bucket of the portfolio's allocation (dim: class, country, region or
+// sector; key: the bucket name, e.g. an "Other" fallback bucket too) valued
+// in the portfolio currency. A missing portfolio yields ErrNotFound;
+// ownership is enforced by the caller like on the other portfolio-scoped
+// allocation reads.
+func (s *Service) GetPortfolioAllocationDrill(ctx context.Context, portfolioID uuid.UUID, dim, key string) (*model.AllocationDrill, error) {
+	d, ok := allocationDrillDims[dim]
+	if !ok || key == "" {
+		return nil, ErrInvalidInput
+	}
+	return cached(s.cache, ctx, "allocation-drill", portfolioID.String()+":"+dim+":"+key, cacheTTLStats, false, func() (*model.AllocationDrill, error) {
+		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, []uuid.UUID{portfolioID})
+		if err != nil {
+			return nil, err
+		}
+		return s.buildAllocationDrill(ctx, d, dim, key, p.Currency, holdings)
+	})
+}
+
+// GetDashboardAllocationDrill returns the per-asset contributions behind one
+// bucket of the vault-wide allocation in the user's base currency (default
+// EUR when unset), aggregating the holdings of all the user's portfolios by
+// asset with the same semantics as GetDashboardAllocation.
+func (s *Service) GetDashboardAllocationDrill(ctx context.Context, userID uuid.UUID, dim, key string) (*model.AllocationDrill, error) {
+	d, ok := allocationDrillDims[dim]
+	if !ok || key == "" {
+		return nil, ErrInvalidInput
+	}
+	return cached(s.cache, ctx, "allocation-drill", userID.String()+":"+dim+":"+key, cacheTTLStats, false, func() (*model.AllocationDrill, error) {
+		user, err := s.repos.User.FindByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		currency := user.BaseCurrency
+		if currency == "" {
+			currency = "EUR"
+		}
+		portfolios, err := s.repos.Portfolio.FindByUser(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]uuid.UUID, 0, len(portfolios))
+		for _, p := range portfolios {
+			ids = append(ids, p.ID)
+		}
+		holdings, err := s.repos.Portfolio.HoldingsDetailed(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		return s.buildAllocationDrill(ctx, d, dim, key, currency, holdings)
+	})
+}
+
 func (s *Service) GetPortfolioPerformance(ctx context.Context, portfolioID uuid.UUID) ([]*model.PortfolioPerformance, error) {
 	return cached(s.cache, ctx, "performance", portfolioID.String(), cacheTTLStats, false, func() ([]*model.PortfolioPerformance, error) {
 		p, err := s.repos.Portfolio.FindByID(ctx, portfolioID)
@@ -2281,7 +2508,7 @@ func (s *Service) ImportPortfolio(ctx context.Context, userID uuid.UUID, doc *mo
 			if strings.TrimSpace(et.AssetTicker) == "" {
 				return fmt.Errorf("%w: transaction without asset_ticker", ErrInvalidInput)
 			}
-			if et.Type != model.TxBuy && et.Type != model.TxSell && et.Type != model.TxDividend && et.Type != model.TxSplit && et.Type != model.TxFee {
+			if !model.ValidTransactionType(string(et.Type)) {
 				return fmt.Errorf("%w: invalid transaction type %q", ErrInvalidInput, et.Type)
 			}
 			a, err := createAsset(strings.TrimSpace(et.AssetTicker))

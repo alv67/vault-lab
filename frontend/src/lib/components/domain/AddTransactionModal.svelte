@@ -1,10 +1,12 @@
 <script lang="ts">
   import { toast } from '$lib/stores/toast.svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import { transactionApi, type Asset, type Transaction } from '$lib/services/api'
   import { formatCurrency } from '$lib/format'
+  import { viewport } from '$lib/stores/viewport.svelte'
   import Modal from '$lib/components/ui/Modal.svelte'
+  import Sheet from '$lib/components/ui/Sheet.svelte'
   import Button from '$lib/components/ui/Button.svelte'
-  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import Field from '$lib/components/ui/Field.svelte'
   import Input from '$lib/components/ui/Input.svelte'
   import Select from '$lib/components/ui/Select.svelte'
@@ -12,9 +14,24 @@
   import AssetCombobox from './AssetCombobox.svelte'
 
   /**
-   * Add/edit transaction dialog (EPIC E.2): owns the form state, inline
-   * validation, API calls, toasts and the delete confirmation so the
-   * portfolio page only toggles `open` and refreshes via `onsuccess`.
+   * Add/edit/delete transaction form (EPIC E.2): owns the form state, inline
+   * validation, API calls and toasts so the portfolio page only toggles
+   * `open` and refreshes via `onsuccess`.
+   *
+   * EPIC K.4c changed two things about this dialog, nothing else:
+   * - **Responsive container (D4, spec §6.2/§6.4):** the same `formBody` +
+   *   `footer` snippets render into the classic `ui/Modal` from `sm` up and
+   *   into the K.1c `ui/Sheet` (bottom sheet) on phones, chosen by the
+   *   reactive `viewport` store. Fields, validation and the live total are
+   *   identical in both containers; the sheet's `onClose` mirrors the
+   *   modal's busy-state `dismissible` gate.
+   * - **Undo over confirm (D11, spec §6.4/§8.6):** Delete inside edit mode
+   *   removes the transaction immediately and offers a 5 s "Undo" action in
+   *   the resulting toast instead of the old `ConfirmDialog`. Undo
+   *   re-POSTs the captured payload via `transactionApi.create` — which
+   *   yields a NEW id (see `deleteTransaction`) — and re-enters the regular
+   *   post-mutation refetch. `ConfirmDialog` remains for the irreducible
+   *   destructive actions (portfolio/asset delete, import overwrite).
    */
   let {
     open = $bindable(false),
@@ -83,7 +100,6 @@
   let errors = $state(emptyErrors())
   let saving = $state(false)
   let deleting = $state(false)
-  let confirmDeleteOpen = $state(false)
 
   const isDividend = $derived(form.type === 'dividend')
   const total = $derived(
@@ -95,6 +111,10 @@
       : toStr(form.quantity) !== '' && toStr(form.price) !== '' && Number.isFinite(total),
   )
   const totalText = $derived(totalEntered ? formatCurrency(total, currency) : '—')
+
+  // Same title in either container; now routed through `t()` because the K.4c
+  // bottom sheet promotes it to the phone screen's most visible label (D1).
+  const title = $derived(editing ? t('tx.titleEdit') : t('tx.titleNew'))
 
   // Prefill on open, clear the draft on close (and while never opened).
   $effect(() => {
@@ -114,7 +134,6 @@
       dividendAmount = ''
     }
     errors = emptyErrors()
-    if (!open) confirmDeleteOpen = false
   })
 
   // The combobox selection is the "input" for the asset field.
@@ -167,14 +186,42 @@
     }
   }
 
-  async function confirmDelete(): Promise<void> {
+  /** How long the undo window stays open after a delete (spec §6.4, D11). */
+  const UNDO_WINDOW_MS = 5000
+
+  /**
+   * Delete without confirmation (D11), then offer Undo. The full row is
+   * snapshotted FIRST because undo cannot PATCH a gone record: it re-POSTs
+   * the same payload to the owning portfolio, which yields a NEW `id` (and
+   * a fresh `created_at`) for the restored transaction. Accepted at family
+   * scale: no view links to a transaction id across deletes, and the
+   * original date/type/amounts — the parts analytics order and aggregate
+   * by — are carried verbatim.
+   */
+  async function deleteTransaction(): Promise<void> {
     if (!editing) return
     deleting = true
+    const snapshot: Partial<Transaction> = {
+      asset_id: editing.asset_id,
+      type: editing.type,
+      quantity: editing.quantity,
+      price: editing.price,
+      fees: editing.fees || '0',
+      date: editing.date,
+      notes: editing.notes,
+    }
+    const targetPortfolioId = editing.portfolio_id || portfolioId
     try {
       await transactionApi.remove(editing.id)
-      toast.success('Transaction deleted')
       open = false
       onsuccess?.()
+      toast.success(t('tx.deleted'), {
+        duration: UNDO_WINDOW_MS,
+        action: {
+          label: t('tx.undo'),
+          onclick: () => void undoDelete(targetPortfolioId, snapshot),
+        },
+      })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Delete failed'
       toast.error(message)
@@ -182,33 +229,45 @@
       deleting = false
     }
   }
+
+  /** Undo action body: recreate the deleted row and rerun the standard
+   * post-mutation refetch, so the (filtered) list, KPIs, allocations and
+   * performance all come back in sync through the layout's one path. */
+  async function undoDelete(targetPortfolioId: string, snapshot: Partial<Transaction>): Promise<void> {
+    try {
+      await transactionApi.create(targetPortfolioId, snapshot)
+      onsuccess?.()
+    } catch {
+      toast.error(t('tx.undoFailed'))
+    }
+  }
+
+  /** Sheet close gate: Esc/backdrop/✕ stay inert while a request is in
+   * flight, mirroring the Modal's `dismissible` prop in the other branch. */
+  function requestClose(): void {
+    if (saving || deleting) return
+    open = false
+  }
 </script>
 
 {#snippet footer()}
-  <Button variant="secondary" onclick={() => (open = false)} disabled={saving || deleting}>
-    Cancel
-  </Button>
-  {#if editing}
-    <Button
-      variant="danger"
-      onclick={() => (confirmDeleteOpen = true)}
-      disabled={saving || deleting}
-    >
-      Delete
+  <div class="flex flex-wrap items-center justify-end gap-2">
+    <Button variant="secondary" onclick={requestClose} disabled={saving || deleting}>
+      Cancel
     </Button>
-  {/if}
-  <Button onclick={submit} loading={saving} disabled={deleting}>
-    {editing ? 'Save Changes' : 'Save'}
-  </Button>
+    {#if editing}
+      <!-- D11: one click deletes, the toast's Undo (5 s) puts it back. -->
+      <Button variant="danger" onclick={() => void deleteTransaction()} disabled={saving || deleting} loading={deleting}>
+        Delete
+      </Button>
+    {/if}
+    <Button onclick={submit} loading={saving} disabled={deleting}>
+      {editing ? 'Save Changes' : 'Save'}
+    </Button>
+  </div>
 {/snippet}
 
-<Modal
-  bind:open
-  title={editing ? 'Edit Transaction' : 'New Transaction'}
-  size="lg"
-  {footer}
-  dismissible={!saving && !deleting}
->
+{#snippet formBody()}
   <div class="grid gap-3 sm:grid-cols-2">
     <Field label="Asset" for={`${uid}-asset`} error={errors.asset || undefined}>
       <AssetCombobox
@@ -287,15 +346,28 @@
     <span class="text-muted-foreground">Total</span>
     <span class="font-semibold tabular-nums text-foreground">{totalText}</span>
   </div>
-</Modal>
+{/snippet}
 
-<ConfirmDialog
-  bind:open={confirmDeleteOpen}
-  variant="danger"
-  title="Delete transaction"
-  message="Delete this transaction?"
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
-  loading={deleting}
-  onconfirm={confirmDelete}
-/>
+{#if viewport.isPhone}
+  <!-- Phone < sm: bottom sheet (D4). Same snippets, same state — flipping
+       containers (rotate/resize) only swaps the chrome under the form. -->
+  <Sheet
+    {open}
+    onClose={requestClose}
+    {title}
+    closeLabel={t('common.close')}
+    footer={footer}
+  >
+    {@render formBody()}
+  </Sheet>
+{:else}
+  <Modal
+    bind:open
+    {title}
+    size="lg"
+    {footer}
+    dismissible={!saving && !deleting}
+  >
+    {@render formBody()}
+  </Modal>
+{/if}

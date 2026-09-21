@@ -20,11 +20,17 @@
 - For manual API testing use the isolated test stack and `tests/api-test.http`
   (VS Code REST Client), never the dev/prod stack. The EPIC B allocation smoke
   test is `tests/test-epic-b.sh` on the same isolated stack (seeds prices via
-  `tests/seed-prices.sql`, since Yahoo is disabled there).
+  `tests/seed-prices.sql`, since Yahoo is disabled there). The EPIC K
+  transaction-filter and allocation drill-down smoke test is
+  `tests/test-epic-k.sh` (same isolated stack and price seed).
 - **Keep the project docs in sync before closing a PR**: always check the
   project documents first (AGENTS.md, PLAN.md, STATUS.md, `docs/` guides en/it)
   and update them together with the code. A PR must NOT be closed until its
   related documentation (endpoints, behavior, UI, status tables) is updated.
+  The guides (BACKEND/FRONTEND/DATABASE-GUIDE, UX-REDESIGN) describe **how the
+  app works**, not the development history: do not record the intermediate bugs
+  hit while building a feature (they are not meaningful for understanding the
+  app) — only the resulting behavior.
 - **Release notes** (`docs/RELEASE-NOTES.en.md` / `.it.md`): one line per
   feature/fix, written from the end user's point of view (what they see and use
   in the app — no internal/backend details). Add the lines under an `Unreleased`
@@ -33,3 +39,7 @@
   Sections are ordered **newest first**: the latest released version on top,
   down to the oldest. Group the lines under `Features` and `Fixes` (in Italian,
   `Nuove funzionalità` / `Correzioni`); omit `Fixes` when a release has none.
+  Include only what the end user perceives as different from the **previous
+  release**: never list bugs that were introduced and fixed within the same
+  unreleased development cycle (users never saw them, so they are not release
+  notes — they are just development activity).
