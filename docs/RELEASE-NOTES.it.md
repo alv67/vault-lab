@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v0.6.0 — 21 Set 2026
 
 ### Nuove funzionalità
 - Clicca una fetta o una barra delle allocazioni — la ciambella delle classi di attività o le barre di settori, regioni e paesi, in dashboard e nel tab Allocazione di un portafoglio — per aprire un pannello laterale (una sheet dal basso sul telefono) con gli asset che la compongono, il loro valore, contributo e quota di quella fetta

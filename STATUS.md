@@ -30,7 +30,13 @@ time-weighted (barre mensili/annuali + linea cumulata) e grafico del capitale, a
 classe/settore/paese/macro-regione, tabella asset investiti consolidata, KPI e allocazioni del
 dettaglio portafoglio allineati alla dashboard, performance a barre e transazioni paginate;
 inclusi i fix import di export vecchi (#99) e P/L fittizio -100% sulle posizioni chiuse (#100).
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0` su `main`.
+**v0.6.0** — sesta release su `main` (21 Set 2026): **EPIC K completa** (redesign UX/UI) —
+fondazioni (token, font self-hosted, tema di sistema, i18n IT/EN, primitive), shell adattiva
+(bottom nav + FAB su phone, rail su tablet, header condensante), dashboard con hero e chip
+periodo, pagine portafoglio/asset a tab, filtri Attività con undo e form a sheet, command
+palette ⌘K, vista tabella dei grafici, palette CVD e drill-down delle allocazioni; include i
+filtri transazioni e l'endpoint di drill-down lato backend.
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0`/`v0.6.0` su `main`.
 
 ## Fase 0 — ✅ Completata
 

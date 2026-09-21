@@ -182,12 +182,14 @@ vault-lab/
 
 ---
 
-## Stato attuale (17 Set 2026)
+## Stato attuale (21 Set 2026)
 
-**Release v0.4.0** pubblicata su `main` (design system & dark mode, rebuild delle pagine e dei
-componenti di dominio, dashboard/portafoglio rinnovati, Health più chiaro, CI).
-Precedenti release: **v0.1.0** (25 Ago 2026), **v0.2.0** (30 Ago 2026, EPIC A + EPIC B) e
-**v0.3.0** (11 Set 2026, asset editing overhaul).
+**Release v0.6.0** pubblicata su `main` (redesign UX/UI, EPIC K: fondazioni token/font/tema,
+shell adattiva, dashboard con hero, pagine portafoglio/asset a tab, i18n IT/EN, command palette,
+vista tabella dei grafici, palette CVD, drill-down delle allocazioni).
+Precedenti release: **v0.1.0** (25 Ago 2026), **v0.2.0** (30 Ago 2026, EPIC A + EPIC B),
+**v0.3.0** (11 Set 2026, asset editing overhaul), **v0.4.0** (13 Set 2026, design system & dark
+mode, EPIC D/E) e **v0.5.0** (17 Set 2026, EPIC I — dashboard & portfolio v2).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
 procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),
@@ -216,10 +218,9 @@ tipi `cash`/`certificate` (J.3 #107) come prima PR consigliata, poi esposizione 
 La gestione del capitale disponibile (versamenti/prelievi, conto titoli) è tracciata a parte
 nell'issue #101. Vedi STATUS.md per lo stato dettagliato.
 
-**Redesign UX/UI — EPIC K (in corso su branch isolato `feat/K-ux-redesign`)**: analisi UX/UI
-completa basata solo sulle funzionalità attuali e proposta di un'interfaccia moderna per
-PC/tablet/mobile. La Fase 0 (specifica di design, `docs/UX-REDESIGN.en.md` / `.it.md` +
-aggiornamento STATUS/PLAN) è completata; l'implementazione procede a fasi K.1–K.5 delegate al
-subagent `frontend`. Il branch verrà mergiato solo se il risultato convince, altrimenti verrà
-scartato senza impattare `develop`.
+**Redesign UX/UI — EPIC K (rilasciata in v0.6.0)**: analisi UX/UI completa basata solo sulle
+funzionalità attuali e proposta di un'interfaccia moderna per PC/tablet/mobile
+(`docs/UX-REDESIGN.en.md` / `.it.md`); implementazione K.1–K.5 completata (fondazioni, shell
+adattiva, Overview, pagine portafoglio/asset a tab, command palette, vista tabella, palette CVD,
+drill-down delle allocazioni) e mergiata su `develop` (PR #115).
 

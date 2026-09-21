@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v0.6.0 — 21 Sep 2026
 
 ### Features
 - Click any allocation slice or bar — the asset-class donut or the sector, region and country bars, on the dashboard and on a portfolio's Allocation tab — to open a side panel (a bottom sheet on phones) listing the assets that make it up, with their value, contribution and share of that slice
