@@ -110,7 +110,9 @@
         </div>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">{@render children?.()}</div>
+      <div class="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        {@render children?.()}
+      </div>
 
       {#if footer}
         <div class="border-t border-border px-4 py-4">{@render footer()}</div>

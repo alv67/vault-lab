@@ -133,12 +133,18 @@
       {@render children()}
     </main>
   </div>
-</div>
 
-{#if viewport.isPhone}
-  <BottomNav {moreOpen} onopenmore={() => (moreOpen = true)} />
-  <Fab />
-{/if}
+  <!-- Phone bottom chrome lives INSIDE the shell. The shell is
+       `position: fixed`, which forms a stacking context: keeping the bottom
+       nav here (instead of as a sibling) puts it in the same context as the
+       page overlays, so a `z-30` Drawer/Sheet paints above the `z-20` bar
+       rather than being trapped underneath it. Both are `position: fixed`,
+       so they still anchor to the viewport and do not join the flex row. -->
+  {#if viewport.isPhone}
+    <BottomNav {moreOpen} onopenmore={() => (moreOpen = true)} />
+    <Fab />
+  {/if}
+</div>
 
 <MobileDrawer bind:open={moreOpen}>
   <Sidebar collapsed={false} />
