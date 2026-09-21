@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
-  import { Chart } from 'svelte-echarts'
+  import { Chart, type ECMouseEvent } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
   import { PieChart } from 'echarts/charts'
   import { LegendComponent, TooltipComponent } from 'echarts/components'
@@ -33,6 +33,7 @@
     currency = 'USD',
     label = undefined as string | undefined,
     showTableToggle = true,
+    onDrill = undefined,
   }: {
     data?: AssetClassSlice[]
     currency?: string
@@ -41,6 +42,11 @@
     /** Hide the shared Chart ⇄ Table toggle (EPIC K.5b, spec §9.1);
      * shown by default like in every other chart wrapper. */
     showTableToggle?: boolean
+    /** Drill-down callback (EPIC K.5, spec §6.5): when set, clicking a slice
+     * opens the caller's drill panel with the raw class key (the friendly
+     * label is only for display); slices also get a pointer cursor. Unset =
+     * the donut stays a plain visual with the default cursor. */
+    onDrill?: (classKey: string) => void
   } = $props()
 
   // Backend class keys are mapped to friendly labels through the shared
@@ -51,6 +57,18 @@
   }
   function isOther(cls: string): boolean {
     return cls.toLowerCase() === 'other'
+  }
+
+  // Drill-down click (EPIC K.5, spec §6.5): the svelte-echarts wrapper
+  // forwards the ECharts instance `click` event through its `onclick` prop,
+  // so the binding survives the `{#key}` theme re-init (the handlers are
+  // re-registered on every fresh instance). The `componentType` guard drops
+  // legend clicks, and the pie's data array is exactly `rows`, so the
+  // `dataIndex` maps back 1:1 to the raw class key the drill endpoint wants.
+  function handleSliceClick(event: ECMouseEvent): void {
+    if (!onDrill || event.componentType !== 'series') return
+    const row = rows[event.dataIndex]
+    if (row) onDrill(row.class)
   }
 
   // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
@@ -94,6 +112,9 @@
         radius: ['45%', '70%'],
         center: ['50%', '50%'],
         avoidLabelOverlap: true,
+        // Drilled donuts invite the click with a pointer cursor (K.5);
+        // plain ones keep the default arrow.
+        cursor: onDrill ? 'pointer' : 'default',
         label: {
           formatter: '{b}: {d}%',
           fontSize: 11,
@@ -166,7 +187,15 @@
 {:else}
   <div class="h-[280px] w-full">
     {#key resolved()}
-      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+      <!-- `onclick` is the svelte-echarts wrapper's ECharts event prop (it
+           registers `chart.on('click')` at init), so the drill-down binding
+           is re-created together with each re-initialised instance. -->
+      <Chart
+        {init}
+        {options}
+        theme={VAULTLAB_CHART_THEMES[resolved()]}
+        onclick={handleSliceClick}
+      />
     {/key}
   </div>
 {/if}

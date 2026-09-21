@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Features
+- Click any allocation slice or bar — the asset-class donut or the sector, region and country bars, on the dashboard and on a portfolio's Allocation tab — to open a side panel (a bottom sheet on phones) listing the assets that make it up, with their value, contribution and share of that slice
 - Every chart can be switched to a table view of the same data with the new Chart/Table control on the card — the numbers you were hovering on the chart, now readable row by row, on any device and with a screen reader
 - Open the new command palette with ⌘K/Ctrl+K (or the search button in the header, on every device): jump to any page, portfolio or asset, search Yahoo, and run quick actions — add transaction, refresh prices, switch theme, toggle the color-blind palette — all without leaving where you are
 - Optional colour-blind-friendly gain/loss palette: from Settings → Preferences you can swap the green/red P/L colours for a blue/orange pair everywhere, text and charts included — the +/− signs and ▲▼ arrows are always shown, and your theme stays untouched

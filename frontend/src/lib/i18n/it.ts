@@ -142,6 +142,28 @@ export const it = {
       'I portafogli usano valute diverse: i valori non sono confrontabili, le quote sono indicative.',
   },
   /**
+   * Drill-down delle allocazioni (EPIC K.5, spec §6.5): il drawer/sheet
+   * aperto al click su una fetta o una barra dei grafici di allocazione, che
+   * elenca gli asset contribuenti del bucket. Il titolo visibile è l'etichetta
+   * leggibile del bucket passata dal grafico chiamante; le intestazioni
+   * Valore/Peso riusano `chartView.colValue`/`chartView.colWeight` e il nome
+   * accessibile della ✕ riusa `common.close`.
+   */
+  drill: {
+    /** `<caption>` sr-only della tabella asset contribuenti ({name} = etichetta del bucket). */
+    caption: '{name} — asset contribuenti',
+    /** Sottotitolo muted sopra la tabella; `{count}` = numero di righe. */
+    contributingAssets: '{count} asset contribuiscono',
+    colAsset: 'Asset',
+    /** Quota dell'asset dentro il bucket (valore × peso di esposizione). */
+    colContribution: 'Contributo',
+    /** Contributo ÷ totale del bucket: la quota dell'asset nella fetta. */
+    colShare: 'Quota della fetta',
+    empty: 'Nessun asset in questa fetta',
+    error: 'Impossibile caricare gli asset di questa fetta',
+    retry: 'Riprova',
+  },
+  /**
    * Tab Esposizione degli asset e relative modali di modifica (bug-fix EPIC
    * K): titoli delle card, intestazioni dei pannelli, pulsanti di modifica e
    * banner riservato all'equity.

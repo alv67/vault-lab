@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
-  import { Chart } from 'svelte-echarts'
+  import { Chart, type ECMouseEvent } from 'svelte-echarts'
   import { init, use } from 'echarts/core'
   import { BarChart } from 'echarts/charts'
   import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -48,6 +48,7 @@
     labelFor = undefined as ((name: string) => string) | undefined,
     maxVisibleRows = undefined as number | undefined,
     showTableToggle = true,
+    onDrill = undefined,
   }: {
     rows?: ExposureBarRow[]
     currency?: string
@@ -74,6 +75,12 @@
      * needed by callers that already render the same rows as a list right
      * below the chart; every other card shows the toggle by default. */
     showTableToggle?: boolean
+    /** Drill-down callback (EPIC K.5, spec §6.5): when set, clicking a bar
+     * opens the caller's drill panel with the row's RAW name (the axis may
+     * show a mapped label, e.g. a full country name, but the backend bucket
+     * key is the raw row name); drilled bars get a pointer cursor. Unset =
+     * the chart stays a plain visual with the default cursor. */
+    onDrill?: (rawName: string) => void
   } = $props()
 
   // Defensive shaping: drop non-positive rows and re-sort descending by value
@@ -110,6 +117,21 @@
   )
   const visible = $derived(capped && !showAll ? sorted.slice(0, maxVisibleRows as number) : sorted)
   const height = $derived(Math.max(150, visible.length * ROW_HEIGHT + 10))
+
+  // Drill-down click (EPIC K.5, spec §6.5): the svelte-echarts wrapper
+  // forwards the ECharts instance `click` event through its `onclick` prop,
+  // so the binding survives the `{#key}` theme re-init (the handlers are
+  // re-registered on every fresh instance). The `componentType` guard keeps
+  // axis/background clicks out; the bars are plotted from `visible` (the
+  // collapsed list), so the `dataIndex` maps back 1:1 to the rendered rows —
+  // their RAW names are exactly the bucket keys the drill endpoint expects
+  // (`US`, `North America`, `Financials`…), while the axis may show a
+  // mapped label.
+  function handleBarClick(event: ECMouseEvent): void {
+    if (!onDrill || event.componentType !== 'series') return
+    const row = visible[event.dataIndex]
+    if (row) onDrill(row.name)
+  }
 
   // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
   // The table renders the same shaped `sorted` rows the bars plot; switching
@@ -161,6 +183,9 @@
         name: label ?? t('chartView.seriesExposure'),
         type: 'bar',
         barMaxWidth: 18,
+        // Drilled charts invite the click with a pointer cursor (K.5);
+        // plain ones keep the default arrow.
+        cursor: onDrill ? 'pointer' : 'default',
         itemStyle: { borderRadius: [0, 4, 4, 0] },
         // Weight % printed at the end of each bar; the exact amount lives in
         // the tooltip.
@@ -206,9 +231,16 @@
   <div class="w-full" style="height: {height}px">
     <!-- {#key} re-inits the chart when the theme flips so the ECharts theme
          object passed below is picked up (svelte-echarts only reads `theme`
-         at init time). -->
+         at init time). `onclick` is the wrapper's ECharts event prop (it
+         registers `chart.on('click')` at init), so the drill-down binding
+         is re-created together with each re-initialised instance. -->
     {#key resolved()}
-      <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+      <Chart
+        {init}
+        {options}
+        theme={VAULTLAB_CHART_THEMES[resolved()]}
+        onclick={handleBarClick}
+      />
     {/key}
   </div>
 {/snippet}

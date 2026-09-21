@@ -681,7 +681,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
 | **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
 | **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
-| **K.5 Power layer** | 🔄 *in corso — K.5c completata (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze), K.5b completata ("view as table" nei sei wrapper dati: toggle segmentato condiviso `ui/ChartTableToggle`, tabella accessibile con gli stessi dati, cap opt-out per i chiamanti che elencano già le righe), K.5a completata (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo) e backend del drill-down completato (`GET /portfolios/{id}/allocation/drill` + `GET /dashboard/allocation/drill`: `dim`+`key` → contribuzioni per asset, totali identici ai bucket delle allocazioni).* Restano in K.5: drawer drill-down (paesi/regioni/settori → asset contribuenti, frontend) | ✅ endpoint contribuzione drill-down (`dim+key` → asset) esposto; il drawer è pura UI frontend |
+| **K.5 Power layer** | ✅ *completata — K.5c (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze), K.5b ("view as table" nei sei wrapper dati: toggle segmentato condiviso `ui/ChartTableToggle`, tabella accessibile con gli stessi dati, cap opt-out per i chiamanti che elencano già le righe), K.5a (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo), backend del drill-down (`GET /portfolios/{id}/allocation/drill` + `GET /dashboard/allocation/drill`: `dim`+`key` → contribuzioni per asset, totali identici ai bucket delle allocazioni) e K.5d (drill-down frontend: fette/barre cliccabili in `ClassDonut`/`ExposureBarChart` e `AllocationDrillPanel` drawer/sheet (D4) con gli asset contribuenti, montato una volta su dashboard e tab Allocazione).* | ✅ endpoint contribuzione drill-down (`dim+key` → asset) esposto; drawer frontend completato in K.5d |
 
 > **K.1a — Fondamenta token/font/tema — ✅ completata (questo branch)**: scala
 > di elevazione a 4 step (`--surface-0..3`, con gli alias `--surface`/
@@ -982,10 +982,11 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > vuote, e senza dati il toggle non appare). Non hanno avuto il toggle:
 > `PriceChart`/`PositionChart` (viste secondarie/storico prezzi, fuori
 > perimetro K.5b) e le `Sparkline` (forma pura, numeri già nella card).
-> **Rimandato**: il drill-down paesi/regioni/settori → asset contribuenti
-> (click sulla riga/barra) aspetta solo il frontend: l'endpoint backend di
-> contribuzione (`dim`+`key` → asset) è esposto (`GET
-> /portfolios/{id}/allocation/drill` e `GET /dashboard/allocation/drill`).
+> **Rimandato** (poi arrivato): il drill-down paesi/regioni/settori → asset
+> contribuenti (click sulla riga/barra) aspettava solo il frontend — l'
+> endpoint di contribuzione (`dim`+`key` → asset) era già esposto (`GET
+> /portfolios/{id}/allocation/drill` e `GET /dashboard/allocation/drill`) e
+> il drawer è stato completato con K.5d, qui sotto.
 > Nuove chiavi i18n
 > EN/IT (shape identici): gruppo `chartView.*` (etichette del toggle, nomi
 > accessibili con/senza `{name}`, caption e intestazioni di colonna, nomi
@@ -1069,6 +1070,47 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > con `{query}`, searching, toggleTheme/toggleCvd/toggleSidebar, hintNavigate/
 > hintSelect/hintClose); le label di destinazioni e azioni riusano i gruppi
 > esistenti. Nessuna dipendenza nuova; backend e pagine invariate.
+
+> **K.5d — Drill-down allocazioni frontend (spec §6.5, decisione D4) — ✅
+> completata (questo branch)**: i grafici di allocazione sono diventati
+> punti d'ingresso: prop opzionale `onDrill` in `ClassDonut` (chiave classe
+> grezza della fetta cliccata) e `ExposureBarChart` (nome grezzo della riga
+> — `US`, `North America`, `Financials` — anche quando `labelFor` mappa
+> l'etichetta dell'asse); il click arriva dal prop `onclick` (evento ECharts)
+> del wrapper svelte-echarts, quindi il binding si rigenera con l'istanza
+> alla re-init `{#key}` senza rompere il re-init, e con drill attivo
+> fette/barre mostrano il cursore `pointer` (default altrimenti). Nessun
+> drill per `ExposurePie` (composizione di un singolo asset, non un
+> aggregato) né per le modali esposizione. Nuovo componente
+> `domain/AllocationDrillPanel.svelte`: elenca gli asset contribuenti di
+> un bucket renderizzando `ui/Drawer` (≥ `lg`) o `ui/Sheet` (< `lg`) via lo
+> store `viewport`; controllato (`open`/`onClose` della pagina), carica alla
+> apertura e a ogni cambio di `dim`/`key` con un `fetcher` iniettato per
+> scope (`dashboardAllocationDrill` per il vault, `allocationDrill(id, …)`
+> per il portafoglio — `GET /dashboard/allocation/drill` e
+> `GET /portfolios/{id}/allocation/drill`, chiave URL-encoded da `params`
+> quindi a posto anche con spazi), request id monotònico contro le risposte
+> stale e stati secondo le convenzioni `ui/AsyncCard` (skeleton, errore su
+> una riga + Riprova, vuoto «Nessun asset in questa fetta», dati). Tabella
+> `ui/Table`/`Th`/`Td` con caption sr-only e cinque colonne — Asset (ticker
+> linkato a `/assets/{id}` + nome muted su seconda riga), Valore, Peso
+> (dentro il bucket), Contributo e Quota della fetta (contributo ÷ totale
+> del bucket, con guardia a trattino per bucket vuoti) — nell'ordine
+> decrescente di contributo già servito dal backend; sotto `sm` le righe
+> si impilano in chiave–valore e nessun viewport scrollabile annidato
+> (scorre solo il corpo del drawer/sheet). Dashboard e tab Allocazione
+> montano UN pannello ciascuno con stato condiviso (`drillOpen`/`drillDim`/
+> `drillKey`/`drillTitle`): `key` è il valore grezzo del grafico, `title`
+> l'etichetta che il grafico mostra (`ASSET_CLASS_LABELS` per le classi,
+> `countryDisplayName` per i paesi, verbatim per regioni/settori).
+> Allineato `ui/Drawer` alla controparte `ui/Sheet`: nuovo prop `closeLabel`
+> per il nome accessibile della ✕ (default invariato, nessun consumatore
+> rotto). Nuove chiavi i18n EN/IT (shape identici): gruppo `drill.*`
+> (caption `{name}`, contributingAssets `{count}`, colAsset/
+> colContribution/colShare, empty, error, retry); le intestazioni
+> Valore/Peso riusano `chartView.colValue`/`chartView.colWeight` e la ✕
+> `common.close`. I dati di allocazione delle pagine restano gli stessi;
+> nessuna dipendenza nuova; backend intatto.
 
 **Integrazioni pianificate**: EPIC J (J.1 prezzo manuale, J.2 metadati FI, J.3 cash/certificate,
 J.7 allocazione credito) atterra nel tab **Data** e nella sezione Allocation; EPIC C (metriche di

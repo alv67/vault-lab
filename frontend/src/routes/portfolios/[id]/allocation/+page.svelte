@@ -1,10 +1,17 @@
 <script lang="ts">
   import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
+  import AllocationDrillPanel from '$lib/components/domain/AllocationDrillPanel.svelte'
   import { countryDisplayName } from '$lib/countryNames'
   import { chartSemanticColors } from '$lib/chartPalette'
+  import { ASSET_CLASS_LABELS } from '$lib/format'
   import { t } from '$lib/i18n/index.svelte'
   import { resolved } from '$lib/stores/theme.svelte'
+  import {
+    portfolioApi,
+    type AllocationDrill,
+    type AllocationDrillDim,
+  } from '$lib/services/api'
   import { getPortfolioPage } from '../context'
 
   /**
@@ -60,6 +67,39 @@
       ? chartSemanticColors(resolved()).other
       : undefined
   }
+
+  // ── Allocation drill-down (EPIC K.5, spec §6.5) ─────────────────────────
+  // One shared panel for the whole tab, like the dashboard card: clicking a
+  // class slice or a sector/region/country bar sets the bucket and opens it
+  // (drawer ≥ lg / sheet < lg, D4). The `key` is the RAW value the chart
+  // carries (class key / ISO code / region / sector name — may contain
+  // spaces); the `title` is the label the same chart displays. Portfolio
+  // scope: `allocationDrill(id, dim, key)` in the portfolio currency.
+  let drillOpen = $state(false)
+  let drillDim = $state<AllocationDrillDim>('class')
+  let drillKey = $state('')
+  let drillTitle = $state('')
+
+  function openDrill(dim: AllocationDrillDim, key: string, label = key): void {
+    drillDim = dim
+    drillKey = key
+    drillTitle = label
+    drillOpen = true
+  }
+  function closeDrill(): void {
+    drillOpen = false
+  }
+  // Stable per page instance (Svelte 5 script bodies run once): the panel's
+  // fetch effect depends on the identity, not on the bucket values. The id is
+  // read at call time (the shell always mounts this tab under a portfolio).
+  function drillFetch(dim: AllocationDrillDim, key: string): Promise<AllocationDrill> {
+    if (!ctx.id) return Promise.reject(new Error(t('drill.error')))
+    return portfolioApi.allocationDrill(ctx.id, dim, key)
+  }
+  // Friendly class label, same ASSET_CLASS_LABELS table the donut slices use.
+  function classLabel(cls: string): string {
+    return ASSET_CLASS_LABELS[cls] ?? cls
+  }
 </script>
 
 <div class="grid gap-4 lg:grid-cols-2">
@@ -72,6 +112,7 @@
         data={ctx.classAlloc?.classes ?? []}
         currency={ctx.classAlloc?.currency || currency}
         label={t('allocation.assetClasses')}
+        onDrill={(cls) => openDrill('class', cls, classLabel(cls))}
       />
     {/if}
   </div>
@@ -86,6 +127,7 @@
         label={t('allocation.sectorsEquity')}
         note={sectorUniverseNote}
         colorFor={otherGrey}
+        onDrill={(name) => openDrill('sector', name)}
       />
     {/if}
   </div>
@@ -100,6 +142,7 @@
         label={t('allocation.regionsEquity')}
         note={geoUniverseNote}
         colorFor={otherGrey}
+        onDrill={(name) => openDrill('region', name)}
       />
     {/if}
   </div>
@@ -116,7 +159,19 @@
         colorFor={otherGrey}
         labelFor={countryDisplayName}
         maxVisibleRows={10}
+        onDrill={(code) => openDrill('country', code, countryDisplayName(code))}
       />
     {/if}
   </div>
 </div>
+<!-- One drill panel per page (D4): the clicked chart fills the bucket and
+     the fetcher runs the portfolio-scope request in the portfolio currency. -->
+<AllocationDrillPanel
+  open={drillOpen}
+  onClose={closeDrill}
+  title={drillTitle}
+  dim={drillDim}
+  key={drillKey}
+  fetcher={drillFetch}
+  currencyHint={currency}
+/>

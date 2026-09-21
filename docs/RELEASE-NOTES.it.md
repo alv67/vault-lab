@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Nuove funzionalità
+- Clicca una fetta o una barra delle allocazioni — la ciambella delle classi di attività o le barre di settori, regioni e paesi, in dashboard e nel tab Allocazione di un portafoglio — per aprire un pannello laterale (una sheet dal basso sul telefono) con gli asset che la compongono, il loro valore, contributo e quota di quella fetta
 - Ogni grafico ora si può passare alla vista tabella degli stessi dati con il nuovo controllo Grafico/Tabella sulla card: i numeri che prima si leggevano solo passando sul grafico, ora riga per riga, su qualsiasi dispositivo e anche con gli screen reader
 - Apri il nuovo pannello comandi con ⌘K/Ctrl+K (o con il pulsante di ricerca nell'header, su ogni dispositivo): vai a una qualsiasi pagina, portafoglio o asset, cerca su Yahoo ed esegui le azioni rapide — aggiungi transazione, aggiorna prezzi, cambia tema, attiva la palette per daltonici — senza lasciare la pagina in cui sei
 - Palette utile/perdita opzionale per daltonici: da Impostazioni → Preferenze puoi sostituire i colori verde/rosso con una coppia blu/arancione in tutta l'app, testi e grafici inclusi — i segni +/− e le frecce ▲▼ ci sono sempre, e il tema scelto non cambia

@@ -297,6 +297,35 @@ export interface DashboardAllocation {
   excluded_value?: string
 }
 
+/** Dimension of an allocation bucket the backend can decompose into its
+ * contributing assets (EPIC K.5 drill-down). */
+export type AllocationDrillDim = 'class' | 'country' | 'region' | 'sector'
+
+/** One asset's participation in a drill-down bucket (EPIC K.5): `weight`
+ * is the asset's exposure weight *within that bucket* (%), `contribution`
+ * = value × weight/100 is the amount it places into the bucket. Rows come
+ * back sorted by descending contribution, `value` in the drill currency. */
+export interface AllocationDrillAsset {
+  asset_id: string
+  ticker: string
+  name: string
+  value: string
+  weight: string
+  contribution: string
+}
+
+/** Response of `GET .../allocation/drill` (EPIC K.5): the contributing
+ * assets of one allocation bucket, in the currency of the allocation
+ * endpoint that produced it; `total` is the bucket total (Σ contributions)
+ * and `key` echoes the (possibly space-carrying) bucket identifier. */
+export interface AllocationDrill {
+  currency: string
+  dim: string
+  key: string
+  total: string
+  assets: AllocationDrillAsset[]
+}
+
 export interface PortfolioPerformance {
   date: string
   value: string
@@ -672,6 +701,14 @@ export const portfolioApi = {
   sectorAllocation: (id: string) =>
     request<PortfolioSectorAllocation>(`/portfolios/${id}/allocation/sector`),
   dashboardAllocation: () => request<DashboardAllocation>('/dashboard/allocation'),
+  // EPIC K.5 drill-down: the contributing assets behind one allocation bucket.
+  // `key` is the raw bucket identifier exactly as the chart carries it (ISO
+  // country code, region/sector name, class key — it may contain spaces);
+  // `request`'s `params` takes care of the URL encoding.
+  allocationDrill: (id: string, dim: AllocationDrillDim, key: string) =>
+    request<AllocationDrill>(`/portfolios/${id}/allocation/drill`, { params: { dim, key } }),
+  dashboardAllocationDrill: (dim: AllocationDrillDim, key: string) =>
+    request<AllocationDrill>('/dashboard/allocation/drill', { params: { dim, key } }),
   // EPIC I.3: vault-wide P/L buckets in the user's base currency, monthly or
   // yearly (`period` = "YYYY-MM" / "YYYY", ascending, empty buckets omitted).
   dashboardPerformance: (granularity: 'month' | 'year') =>

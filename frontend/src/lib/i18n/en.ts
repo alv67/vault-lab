@@ -165,6 +165,27 @@ export const en = {
       'Portfolios use different currencies: values are not comparable, shares are indicative.',
   },
   /**
+   * Allocation drill-down (EPIC K.5, spec §6.5): the drawer/sheet opened by
+   * clicking an allocation slice or bar, listing the contributing assets of
+   * that bucket. The visible title is the bucket's friendly label passed in
+   * by the calling chart; the Value/Weight headers reuse `chartView.colValue`
+   * /`chartView.colWeight` and the ✕ accessible name reuses `common.close`.
+   */
+  drill: {
+    /** Sr-only `<caption>` of the contributing-assets table ({name} = bucket label). */
+    caption: '{name} — contributing assets',
+    /** Muted subtitle above the table; `{count}` = number of rows. */
+    contributingAssets: '{count} contributing assets',
+    colAsset: 'Asset',
+    /** The asset's amount inside the bucket (value × exposure weight). */
+    colContribution: 'Contribution',
+    /** Contribution ÷ bucket total: the asset's share of the slice. */
+    colShare: 'Share of slice',
+    empty: 'No assets in this slice',
+    error: 'Could not load the assets of this slice',
+    retry: 'Retry',
+  },
+  /**
    * Asset Exposure tab and its edit modals (EPIC K bug-fix): card headings,
    * panel titles, the edit buttons and the equity-only banner.
    */

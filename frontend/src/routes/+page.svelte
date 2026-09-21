@@ -8,6 +8,8 @@
   import {
     portfolioApi,
     pricesApi,
+    type AllocationDrill,
+    type AllocationDrillDim,
     type Dashboard,
     type DashboardAllocation,
     type DashboardPerformance,
@@ -26,6 +28,7 @@
   import Sparkline, { type SparklinePoint } from '$lib/components/domain/Sparkline.svelte'
   import ClassDonut from '$lib/components/domain/ClassDonut.svelte'
   import ExposureBarChart, { type ExposureBarRow } from '$lib/components/domain/ExposureBarChart.svelte'
+  import AllocationDrillPanel from '$lib/components/domain/AllocationDrillPanel.svelte'
   import { countryDisplayName } from '$lib/countryNames'
   import { chartSemanticColors } from '$lib/chartPalette'
   import { resolved } from '$lib/stores/theme.svelte'
@@ -43,7 +46,7 @@
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
   import { ChevronDown } from 'lucide-svelte'
-  import { formatCurrency, formatPercent } from '$lib/format'
+  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
 
   let dash = $state<Dashboard | null>(null)
@@ -306,6 +309,37 @@
   function hasClosedActivity(p: PortfolioPerformanceSummary): boolean {
     return Number(p.closed.invested) !== 0
   }
+
+  // ── Allocation drill-down (EPIC K.5, spec §6.5) ─────────────────────────
+  // One shared panel for the whole "Allocazione complessiva" card: clicking
+  // a class slice or a sector/region/country bar sets the bucket and opens
+  // it (drawer ≥ lg / sheet < lg, D4). The `key` is the RAW value the chart
+  // carries (class key / ISO code / region / sector name — may contain
+  // spaces); the `title` is the label the same chart displays. The vault
+  // scope fetches `dashboardAllocationDrill`, in the base currency.
+  let drillOpen = $state(false)
+  let drillDim = $state<AllocationDrillDim>('class')
+  let drillKey = $state('')
+  let drillTitle = $state('')
+
+  function openDrill(dim: AllocationDrillDim, key: string, label = key): void {
+    drillDim = dim
+    drillKey = key
+    drillTitle = label
+    drillOpen = true
+  }
+  function closeDrill(): void {
+    drillOpen = false
+  }
+  // Stable per page instance (Svelte 5 script bodies run once): the panel's
+  // fetch effect depends on the identity, not on the bucket values.
+  function drillFetch(dim: AllocationDrillDim, key: string): Promise<AllocationDrill> {
+    return portfolioApi.dashboardAllocationDrill(dim, key)
+  }
+  // Friendly class label, same ASSET_CLASS_LABELS table the donut slices use.
+  function classLabel(cls: string): string {
+    return ASSET_CLASS_LABELS[cls] ?? cls
+  }
 </script>
 
 <div class="p-6">
@@ -548,6 +582,7 @@
                 data={alloc.classes ?? []}
                 currency={alloc.currency}
                 label={t('allocation.assetClasses')}
+                onDrill={(cls) => openDrill('class', cls, classLabel(cls))}
               />
             </div>
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
@@ -557,6 +592,7 @@
                 label={t('allocation.sectorsEquity')}
                 note={equityUniverseNote}
                 colorFor={otherGrey}
+                onDrill={(name) => openDrill('sector', name)}
               />
             </div>
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
@@ -566,6 +602,7 @@
                 label={t('allocation.regionsEquity')}
                 note={equityUniverseNote}
                 colorFor={otherGrey}
+                onDrill={(name) => openDrill('region', name)}
               />
             </div>
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
@@ -577,9 +614,21 @@
                 colorFor={otherGrey}
                 labelFor={countryDisplayName}
                 maxVisibleRows={10}
+                onDrill={(code) => openDrill('country', code, countryDisplayName(code))}
               />
             </div>
           </div>
+          <!-- One drill panel per page (D4): the clicked chart fills the
+               bucket and the fetcher runs the vault-scope request. -->
+          <AllocationDrillPanel
+            open={drillOpen}
+            onClose={closeDrill}
+            title={drillTitle}
+            dim={drillDim}
+            key={drillKey}
+            fetcher={drillFetch}
+            currencyHint={alloc.currency}
+          />
         {/if}
       </div>
 
