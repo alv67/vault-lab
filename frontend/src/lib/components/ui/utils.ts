@@ -44,3 +44,11 @@ export function cx(...classes: Array<ClassValue | boolean | null | undefined>): 
  * NOTE: the pre-D exposure modals still sit on z-50 and are migrated to
  * `Modal` in EPIC E; until then they coexist with the toasts by design.
  */
+
+/**
+ * Grace window (ms) after an overlay opens during which a click on its
+ * backdrop is ignored. On touch devices the tap that opens the overlay also
+ * dispatches a synthetic `click` on the element now under the finger — the
+ * freshly mounted backdrop — which would close it instantly (click-through).
+ */
+export const OVERLAY_OPEN_GRACE_MS = 350
