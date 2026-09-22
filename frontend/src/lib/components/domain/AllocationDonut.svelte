@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
   import { Chart } from 'svelte-echarts'
-  import { init, use } from 'echarts/core'
+  import { init, use, type EChartsType } from 'echarts/core'
   import { PieChart } from 'echarts/charts'
   import { TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { dismissTooltipOutside } from '$lib/chartTooltip'
   import { resolved } from '$lib/stores/theme.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import { cx } from '$lib/components/ui/utils'
@@ -71,6 +72,12 @@
   let view = $state<'chart' | 'table'>('chart')
   const showTable = $derived(showTableToggle && view === 'table')
 
+  // The live ECharts instance (bound via `bind:chart`, refreshed on every
+  // `{#key}` theme re-init). The tap-outside action dismisses the tooltip
+  // through it: on touch there is no hover-out, so a tap would otherwise
+  // leave the tooltip pinned on screen (issue #123).
+  let chartInstance = $state<EChartsType | undefined>(undefined)
+
   const palette = $derived(resolvePalette(resolved()))
   // Pie labels do not inherit the ECharts theme textStyle: without an explicit
   // color they keep the default dark fill + white text border, which is
@@ -81,6 +88,13 @@
     color: palette,
     tooltip: {
       trigger: 'item',
+      // Explicit show/dismiss policy (issue #123): 'mousemove|click' is
+      // ECharts' default, but pinning it keeps desktop hover behavior
+      // identical while making the touch-tap toggle intentional; `hideDelay`
+      // lets the tooltip fade shortly after a tap/tap-outside instead of
+      // staying pinned on touch, where there is no hover-out event.
+      triggerOn: 'mousemove|click',
+      hideDelay: 150,
       formatter: (params: unknown) => {
         const p = params as TooltipItem
         const row = rows.find((r) => r.name === p.name)
@@ -156,9 +170,9 @@
       </TBody>
     </Table>
   {:else}
-    <div class="h-[240px] w-full">
+    <div class="h-[240px] w-full" use:dismissTooltipOutside={chartInstance}>
       {#key resolved()}
-        <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+        <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} bind:chart={chartInstance} />
       {/key}
     </div>
     {#if showLegend}

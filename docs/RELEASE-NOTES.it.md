@@ -5,6 +5,7 @@
 ### Correzioni
 - Sul telefono il drill-down delle allocazioni non si chiude più appena si apre: la sheet dal basso resta visibile e puoi leggere gli asset che compongono la fetta
 - Il pannello di ricerca (⌘K/Ctrl+K, o il pulsante di ricerca nell'header) non si blocca più dopo il primo uso: su un vault senza portafogli o asset ora si apre ogni volta invece di funzionare una sola volta
+- Sui dispositivi touch il tooltip dei grafici di allocazione non resta più bloccato sullo schermo: scompare quando apri il pannello di drill-down o tocchi fuori dal grafico
 
 ## v0.6.0 — 21 Set 2026
 
