@@ -341,7 +341,6 @@ export const it = {
     tabExposure: 'Esposizione',
     tabData: 'Dati',
     back: 'Asset',
-    actionsMenu: 'Azioni asset',
     refreshMeta: 'Aggiorna da Yahoo',
     backfillHistory: 'Backfill storico completo',
     delete: 'Elimina asset',

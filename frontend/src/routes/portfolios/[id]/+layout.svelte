@@ -580,7 +580,10 @@
           <p class="text-sm text-muted-foreground">{portfolio.description}</p>
         {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-2">
+      <!-- `ml-auto` keeps the actions right-aligned when the wrap puts them
+           on their own line (`justify-between` alone would push the lone
+           trigger to the left, #117). -->
+      <div class="ml-auto flex shrink-0 items-center gap-2">
         <Button onclick={openAddTransaction}>
           <Plus class="h-4 w-4" />
           {t('portfolio.addTransaction')}
@@ -599,7 +602,7 @@
           </button>
           {#if menuOpen}
             <div
-              class="absolute right-0 top-full z-20 mt-2 w-52 rounded-card border border-border bg-surface p-1 shadow-raised"
+              class="absolute right-0 top-full z-20 mt-2 w-52 max-w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-1 shadow-raised"
             >
               <Button
                 variant="ghost"

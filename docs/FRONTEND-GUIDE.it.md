@@ -1354,15 +1354,16 @@ negativi che rispecchiano il `px-4 lg:px-6` / `pt-4 lg:pt-6` responsivo di `<mai
 - Riga identità: link indietro a `/assets`, ticker (font mono, D5) + nome,
   i chip di identità **tipo · classe · valuta · exchange**
   (`ASSET_TYPE_LABELS` e `ASSET_CLASS_LABELS` da `lib/format.ts`) e il chip
-  legacy "nessun sync automatico" per fonti prezzo non-Yahoo; a destra il
-  menu `⋯` delle azioni — **Aggiorna da Yahoo** (`assetApi.meta(ticker)`
-  aggiorna nome/tipo/valuta/exchange; l'override manuale di `asset_class`
-  vince sempre — il refresh non sovrascrive mai una classe diversa da
-  `other`/vuota), **Backfill storico completo** (`assetApi.backfillHistory(id)`
-  poi un `pricesApi.byAsset(id)` fresco — la cache GET del client è già stata
-  svuotata dalla POST) ed **Elimina asset** (dialog di conferma → API → toast
-  → ritorno a `/assets`) — le stesse azioni e spinner di busy rispecchiati
-  nella zona pericolosa del tab Dati.
+  legacy "nessun sync automatico" per fonti prezzo non-Yahoo. La riga non
+  porta alcun menu azioni (#117): le tre azioni della shell — **Aggiorna
+  da Yahoo** (`assetApi.meta(ticker)` aggiorna nome/tipo/valuta/exchange;
+  l'override manuale di `asset_class` vince sempre — il refresh non
+  sovrascrive mai una classe diversa da `other`/vuota), **Backfill storico
+  completo** (`assetApi.backfillHistory(id)` poi un `pricesApi.byAsset(id)`
+  fresco — la cache GET del client è già stata svuotata dalla POST) ed
+  **Elimina asset** (dialog di conferma → API → toast → ritorno a
+  `/assets`) — vivono solo nella zona pericolosa del tab Dati (eseguite
+  sempre da questa layout tramite il context, spinner di busy inclusi).
 - Strip quote: la vecchia card "Metriche quote" promossa nell'header sempre
   visibile — ultima chiusura in primo piano nella valuta **dell'asset**, le
   variazioni 1G/1S/1M/1Y/YTD come chip compatti firmati (`PnlValue`, D6) e
@@ -1371,7 +1372,7 @@ negativi che rispecchiano il `px-4 lg:px-6` / `pt-4 lg:pt-6` responsivo di `<mai
   `/assets`.
 - Barra `ui/Tabs` (K.1c): Panoramica / Esposizione / Dati, stato attivo
   derivato dalla rotta, scroll orizzontale sul telefono; etichette delle
-  tab, link indietro, menu e i testi dei nuovi blocchi passano da `t()`
+  tab, link indietro e i testi dei nuovi blocchi passano da `t()`
   (`asset.*`, D1). La copy delle card che precede il dizionario resta
   invariata (migrazione progressiva).
 
@@ -1400,8 +1401,9 @@ stessi campi (Ticker, ISIN, Nome, Tipo, Valuta, Exchange, Classe, selettore
 **Fonte prezzo** `price_source`), stesso dirty-save (`hasChanges` abilita
 "Salva modifiche"; il PATCH, il `form` `$state` condiviso e la sincronzza
 `form.isin` dei prefills vivono nel layout, quindi le modifiche non salvate
-sopravvivono ai cambi di tab); la **zona pericolosa** che rispecchia le
-azioni `⋯` dell'header; e gli slot riservati EPIC J, muti e senza
+sopravvivono ai cambi di tab); la **zona pericolosa** con le tre azioni
+della shell (aggiorna da Yahoo / backfill / elimina, #117 — rimossa la
+copia nel menu `⋯` dell'header); e gli slot riservati EPIC J, muti e senza
 comportamento — inserimento prezzo manuale (J.1) e attributi obbligazionari
 (J.2) come segnaposto "In arrivo" (`quickActions.comingSoon`).
 

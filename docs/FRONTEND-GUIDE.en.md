@@ -184,7 +184,7 @@ frontend/
         ├── login/          # login + register (one page, a toggle)
         ├── assets/         # securities list + creation (autocomplete)
         ├── assets/[id]/    # asset detail shell (K.4b): sticky header
-        │   │               #   (identity, quote chips, ⋯ actions), tabs;
+        │   │               #   (identity, quote chips), tabs;
         │   │               #   all data loading + context
         │   ├── +page.svelte        #   Overview tab (index): price chart,
         │   │                        #   "Where held", quick facts
@@ -1288,23 +1288,24 @@ margins/padding mirroring `<main>`'s responsive `px-4 lg:px-6` / `pt-4 lg:pt-6`)
 - Identity row: back link to `/assets`, ticker (mono font, D5) + name, the
   identity chips **type · class · currency · exchange** (`ASSET_TYPE_LABELS`
   and `ASSET_CLASS_LABELS` from `lib/format.ts`) and the legacy
-  "nessun sync automatico" warning chip for non-Yahoo price sources; on the
-  right the `⋯` actions menu — **Aggiorna da Yahoo** (`assetApi.meta(ticker)`
-  to refresh name/type/currency/exchange; `asset_class` manual override
-  always wins — the refresh never overwrites a non-`other` class),
-  **Backfill storico completo** (`assetApi.backfillHistory(id)` then a fresh
+  "nessun sync automatico" warning chip for non-Yahoo price sources. The
+  row carries no actions menu (#117): the three shell-owned actions —
+  **Aggiorna da Yahoo** (`assetApi.meta(ticker)` to refresh
+  name/type/currency/exchange; `asset_class` manual override always wins —
+  the refresh never overwrites a non-`other` class), **Backfill storico
+  completo** (`assetApi.backfillHistory(id)` then a fresh
   `pricesApi.byAsset(id)` — the client GET cache is already cleared by the
   POST) and **Elimina asset** (confirm dialog → API → toast → back to
-  `/assets`) — the same actions and busy spinners the Data tab's danger
-  zone mirrors.
+  `/assets`) — live only in the Data tab's danger zone (still executed by
+  this layout through the context, busy spinners included).
 - Quote strip: the old body-level "Metriche quote" card promoted into the
   always-visible header — headline last close in the **asset** currency,
   the 1D/1W/1M/1Y/YTD deltas as compact signed chips (`PnlValue`, D6), and
   the last-price date ("Aggiornato il {date}"); "Nessun dato prezzo" when
   the quote has no data. A 404 on load still redirects to `/assets`.
 - `ui/Tabs` (K.1c) bar: Overview / Exposure / Data, route-derived active
-  state, horizontally scrollable on phones; the tab labels, back link, menu
-  and new block copy go through `t()` (`asset.*`, D1). Card copy that
+  state, horizontally scrollable on phones; the tab labels, back link and
+  new block copy go through `t()` (`asset.*`, D1). Card copy that
   predates the dictionary keeps its wording (progressive migration).
 
 TAB **Overview**:
@@ -1332,7 +1333,9 @@ fields (Ticker, ISIN, Name, Type, Currency, Exchange, Classe, **Fonte
 prezzo** `price_source` selector), same dirty-save (`hasChanges` enables
 "Salva modifiche"; the PATCH, the shared `form` `$state` and the
 `form.isin` prefill sync all live in the layout, so unsaved edits survive
-tab switches); the **danger zone** mirroring the header `⋯` actions; and
+tab switches); the **danger zone** with the asset's three shell-owned
+actions (update from Yahoo / backfill / delete, #117 — the former header
+`⋯` menu copy was removed); and
 the muted EPIC J **reserved slots** with no behaviour yet — manual price
 entry (J.1) and fixed-income attributes (J.2) as "Coming soon"
 (`quickActions.comingSoon`) placeholders.

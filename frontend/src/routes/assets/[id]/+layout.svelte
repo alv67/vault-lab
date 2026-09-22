@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { onMount } from 'svelte'
-  import { afterNavigate, goto } from '$app/navigation'
+  import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { toast } from '$lib/stores/toast.svelte'
@@ -21,12 +21,10 @@
     type SplitInfo,
   } from '$lib/services/api'
   import { formatCurrency, ASSET_CLASS_LABELS, ASSET_TYPE_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
-  import { ArrowLeft, History, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-svelte'
+  import { ArrowLeft } from 'lucide-svelte'
   import Badge from '$lib/components/ui/Badge.svelte'
-  import Button from '$lib/components/ui/Button.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import PnlValue from '$lib/components/ui/PnlValue.svelte'
-  import Spinner from '$lib/components/ui/Spinner.svelte'
   import Tabs from '$lib/components/ui/Tabs.svelte'
   import ExposureGeoModal from '$lib/components/ExposureGeoModal.svelte'
   import ExposureSectorModal from '$lib/components/ExposureSectorModal.svelte'
@@ -38,10 +36,10 @@
    * split into a sticky header + three deep-linkable nested-route tabs
    * (Overview `/`, Exposure `/exposure`, Data `/data`). The header carries
    * the identity row (back link, ticker + name + identity chips
-   * [type · class · currency · exchange], the non-Yahoo "no auto sync"
-   * warning and the `⋯` actions menu: update from Yahoo / backfill full
-   * history / delete — the same actions the old "Caratteristiche" `⋮` menu
-   * exposed, now also mirrored in the Data tab's danger zone), the quote
+   * [type · class · currency · exchange] and the non-Yahoo "no auto sync"
+   * warning — the update-from-Yahoo / backfill / delete actions the old
+   * "Caratteristiche" `⋮` menu exposed live in the Data tab's danger zone
+   * only: the duplicated header `⋯` menu was removed in #117), the quote
    * strip in the asset currency (headline last close + compact 1D/1W/1M/
    * 1Y/YTD delta chips, the old "Metriche quote" card promoted into the
    * always-visible header) and the route-linked `ui/Tabs` bar; the tabs
@@ -705,11 +703,13 @@
   // Delete mirrors the portfolio shell and the assets list: confirm dialog →
   // API → toast → leave the (now gone) asset. `goto` is deliberately not
   // awaited so this handler never races the dialog's close-then-unmount.
+  // `requestDelete` reaches this layout only through the context (the Data
+  // tab's Danger zone): the header `⋯` menu that used to duplicate these
+  // actions was removed (#117), together with its open/close machinery.
   let showDeleteDialog = $state(false)
   let deleting = $state(false)
 
   function requestDelete(): void {
-    menuOpen = false
     showDeleteDialog = true
   }
 
@@ -727,34 +727,6 @@
       deleting = false
     }
   }
-
-  // `⋯` popup: same close contract as the portfolio shell's menu (Escape back
-  // to the trigger / outside pointerdown / route change — tab clicks
-  // navigate, so the strip swapping tabs also dismisses the menu).
-  let menuOpen = $state(false)
-  let menuRoot = $state<HTMLDivElement | null>(null)
-  let menuTrigger = $state<HTMLButtonElement | null>(null)
-
-  function handleMenuKeydown(event: KeyboardEvent): void {
-    if (!menuOpen) return
-    if (event.key === 'Escape') {
-      menuOpen = false
-      menuTrigger?.focus()
-    }
-  }
-
-  afterNavigate(() => (menuOpen = false))
-
-  $effect(() => {
-    if (!menuOpen) return
-    function handlePointerdown(event: PointerEvent): void {
-      if (menuRoot && event.target instanceof Node && !menuRoot.contains(event.target)) {
-        menuOpen = false
-      }
-    }
-    window.addEventListener('pointerdown', handlePointerdown)
-    return () => window.removeEventListener('pointerdown', handlePointerdown)
-  })
 
   // --- Tabs (spec §4.2.2: nested routes, real URLs) ------------------------
   // hrefs resolved per the repo convention; `ui/Tabs` derives the active
@@ -825,8 +797,6 @@
   } satisfies AssetPageContext)
 </script>
 
-<svelte:window onkeydown={handleMenuKeydown} />
-
 <div class="p-4 lg:p-6">
   <!-- Sticky entity header (spec §5.1/§6.3): `top` follows the live
        --app-header-h published by AppShell, so it stays flush while the app
@@ -863,71 +833,6 @@
           <p class="mt-1 text-sm text-muted-foreground">Loading...</p>
         {/if}
       </div>
-      {#if asset}
-        <div class="flex shrink-0 items-center">
-          <div class="relative" bind:this={menuRoot}>
-            <button
-              bind:this={menuTrigger}
-              type="button"
-              aria-label={t('asset.actionsMenu')}
-              aria-haspopup="true"
-              aria-expanded={menuOpen}
-              onclick={() => (menuOpen = !menuOpen)}
-              class="focus-ring inline-flex h-9 w-9 items-center justify-center rounded-control border border-input text-foreground transition-colors hover:bg-muted"
-            >
-              <MoreHorizontal class="h-4 w-4" aria-hidden="true" />
-            </button>
-            {#if menuOpen}
-              <div
-                class="absolute right-0 top-full z-20 mt-2 w-56 rounded-card border border-border bg-surface p-1 shadow-raised"
-              >
-                <Button
-                  variant="ghost"
-                  class="w-full"
-                  disabled={refreshingMeta}
-                  onclick={() => {
-                    menuOpen = false
-                    void refreshFromYahoo()
-                  }}
-                >
-                  <span class="flex w-full items-center gap-2">
-                    {#if refreshingMeta}
-                      <Spinner size="sm" aria-hidden="true" />
-                    {:else}
-                      <RefreshCw class="h-4 w-4 shrink-0" aria-hidden="true" />
-                    {/if}
-                    {t('asset.refreshMeta')}
-                  </span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  class="w-full"
-                  disabled={backfillingHistory}
-                  onclick={() => {
-                    menuOpen = false
-                    void backfillHistory()
-                  }}
-                >
-                  <span class="flex w-full items-center gap-2">
-                    {#if backfillingHistory}
-                      <Spinner size="sm" aria-hidden="true" />
-                    {:else}
-                      <History class="h-4 w-4 shrink-0" aria-hidden="true" />
-                    {/if}
-                    {t('asset.backfillHistory')}
-                  </span>
-                </Button>
-                <Button variant="ghost" class="w-full" onclick={requestDelete}>
-                  <span class="flex w-full items-center gap-2 text-negative">
-                    <Trash2 class="h-4 w-4 shrink-0" aria-hidden="true" />
-                    {t('asset.delete')}
-                  </span>
-                </Button>
-              </div>
-            {/if}
-          </div>
-        </div>
-      {/if}
     </div>
 
     {#if quote?.has_data}

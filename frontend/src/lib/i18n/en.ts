@@ -422,8 +422,6 @@ export const en = {
     tabData: 'Data',
     /** Back link in the sticky header, to the assets library list. */
     back: 'Assets',
-    /** Accessible name of the `⋯` actions menu in the sticky header. */
-    actionsMenu: 'Asset actions',
     refreshMeta: 'Update from Yahoo',
     backfillHistory: 'Backfill full history',
     delete: 'Delete asset',

@@ -115,9 +115,9 @@
   </div>
 
   <!-- Danger zone (spec §6.3): the three layout-owned actions the old
-       "Caratteristiche" `⋮` menu carried, now also mirrored in the header `⋯`
-       menu; the busy spinners and the delete confirmation are shared state,
-       so pressing either copy disables/animates both. -->
+       "Caratteristiche" `⋮` menu carried — the only place they live now that
+       the duplicated header `⋯` menu was removed (#117); the busy spinners
+       and the delete confirmation are shared layout state. -->
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <h2 class="mb-2 font-semibold">{t('asset.dangerZone')}</h2>
     <div class="flex flex-wrap items-center gap-2">
