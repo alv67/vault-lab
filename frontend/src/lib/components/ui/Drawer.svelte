@@ -5,7 +5,7 @@
   import Button from './Button.svelte'
   import { focusTrap } from './focus-trap'
   import { backdropFade, edgeSlide } from './transitions'
-  import { cx } from './utils'
+  import { cx, OVERLAY_OPEN_GRACE_MS } from './utils'
 
   /**
    * Right-side inspection drawer (EPIC K.1c, decision D4): the ≥ `lg` half of
@@ -58,9 +58,16 @@
   const uid = $props.id()
   const titleId = `${uid}-title`
 
+  // Timestamp of the last open, used to swallow the synthetic click a touch
+  // tap fires right after opening (click-through — see utils).
+  let openedAt = 0
+
   function handleBackdropClick(event: MouseEvent): void {
-    // Only clicks that land on the overlay itself (not bubbled from the panel).
-    if (event.target === event.currentTarget) onClose()
+    // Only clicks that land on the overlay itself (not bubbled from the panel),
+    // and not the ghost click that immediately follows the opening tap.
+    if (event.target !== event.currentTarget) return
+    if (performance.now() - openedAt < OVERLAY_OPEN_GRACE_MS) return
+    onClose()
   }
 
   function handleKeydown(event: KeyboardEvent): void {
@@ -71,6 +78,7 @@
   // unmounts while open (page navigation, logout), which an else-branch misses.
   $effect(() => {
     if (!open) return
+    openedAt = performance.now()
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = ''

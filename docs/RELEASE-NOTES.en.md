@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+### Fixes
+- On phones the allocation drill-down no longer closes as soon as it opens: the bottom sheet stays up so you can read the assets behind the slice
+
 ## v0.6.0 — 21 Sep 2026
 
 ### Features

@@ -1,5 +1,10 @@
 # Release Notes
 
+## Unreleased
+
+### Correzioni
+- Sul telefono il drill-down delle allocazioni non si chiude più appena si apre: la sheet dal basso resta visibile e puoi leggere gli asset che compongono la fetta
+
 ## v0.6.0 — 21 Set 2026
 
 ### Nuove funzionalità

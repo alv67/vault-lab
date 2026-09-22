@@ -3,6 +3,7 @@
   import { afterNavigate } from '$app/navigation'
   import { fade, slide } from 'svelte/transition'
   import { t } from '$lib/i18n/index.svelte'
+  import { OVERLAY_OPEN_GRACE_MS } from '../ui/utils'
 
   /**
    * Off-canvas "More" sheet (EPIC D.3 as the mobile drawer, repurposed by
@@ -32,6 +33,10 @@
   let lastFocused: HTMLElement | null = null
   let suppressRestore = false
 
+  // Timestamp of the last open, used to swallow the synthetic click a touch
+  // tap fires right after opening (click-through — see ui/utils).
+  let openedAt = 0
+
   const FOCUSABLE =
     'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -40,8 +45,11 @@
   }
 
   function handleBackdropClick(event: MouseEvent): void {
-    // Only clicks that land on the overlay itself (not bubbled from the panel).
-    if (event.target === event.currentTarget) close()
+    // Only clicks that land on the overlay itself (not bubbled from the panel),
+    // and not the ghost click that immediately follows the opening tap.
+    if (event.target !== event.currentTarget) return
+    if (performance.now() - openedAt < OVERLAY_OPEN_GRACE_MS) return
+    close()
   }
 
   // Handled on the dialog root (not `<svelte:window>`): focus is moved into
@@ -84,6 +92,7 @@
   // being destroyed while open (e.g. logout unmounts the shell).
   $effect(() => {
     if (!open) return
+    openedAt = performance.now()
     lastFocused =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     panel?.focus()
