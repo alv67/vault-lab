@@ -4,6 +4,7 @@
 
 ### Fixes
 - On phones the allocation drill-down no longer closes as soon as it opens: the bottom sheet stays up so you can read the assets behind the slice
+- The search panel (⌘K/Ctrl+K, or the header search button) no longer gets stuck after the first use: on a vault with no portfolios or assets it now opens every time instead of working only once
 
 ## v0.6.0 — 21 Sep 2026
 
