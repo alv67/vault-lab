@@ -151,7 +151,7 @@ Each row is an account. The password is not stored in plain text, but as a
 | `name` | TEXT | the visible name |
 | `password_hash` | TEXT | the encrypted fingerprint of the password |
 | `role` | TEXT | role: `owner`, `admin`, `editor` or `viewer` |
-| `base_currency` | TEXT | the user's preferred currency for dashboard aggregations (default `EUR`, migration 000018) |
+| `base_currency` | TEXT | the user's preferred currency for dashboard aggregations (default `EUR`) |
 | `created_at` / `updated_at` | TIMESTAMPTZ | when the account was created/modified |
 
 ### `assets` — the securities
@@ -167,7 +167,7 @@ downloaded (see below).
 |---|---|---|
 | `id` | UUID (PK) | identifier |
 | `ticker` | TEXT (UNIQUE) | symbol, e.g. `AAPL` |
-| `isin` | TEXT | international ISIN code (may be missing) |
+| `isin` | TEXT | international ISIN code (may be missing); for ETFs it is resolved automatically from the ticker via the JustETF service and remains manually editable |
 | `name` | TEXT | name of the security |
 | `type` | TEXT (CHECK) | `stock`, `etf`, `bond`, `mutual_fund`, `crypto`, `commodity`, `cash` |
 | `asset_class` | TEXT (CHECK) | investment class: `equity`, `bond`, `commodity`, `currency`, `crypto`, `real_estate`, `mixed`, `other` (default `other`) |
@@ -205,7 +205,8 @@ in euros or dollars).
 
 It links two tables together (a "many to many" relationship): it says **which
 users can see which portfolios** and with what role. The primary key is
-composed of both columns: the same pair cannot be repeated.
+composed of both columns: the same pair cannot be repeated. The application only
+checks the portfolio owner.
 
 | Column | Type | Explanation |
 |---|---|---|
@@ -270,10 +271,10 @@ a security can have only one split per day.
 
 For each security, how much of its value is distributed among the **single
 countries** (ISO-3166 alpha-2). One row per `asset_id + country`; the weights of
-the same security should sum to 100%. This table was added in B.13: previously
-the raw countries were aggregated into macro-regions and discarded. Now the
-JustETF (and since B.14 the Morningstar) exposure keeps the raw countries, and
-the backend derives the regions from them so the two always stay consistent.
+the same security should sum to 100%. The JustETF and Morningstar exposure keeps
+the raw countries, and the backend derives the regions from them so the two
+always stay consistent. The exposure response returns the countries zero-filled
+across the full canonical ISO list.
 
 | Column | Type | Explanation |
 |---|---|---|
@@ -287,8 +288,8 @@ For each security, how much of its value is distributed among the **macro-region
 (North America, Europe, Asia...). One row per `asset_id + region`; the weights
 of the same security should ideally sum to 100%. For a single stock this is a
 single row (the country mapped to its region at 100%); for an ETF it is a mix
-entered by hand, fetched from Yahoo, or — since B.5 — downloaded completely
-from JustETF (`POST /assets/{id}/fetch-etf-exposure`).
+entered by hand, fetched from Yahoo, or downloaded completely from JustETF
+(`POST /assets/{id}/fetch-etf-exposure`).
 
 | Column | Type | Explanation |
 |---|---|---|
@@ -380,8 +381,9 @@ given day.
 ### `supported_currencies` — the allowed currencies
 
 The **whitelist** of currencies that can be used (see the guide, chapter 11).
-It already contains USD and EUR as base currencies. The `enabled` column
-allows a currency to be deactivated without deleting it.
+It contains USD and EUR as base currencies. Other currencies are added via the
+API, and only if Yahoo knows the conversion from the dollar. The `enabled`
+column allows a currency to be deactivated without deleting it.
 
 | Column | Type | Explanation |
 |---|---|---|
@@ -458,50 +460,28 @@ In short, who writes and who reads:
 - **Prices, splits and exchange rates** are downloaded by the worker from
   Yahoo and saved in `prices`, `splits`, `fx_rates` (guided by chapters 12 and
   13 of the guide). The first sync downloads the **complete** history for
-  assets not yet backfilled (`history_backfilled`).
+  assets whose `history_backfilled` flag is `FALSE`.
 - **The series** (`portfolio_series`, `asset_series`) are rebuilt by the AVCO
   engine when transactions or prices change, and you read them to draw the
   charts (chapter 9 of the guide).
 - **The operations** are written by the user from the page (via the API), into
   `transactions`.
 - **The exposure** (`asset_country_weights`, `asset_region_weights`,
-  `asset_sector_weights`) is edited
-  from the asset detail page, or fetched from Yahoo for the sector weights of
-  an ETF when the user clicks "Aggiorna da Yahoo". Since B.5, the **complete**
+  `asset_sector_weights`) is edited from the asset detail page, or fetched from
+  Yahoo for the sector weights of an ETF when the user clicks "Aggiorna da
+  Yahoo". The **complete**
   country/region and sector exposure of an ETF can be downloaded automatically
   from JustETF through the `python-service`
-  (`POST /assets/{id}/fetch-etf-exposure`); since B.13 the raw countries are
-  kept in `asset_country_weights`. Since B.14 a second source is available via
-  Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`). Every explicit
-  save also records where each saved dimension came from in
+  (`POST /assets/{id}/fetch-etf-exposure`); the raw countries are kept in
+  `asset_country_weights`. A second source is available via Morningstar
+  (`POST /assets/{id}/fetch-morningstar-exposure`). Every explicit save also
+  records where each saved dimension came from in
   `asset_exposure_provenance` (source + timestamp, `manual` by default), so the
   UI badges survive a reload.
 - **The currency whitelist** is managed by the administrator via the API in
   `supported_currencies` (chapter 11 of the guide).
-
----
-
-## 8. Notes and open points
-
-- **`portfolio_shares` is ready but not used yet**: the sharing table exists,
-  but today the application only checks the portfolio owner.
-- **`supported_currencies` starts with USD and EUR**: the other currencies are
-  added via the API, and only if Yahoo knows the conversion from the dollar.
-- **`asset_series` and `portfolio_series` contain precomputed data**: they are
-  derived from transactions and prices, not an independent data source.
-- **`fx_rates` has only USD as its base**: the conversion between any two
-  currencies always goes through the dollar.
-- **The exposure tables are per-asset only** (`asset_country_weights` from
-  B.13, plus regions and sectors): the per-asset weights exist and
-  the weighted-sum allocation **by investment class** at portfolio level is
-  implemented (`GET /portfolios/{id}/allocation/class`); the weighted geo/sector
-  allocation at portfolio level is also implemented since EPIC B.6/B.7
-  (`GET /portfolios/{id}/allocation/geography` and `/allocation/sector`,
-  10 macro-regions (Morningstar-aligned since B.14) / 11 GICS sectors + `Other`, zero-filled).
-- **`assets.isin`**: Yahoo does not expose the ISIN in any module, but since
-  B.5 the value for ETFs is **resolved automatically from the ticker** through
-  the JustETF service (`POST /assets/{id}/fetch-etf-exposure` / its search
-  endpoint) and persisted on the asset; it remains manually editable as a
-  fallback. Since B.13 the exposure response also carries the **countries**
-  dimension stored in `asset_country_weights`, zero-filled across the full
-  canonical ISO list.
+- **The portfolio-level allocation** is derived from the per-asset exposure
+  weights: weighted by investment class (`GET /portfolios/{id}/allocation/class`),
+  by geography and by sector (`GET /portfolios/{id}/allocation/geography` and
+  `/allocation/sector`, 10 macro-regions (Morningstar-aligned) / 11 GICS sectors
+  + `Other`, zero-filled).

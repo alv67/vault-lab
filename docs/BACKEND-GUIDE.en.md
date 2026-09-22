@@ -50,7 +50,7 @@ concepts, feel free to skip this chapter.
 - **Table**: inside the database, data is organized into tables (like
   spreadsheets) with rows and columns. The `users` table, for example,
   contains one row per user.
-- **SQL**: the language used to query the database
+- **SQL**: the language for querying the database
   (`SELECT ... FROM ... WHERE ...`).
 - **Primary key (PRIMARY KEY)**: the column that uniquely identifies each row
   (like a personal ID number).
@@ -220,7 +220,7 @@ The migrations (`backend/migrations/`, files numbered from `000001` to
 | `fx_rates` | the exchange rates | how much 1 dollar is worth in every other currency |
 | `splits` | the stock splits | e.g. a stock goes from 1 share to 4 shares |
 | `asset_region_weights` | the geographic exposure | for each security, the weight of each macro-region |
-| `asset_country_weights` | the per-country exposure | for each security, the weight of each ISO-3166 country (from B.13) |
+| `asset_country_weights` | the per-country exposure | for each security, the weight of each ISO-3166 country |
 | `asset_sector_weights` | the sector exposure | for each security, the weight of each GICS sector |
 | `supported_currencies` | the list of currencies | which currencies can be used (chapter 11) |
 | `lookup_cache` | the ticker-search cache | results already downloaded from Yahoo for autocomplete |
@@ -259,7 +259,7 @@ What happens, step by step:
    roll-up converted into the base currency; `by_currency`, `portfolios` and
    `assets` stay expressed in their own currency. The `summary` and each
    `portfolios` entry split the numbers into nested `active` and `closed`
-     objects (EPIC I.2, see chapter 8): `active` reports `invested`, `value`,
+     objects (see chapter 8): `active` reports `invested`, `value`,
      `gain_loss` and `gain_loss_pct` of the lots still held plus the
      `dividends` of the positions that are still open (even if partially
      sold); open positions of assets that have no price at all are excluded
@@ -267,10 +267,10 @@ What happens, step by step:
      compared with, and counting it would fake a -100% loss), while their
      dividends still count. `closed` reports `invested` (AVCO cost of the
      sold lots),
-     `proceeds` (net sale proceeds plus the dividends folded in by the fully
-     closed positions), `realized` (proceeds − invested) and `realized_pct`
-     (realized / invested × 100). The response also carries `invested_assets`
-     (EPIC I.5): the single consolidated list of the currently invested
+     `proceeds` (net sale proceeds plus the dividends of the fully closed
+     positions), `realized` (proceeds − invested) and `realized_pct`
+     (realized / invested × 100). The response also carries
+     `invested_assets`: the single consolidated list of the currently invested
      assets, aggregated by asset across all the user's portfolios (the same
      asset held in several portfolios is one row) and converted into the base
      currency. Each row carries `asset_id`, `ticker`, `name`, `currency` (the
@@ -280,10 +280,9 @@ What happens, step by step:
      `gain_loss` and `gain_loss_pct`; rows are ordered by `value` descending
      and closed positions (qty ≤ 0) are excluded.
 5. **Repository**: runs the SQL queries, for example the query that loads the
-   portfolios with a `LEFT JOIN` on the sharing table (so it is already ready
-   for future sharing support).
+   portfolios with a `LEFT JOIN` on the sharing table.
 
-### The time-weighted return chart (`GET /dashboard/performance`, EPIC I.3)
+### The time-weighted return chart (`GET /dashboard/performance`)
 
 `GET /api/v1/dashboard/performance?granularity=month|year` returns one chart
 for the whole vault (all portfolios aggregated, converted to the user's base
@@ -338,25 +337,24 @@ dates, so the last date of each month/year seals its bucket and the buckets
 are emitted in ascending order — buckets with no data are simply omitted.
 `return` and `twr` are rounded to 4 decimals, `invested` and `value` to 8.
 
-### The paginated transactions list (`GET /portfolios/{id}/transactions`, EPIC I.9)
+### The paginated transactions list (`GET /portfolios/{id}/transactions`)
 
 `GET /api/v1/portfolios/{id}/transactions?limit=&offset=` returns a
-pagination envelope — `{transactions[], total, limit, offset}` — instead of
-the bare array it used to emit. `limit` defaults to 20 and is clamped to a
+pagination envelope — `{transactions[], total, limit, offset}`. `limit`
+defaults to 20 and is clamped to a
 maximum of 100 (a larger value comes back as `limit: 100`), `offset`
 defaults to 0; a non-numeric value on either parameter is a 400, and so is a
 negative one (surfaced by the service as `ErrInvalidInput`). The page is
 ordered by `date DESC, created_at DESC, id DESC` — a fully deterministic
 tie-break, so two transactions sharing a date can never straddle pages or
 repeat. Ownership is enforced by the service before querying: a portfolio
-that belongs to someone else is a 403 and a missing one a 404 (previously
-this endpoint performed no ownership check at all). `total` is the full
-number of transactions in the portfolio, not the page size, so a page past
+that belongs to someone else is a 403 and a missing one a 404. `total` is the
+full number of transactions in the portfolio, not the page size, so a page past
 the end simply yields an empty `transactions` array with the correct
 `total`.
 
-Since **EPIC K.4c** the list also accepts four optional, freely combinable
-filters (all absent = the behaviour above, fully backwards compatible):
+The list also accepts four optional, freely combinable filters (all absent =
+the behaviour above):
 
 | Param | Meaning | Invalid value |
 |-------|---------|---------------|
@@ -374,11 +372,12 @@ set. The repository builds a dynamic parameterized `WHERE` from the filter
 (placeholders numbered by a counter, values only ever bind parameters —
 never interpolated); date bounds compare `t.date::date` against the parsed
 days so the match is calendar-day based and inclusive on both ends (the
-column is `TIMESTAMPTZ`). Ordering and pagination semantics are unchanged.
+column is `TIMESTAMPTZ`). Ordering and pagination semantics follow the rules
+above.
 A non-empty `filter.Type` outside the allowed set is rejected by the service
 with `ErrInvalidInput` even when the caller bypasses the HTTP parser.
 
-### The per-portfolio TWR chart (`GET /portfolios/{id}/performance/buckets`, EPIC I.8)
+### The per-portfolio TWR chart (`GET /portfolios/{id}/performance/buckets`)
 
 `GET /api/v1/portfolios/{id}/performance/buckets?granularity=month|year`
 applies exactly the same daily TWR model to a **single portfolio**, expressed
@@ -395,12 +394,12 @@ enforced before the cache lookup (403 for someone else's portfolio, 404 for
 a missing one), and the result is cached under the `pf-perf` key as
 `{portfolioID}:{granularity}`.
 
-### The portfolio summary (`GET /portfolios/{id}/summary`, EPIC I.6)
+### The portfolio summary (`GET /portfolios/{id}/summary`)
 
 The portfolio detail page shows the same "Investments" card the dashboard
-uses: alongside the legacy flat fields, kept unchanged for backward
-compatibility (`total_cost`, `total_value`, `gain_loss`, `gain_loss_pct`,
-`realized_gl`, `unrealized_gl`), the response carries the nested `active` and
+uses: alongside the flat fields (`total_cost`, `total_value`, `gain_loss`,
+`gain_loss_pct`, `realized_gl`, `unrealized_gl`), the response carries the
+nested `active` and
 `closed` objects with exactly the same rules as the per-portfolio entries of
 the dashboard (see above): `active` sums the cost and market value of the
 open lots (`invested`, `value`, `gain_loss`, `gain_loss_pct`) plus the
@@ -408,14 +407,14 @@ open lots (`invested`, `value`, `gain_loss`, `gain_loss_pct`) plus the
 open positions of unpriced assets stay out of `invested`/`value` (their cost
 has no market value to compare with) but keep counting their dividends;
 `closed` reports `invested` (AVCO cost of the sold lots), `proceeds` (net
-sale proceeds plus the dividends folded in by the fully closed positions),
+sale proceeds plus the dividends of the fully closed positions),
 `realized` and `realized_pct`. Everything is expressed in the **portfolio
 currency**: no base-currency conversion is applied and only the market value
 goes through the asset→portfolio FX factor, so a value whose rate is missing
-is skipped and keeps being surfaced by the existing `fx_missing_count` /
+is skipped and surfaced by the `fx_missing_count` /
 `fx_missing_value` data-quality fields. The figures are rounded by the same
 `finalizeBreakdowns` helper the dashboard uses, and the `holdings` list is
-returned as before.
+also returned.
 
 The typical Go pattern for reading multiple rows is:
 
@@ -434,7 +433,7 @@ which value goes into which variable.
 
 ## 8. AVCO — average cost
 
-AVCO (Average Cost) is the **logic used to calculate how much a security
+AVCO (Average Cost) is the **logic for calculating how much a security
 position is worth**, just like your broker does. It is the financial heart of
 the application, in `internal/position/position.go`.
 
@@ -465,7 +464,7 @@ type State struct {
 > "position state" card has the open-lot fields (quantity, average cost,
 > total cost, realized gain/loss) plus the cumulative metrics of the sold
 > lots and of the distributions (cost of sold lots, net proceeds, dividends)
-> that feed the active/closed dashboard breakdown (EPIC I.2). Each cumulative
+> that feed the active/closed dashboard breakdown. Each cumulative
 > field also has a
 > `*CCY` twin expressed in the asset currency. `decimal.Decimal` is the type
 > of the numbers (precise decimal numbers, suitable for money, with no
@@ -491,7 +490,7 @@ card in an orderly way, operation after operation.
 - **Dividend**: added to `Realized` and, separately, to `Dividends` (the
   dashboard then classifies them by the position state: dividends of a still
   open position — even partially sold — join the `active` group, while those
-  of a fully closed one are folded into the `closed` proceeds).
+  of a fully closed one are included in the `closed` proceeds).
 
 ### `Walk`
 
@@ -560,7 +559,7 @@ values, you need to convert.
 If a rate is missing, the conversion is not available and the application
 signals it (the model shows the `fx_missing` field).
 
-**The base currency (EPIC I.1).** Every user has a preferred currency stored
+**The base currency.** Every user has a preferred currency stored
 in `users.base_currency` (default EUR) and editable via `PATCH /users/me`
 with the `base_currency` field (an omitted/empty value keeps the stored one;
 a non-empty value must be an enabled currency from the whitelist, chapter 11,
@@ -578,16 +577,14 @@ amounts whose rate is missing are excluded from the totals and reported by
 return (true TWR with daily geometric linking, with the invested/value
 capital series) by month or year in the base currency (chapter 7);
 `GET /portfolios/{id}/performance/buckets` charts the same buckets for a
-single portfolio, staying in that portfolio's own currency (chapter 7,
-EPIC I.8);
-`GET /dashboard/allocation` is expressed in the base currency too (it used to
-be fixed USD) and aggregates every portfolio into the vault-wide `classes`,
-`regions`, `countries` and `sectors` breakdowns (chapter 19). The
+single portfolio, staying in that portfolio's own currency (chapter 7);
+`GET /dashboard/allocation` is expressed in the base currency too and
+aggregates every portfolio into the vault-wide `classes`, `regions`,
+`countries` and `sectors` breakdowns. The
 per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.
 The `invested_assets` list is in the base currency too: the user's open
-positions aggregated per asset across all their portfolios (chapter 7,
-EPIC I.5).
+positions aggregated per asset across all their portfolios (chapter 7).
 
 ---
 
@@ -708,8 +705,8 @@ see `meta.go`):
   a **read-only preview**: neither the sector weights nor the profile fields
   (sector/industry/country) are persisted — saving happens only through
   `PUT /assets/{id}/exposure`.
-- **ETF exposure via JustETF (`FetchETFExposure`)**: since B.5, the backend can
-  fetch the **complete** country/region and sector exposure of an ETF from the
+- **ETF exposure via JustETF (`FetchETFExposure`)**: the backend can fetch
+  the **complete** country/region and sector exposure of an ETF from the
   `python-service` microservice (`POST /assets/{id}/fetch-etf-exposure`). The
   python service reads JustETF (full tables via its "Show more" AJAX), and the
   Go `geo` package maps each country to a macro-region and normalizes sectors
@@ -721,8 +718,8 @@ see `meta.go`):
   derived regions and the GICS sectors come back in the three dimensions —
   `countries`, `regions` and `sectors` — but are NOT persisted; they reach the
   database only when the user saves with `PUT /assets/{id}/exposure`.
-- **ETF exposure via Morningstar (`FetchMorningstarExposure`)**: since B.14, a
-  second source is available: `POST /assets/{id}/fetch-morningstar-exposure`
+- **ETF exposure via Morningstar (`FetchMorningstarExposure`)**: a second
+  source is available: `POST /assets/{id}/fetch-morningstar-exposure`
   (ETF-only; when the ISIN is missing it is auto-resolved via Morningstar on the
   ticker's market). The python-service
   endpoint `GET /api/v1/etf/{isin}/morningstar-exposure` uses a **custom
@@ -751,13 +748,13 @@ see `meta.go`):
   belongs to the provider prefill only: the manual
   `PUT` with `{countries}` never rewrites the regions). The residual
   (100 − country sum) lands in the `Other / Not Classified` region,
-  so the previewed regions always sum to 100. Since the taxonomy alignment, the canonical
-  regions are **10 + `Other`**: North America, Latin America, United Kingdom,
+  so the previewed regions always sum to 100. The canonical regions are
+  **10 + `Other`**: North America, Latin America, United Kingdom,
   Europe Developed, Europe Emerging, Africa / Middle East, Japan, Australasia,
   Asia Developed, Asia Emerging, Other / Not Classified (UK/Japan/Australasia
   are standalone; TW/KR are Asia Developed).
-- **Asset class (asset-info refresh / `GET /assets/meta`)**: Yahoo no longer
-  exposes `assetClass` (the `quote` quoteSummary module does not exist; v7
+- **Asset class (asset-info refresh / `GET /assets/meta`)**: Yahoo does not
+  expose `assetClass` (the `quote` quoteSummary module does not exist; v7
   `/quote` does not return it). The class is derived in `FetchMeta` via
   `geo.ClassifyAssetClass` (Morningstar-style fund category
   `defaultKeyStatistics.category`/`fundProfile.categoryName` fetched by
@@ -770,12 +767,12 @@ see `meta.go`):
   profile) is mapped to a macro-region at 100% (`geo.RegionForCountry`).
 
 A note on **ISIN**: Yahoo does **not** expose the ISIN in any module. For ETFs
-the value is now resolved automatically from the ticker through the JustETF
-service (B.5); the field remains editable by hand on the asset page as a
+the value is resolved automatically from the ticker through the JustETF
+service; the field remains editable by hand on the asset page as a
 fallback. The exposure responses (`GET/PUT /assets/{id}/exposure`,
 `fetch-exposure`, `fetch-etf-exposure`, `fetch-morningstar-exposure`) include
 the persisted `isin` field (`AssetExposure.ISIN`), so the frontend can sync it
-after a fetch. Since B.13 the `GET /assets/{id}/exposure` response exposes the
+after a fetch. The `GET /assets/{id}/exposure` response exposes the
 **countries** dimension zero-filled across the full canonical ISO list, and
 `PUT /assets/{id}/exposure` accepts an optional `countries` array: it keeps
 only canonical ISO codes and **rejects a country sum above 100** (sums below
@@ -788,7 +785,7 @@ countries only through the explicit derive endpoint (or updated explicitly via
 list and edit their individual weights. A companion endpoint
 `POST /assets/{id}/exposure/derive` computes the regions from a `{countries}`
 body **without persisting** (used by the "Calcola da paesi" button in the UI).
-**Region save validation**: the explicit `regions` array now accepts a total
+**Region save validation**: the explicit `regions` array accepts a total
 **≤ 100** (below 100 is valid; above 100 is rejected). The UI never shows or
 edits "Other / Not Classified", so when the client sends regions summing below
 100 with no Other row, the backend **injects the residual into
@@ -826,8 +823,8 @@ cached, so a transient empty fetch cannot stick for a week. The cache only
 speeds up the read: entries are provider payloads, never stored weights
 (saving still happens exclusively through `PUT /assets/{id}/exposure`).
 `?refresh=1` (also `refresh=true`) on either endpoint forces a fresh provider
-fetch that bypasses and rewrites the cache; it is a backend-only knob the UI
-can adopt later. Yahoo's `fetch-exposure` is deliberately left uncached (it
+fetch that bypasses and rewrites the cache; it is a backend-only knob.
+Yahoo's `fetch-exposure` is deliberately left uncached (it
 is cheap and shares the Yahoo meta cache).
 
 ### Cache invalidation (`bumpRev`)
@@ -885,7 +882,7 @@ At login, **two tokens** are issued:
   and the type `token_type=access`. It is the ticket the frontend uses to
   call the APIs;
 - **refresh** (lasts 72 hours): contains only the user id and the type
-  `token_type=refresh`. It is used to obtain a new token pair when the access
+  `token_type=refresh`. It serves to obtain a new token pair when the access
   one expires (automatic rotation).
 
 The middleware checks every protected request: if the token is missing,
@@ -935,10 +932,9 @@ intact.
 
 `GET /portfolios/{id}/export` produces a JSON document with a `version` field
 (the format version, currently `1`); `POST /portfolios/import` consumes it.
-The format is deliberately **additive**: fields added later on — such as the
-per-asset `price_source` and `asset_class` that the export now writes — are
-optional (`omitempty`), so documents produced by older app versions remain
-valid and recoverable.
+The format is deliberately **additive**: the per-asset `price_source` and
+`asset_class` fields the export writes are optional (`omitempty`), so
+documents that omit them remain valid and recoverable.
 
 When the importer creates an asset whose ticker does not exist yet, every
 missing piece is filled with a default that satisfies the database
@@ -1061,99 +1057,3 @@ them without ever having programmed.
 With these few rules, the code fragments in this document read like
 sentences: "create the connection, if something goes wrong stop and signal it,
 otherwise continue".
-
----
-
-## 19. Notes and open points
-
-- **Redis has a single job**: the global counter to limit Yahoo calls. If
-  Redis is down, the app still works (without the counter). The security
-  search cache, instead, lives in PostgreSQL (`lookup_cache`).
-- **The defenses against Yahoo's rate limit** are: only refresh stale data,
-  batch requests (spark), FIFO queue with a minimum interval, global counter
-  on Redis, and a browser User-Agent. The `/prices/refresh` report signals
-  when a block has happened.
-- **Materialized series**: they are recomputed on every data change. Before
-  answering, the portfolio history endpoint downloads any missing data and
-  recomputes the portfolio series, so the chart is always fresh.
-- **`canAccessPortfolio`** only checks the portfolio owner: the
-  `portfolio_shares` table (sharing with other users) exists but is not used
-  yet.
-- The asset detail page and the exposure endpoints store **per-asset weights**
-  in `asset_country_weights` (from B.13), `asset_region_weights` and
-  `asset_sector_weights`; the weighted-sum
-  allocation endpoints at portfolio level are implemented:
-  `GET /portfolios/{id}/allocation/class`, `/allocation/geography` (EPIC B.6,
-  10 macro-regions + `Other` (Morningstar-aligned since B.14), zero-filled) and `/allocation/sector` (EPIC B.7,
-  11 GICS sectors + `Other`). The dashboard/portfolio chart widgets ship in
-  B.8 (frontend). Since the B.8 follow-up, the geography/sector allocations are
-  computed over the **equity-only universe** (`exposureEligible`: stocks
-  always; ETFs/mutual funds only when `asset_class` is `equity` or
-  `real_estate`); bonds, crypto, commodities, currencies and unclassified
-  funds are excluded and never flow into `Other`. The three allocation
-  responses (`/allocation/geography`, `/allocation/sector` and
-  `/dashboard/allocation`) expose `covered_value`/`excluded_value` (decimal
-  strings) with the value of the eligible vs excluded holdings.
-- Since EPIC I.4 `GET /dashboard/allocation` aggregates **all** the user's
-  portfolios in their base currency and, next to the zero-filled `regions`
-  (canonical macro-regions + `Other`) and `sectors` (11 GICS sectors +
-  `Other`), also returns:
-  - `classes`: the vault-wide asset-class allocation — every priced holding
-    with a positive quantity (whatever its type) valued at market in the
-    base currency, grouped by `asset_class` (empty → `other`), sorted by
-    value descending with `weight` percentages summing to 100; holdings
-    whose FX rate to the base currency is missing are skipped (same rules
-    as `GET /portfolios/{id}/allocation/class`, but across all portfolios);
-  - `countries`: the equity-only per-country exposure built from
-    `asset_country_weights` with the same weighted-sum machinery as the
-    regions (stocks without stored exposure fall back to 100% of their own
-    `country`); buckets carry the ISO alpha-2 `country` code and, unlike
-    regions/sectors, only the **non-zero** ones are returned, sorted by
-    value descending with `weight` summing to 100.
-- Since EPIC I.7 `GET /portfolios/{id}/allocation/geography` also returns a
-  `countries` array next to `regions`, with the same semantics as the
-  dashboard's `countries` but scoped to the single portfolio and expressed in
-  its currency: equity-only per-country exposure from `asset_country_weights`
-  (stocks without stored exposure fall back to 100% of their own `country`,
-  same FX conversion as the regions), only the **non-zero** buckets, sorted
-  by value descending with `weight` summing to 100; empty (non-nil) when
-  there is no country exposure.
-- Since EPIC K.5 the drill-down exposes the assets behind a single allocation
-  bucket: `GET /portfolios/{id}/allocation/drill?dim=&key=` (portfolio
-  currency) and `GET /dashboard/allocation/drill?dim=&key=` (base currency,
-  holdings aggregated by asset across all portfolios — one entry per asset
-  with the summed value). `dim` is one of `class`, `country`, `region` or
-  `sector` and `key` the bucket name: a canonical name with spaces (e.g.
-  `North America`, URL-decoded by the router), an ISO country code, an
-  investment class or the literal `Other` fallback bucket; an unknown `dim`
-  or an empty `key` answers 400. The `{currency, dim, key, total, assets[]}`
-  response lists the contributing assets sorted by descending `contribution`
-  (only positive ones), each with `asset_id`, `ticker`, `name`, the market
-  `value` in the reference currency, the asset's exposure `weight` for the
-  bucket (percentage points) and the `contribution` (= `value * weight /
-  100`); `total` is the sum of the contributions and matches the
-  corresponding bucket of the aggregation output exactly, because the drill
-  reuses the same machinery: the equity-universe eligibility filter, the
-  canonical weights, the stock domicile/sector defaults and the `Other`
-  fallback when no weight is stored. The `class` drill skips the eligibility
-  filter (the `bond` bucket drills down to bonds), like the class allocation
-  itself. Ownership is enforced as on the sibling portfolio allocation
-  reads (403/404) and the result is cached like the other stats.
-- The `python-service` microservice (B.5) fetches ETF exposure and resolves
-  ISINs from tickers via JustETF; since B.14 it also exposes Morningstar
-  exposure via `GET /api/v1/etf/{isin}/morningstar-exposure` (custom resolver:
-  **headless Chromium** in the container clears the AWS WAF and provides the
-  Bearer JWT, then SAL service calls go over `requests`). It is exercised only
-  through the backend
-  (`POST /assets/{id}/fetch-etf-exposure` and
-  `POST /assets/{id}/fetch-morningstar-exposure`) and its `GET /api/v1/etf/search`
-  endpoint (tickers with an exchange suffix are normalized before querying).
-- Assets can have `price_source` set to `'yahoo'` (default), `'manual'` or
-  `'none'`. Only Yahoo-priced assets are fetched — by the worker, `RefreshStale`,
-  the history/split backfill (`GetPortfolioHistory`, `SyncAssetData`) and the
-  single-asset history backfill; manual/none assets are skipped entirely (no
-  Yahoo request, no health errors), and backfilling their history is a no-op.
-- There are alternative SQL methods for summaries and allocations
-  (`GetSummary`, `GetAllocation`, `GetROI`) that are not used by the service
-  layer: the financial calculation lives in the AVCO engine (chapter 8), not
-  in SQL. They are candidates for removal.
