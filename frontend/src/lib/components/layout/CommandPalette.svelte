@@ -151,8 +151,11 @@
     listsLoading = true
     void Promise.all([portfolioApi.list(), assetApi.list()])
       .then(([pf, as]) => {
-        portfolios = pf
-        assets = as
+        // Defensive (issue #121): a list endpoint can resolve to JSON `null`
+        // instead of `[]`; storing it would poison the `$state` and make the
+        // `view` derived throw on every later flush (palette unopenable).
+        portfolios = Array.isArray(pf) ? pf : []
+        assets = Array.isArray(as) ? as : []
       })
       .catch(() => {
         // Silent: a transient failure keeps whatever was loaded before; the
@@ -166,7 +169,10 @@
   /** Add Transaction shortcut, identical to the K.2 `Fab` action (spec §6.4). */
   async function addTransaction(): Promise<void> {
     try {
-      const rows = await portfolioApi.list()
+      const data = await portfolioApi.list()
+      // Coerce like `fetchLists` (issue #121): a `null` list must fall back to
+      // the portfolios page, not throw through the array access below.
+      const rows = Array.isArray(data) ? data : []
       await goto(
         rows.length === 1 ? resolve(`/portfolios/${rows[0].id}`) : resolve('/portfolios'),
       )
@@ -181,7 +187,7 @@
       const report = await pricesApi.refresh()
       if (report.rate_limited) {
         toast.warning(t('quickActions.refreshRateLimited'))
-      } else if (report.issues.length > 0) {
+      } else if (Array.isArray(report.issues) && report.issues.length > 0) {
         toast.warning(t('quickActions.refreshIssues', { count: report.issues.length }))
       } else {
         toast.success(t('quickActions.refreshSuccess'))
@@ -534,7 +540,11 @@
       assetApi
         .lookup(q)
         .then((results) => {
-          if (seq === lookupSeq) setLookup({ status: 'ready', results })
+          // Same guard as `fetchLists` (issue #121): the derived below reads
+          // `lookup.results[0]` during the reactive flush.
+          if (seq === lookupSeq) {
+            setLookup({ status: 'ready', results: Array.isArray(results) ? results : [] })
+          }
         })
         .catch(() => {
           if (seq === lookupSeq) setLookup({ status: 'ready', results: [] })

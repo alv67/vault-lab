@@ -41,7 +41,7 @@ func (r *splitRepo) FindByAssets(ctx context.Context, assetIDs []uuid.UUID) ([]*
 	}
 	defer rows.Close()
 
-	var splits []*model.Split
+	splits := make([]*model.Split, 0)
 	for rows.Next() {
 		s := &model.Split{}
 		if err := rows.Scan(&s.AssetID, &s.Date, &s.Numerator, &s.Denominator); err != nil {

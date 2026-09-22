@@ -92,7 +92,7 @@ func (r *assetRepo) FindByTicker(ctx context.Context, ticker string) (*model.Ass
 
 func (r *assetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.Asset, error) {
 	if len(ids) == 0 {
-		return nil, nil
+		return []*model.Asset{}, nil
 	}
 	rows, err := r.db.Query(ctx,
 		`SELECT `+assetColumns+` FROM assets WHERE id = ANY($1::uuid[])`,
@@ -103,7 +103,7 @@ func (r *assetRepo) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]*model.As
 	}
 	defer rows.Close()
 
-	var assets []*model.Asset
+	assets := make([]*model.Asset, 0)
 	for rows.Next() {
 		a := &model.Asset{}
 		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.PriceSource, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
@@ -124,7 +124,7 @@ func (r *assetRepo) Search(ctx context.Context, query string) ([]*model.Asset, e
 	}
 	defer rows.Close()
 
-	var assets []*model.Asset
+	assets := make([]*model.Asset, 0)
 	for rows.Next() {
 		a := &model.Asset{}
 		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.PriceSource, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
@@ -144,7 +144,7 @@ func (r *assetRepo) List(ctx context.Context) ([]*model.Asset, error) {
 	}
 	defer rows.Close()
 
-	var assets []*model.Asset
+	assets := make([]*model.Asset, 0)
 	for rows.Next() {
 		a := &model.Asset{}
 		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.PriceSource, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
@@ -166,7 +166,7 @@ func (r *assetRepo) ListYahoo(ctx context.Context) ([]*model.Asset, error) {
 	}
 	defer rows.Close()
 
-	var assets []*model.Asset
+	assets := make([]*model.Asset, 0)
 	for rows.Next() {
 		a := &model.Asset{}
 		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.PriceSource, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
@@ -188,7 +188,7 @@ func (r *assetRepo) AllStocks(ctx context.Context) ([]*model.Asset, error) {
 	}
 	defer rows.Close()
 
-	var assets []*model.Asset
+	assets := make([]*model.Asset, 0)
 	for rows.Next() {
 		a := &model.Asset{}
 		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.AssetClass, &a.PriceSource, &a.Country, &a.Currency, &a.Exchange, &a.Sector, &a.Industry, &a.CreatedAt, &a.PriceFetchedAt, &a.HistoryBackfilled); err != nil {
@@ -229,7 +229,7 @@ func (r *assetRepo) Currencies(ctx context.Context) ([]string, error) {
 	}
 	defer rows.Close()
 
-	var currencies []string
+	currencies := make([]string, 0)
 	for rows.Next() {
 		var c string
 		if err := rows.Scan(&c); err != nil {

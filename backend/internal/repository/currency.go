@@ -49,7 +49,7 @@ func (r *currencyRepo) list(ctx context.Context, where string) ([]model.Currency
 	}
 	defer rows.Close()
 
-	var currencies []model.Currency
+	currencies := make([]model.Currency, 0)
 	for rows.Next() {
 		c := &model.Currency{}
 		if err := rows.Scan(&c.Code, &c.Name, &c.Symbol, &c.Enabled, &c.Sort, &c.CreatedAt); err != nil {
@@ -98,7 +98,7 @@ func (r *currencyRepo) EnabledByCodes(ctx context.Context, codes []string) ([]st
 	}
 	defer rows.Close()
 
-	var enabled []string
+	enabled := make([]string, 0)
 	for rows.Next() {
 		var code string
 		if err := rows.Scan(&code); err != nil {

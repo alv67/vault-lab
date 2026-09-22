@@ -54,7 +54,7 @@ func (r *priceRepo) FindByAsset(ctx context.Context, assetID uuid.UUID) ([]*mode
 	}
 	defer rows.Close()
 
-	var prices []*model.Price
+	prices := make([]*model.Price, 0)
 	for rows.Next() {
 		p := &model.Price{}
 		if err := rows.Scan(&p.ID, &p.AssetID, &p.Date, &p.Open, &p.High, &p.Low, &p.Close, &p.Volume, &p.Source, &p.CreatedAt); err != nil {
@@ -119,7 +119,7 @@ func (r *priceRepo) FindForPortfolio(ctx context.Context, portfolioID uuid.UUID)
 	}
 	defer rows.Close()
 
-	var prices []model.Price
+	prices := make([]model.Price, 0)
 	for rows.Next() {
 		var pr model.Price
 		if err := rows.Scan(&pr.AssetID, &pr.Date, &pr.Close); err != nil {

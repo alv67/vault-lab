@@ -66,7 +66,7 @@ func (r *portfolioRepo) FindByUser(ctx context.Context, userID uuid.UUID) ([]*mo
 	}
 	defer rows.Close()
 
-	var portfolios []*model.Portfolio
+	portfolios := make([]*model.Portfolio, 0)
 	for rows.Next() {
 		p := &model.Portfolio{}
 		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Description, &p.Currency, &p.CreatedAt, &p.UpdatedAt); err != nil {
@@ -85,7 +85,7 @@ func (r *portfolioRepo) FindAll(ctx context.Context) ([]uuid.UUID, error) {
 	}
 	defer rows.Close()
 
-	var ids []uuid.UUID
+	ids := make([]uuid.UUID, 0)
 	for rows.Next() {
 		var id uuid.UUID
 		if err := rows.Scan(&id); err != nil {
@@ -134,7 +134,7 @@ func (r *portfolioRepo) HeldAssets(ctx context.Context, portfolioID uuid.UUID) (
 	}
 	defer rows.Close()
 
-	var assets []*model.Asset
+	assets := make([]*model.Asset, 0)
 	for rows.Next() {
 		a := &model.Asset{}
 		if err := rows.Scan(&a.ID, &a.Ticker, &a.ISIN, &a.Name, &a.Type, &a.Sector, &a.AssetClass, &a.Country, &a.Currency, &a.CreatedAt, &a.PriceFetchedAt); err != nil {
@@ -147,7 +147,7 @@ func (r *portfolioRepo) HeldAssets(ctx context.Context, portfolioID uuid.UUID) (
 
 func (r *portfolioRepo) HoldingsDetailed(ctx context.Context, portfolioIDs []uuid.UUID) ([]*model.Holding, error) {
 	if len(portfolioIDs) == 0 {
-		return nil, nil
+		return []*model.Holding{}, nil
 	}
 	rows, err := r.db.Query(ctx, `
 		SELECT DISTINCT t.portfolio_id, t.asset_id, a.ticker, a.name, a.currency,

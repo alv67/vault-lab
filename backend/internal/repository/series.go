@@ -132,7 +132,7 @@ func (r *seriesRepo) FindPortfolioAgg(ctx context.Context, portfolioID uuid.UUID
 	}
 	defer rows.Close()
 
-	var pts []model.PositionPoint
+	pts := make([]model.PositionPoint, 0)
 	for rows.Next() {
 		var pt model.PositionPoint
 		if err := rows.Scan(&pt.Date, &pt.Qty, &pt.CostBasis, &pt.MarketValue, &pt.Realized); err != nil {
@@ -158,7 +158,7 @@ func (r *seriesRepo) FindPortfolio(ctx context.Context, portfolioID uuid.UUID) (
 	}
 	defer rows.Close()
 
-	var assets []model.AssetPositionSeries
+	assets := make([]model.AssetPositionSeries, 0)
 	lastID := uuid.Nil
 	for rows.Next() {
 		var assetID uuid.UUID
