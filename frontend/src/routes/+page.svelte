@@ -1,13 +1,8 @@
-<script module lang="ts">
-  let sessionRefreshed = false
-</script>
-
 <script lang="ts">
   import { onMount } from 'svelte'
   import { resolve } from '$app/paths'
   import {
     portfolioApi,
-    pricesApi,
     type AllocationDrill,
     type AllocationDrillDim,
     type Dashboard,
@@ -15,13 +10,12 @@
     type DashboardPerformance,
     type PortfolioPerformanceSummary,
   } from '$lib/services/api'
-  import { toast } from '$lib/stores/toast.svelte'
+  import { priceRefresh } from '$lib/stores/priceRefresh.svelte'
+  import { applyDashboardStatus } from '$lib/stores/vaultStatus.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
   import CapitalChart from '$lib/components/domain/CapitalChart.svelte'
-  import DataQualityStrip from '$lib/components/domain/DataQualityStrip.svelte'
   import FirstRunChecklist from '$lib/components/domain/FirstRunChecklist.svelte'
-  import FreshnessStamp from '$lib/components/domain/FreshnessStamp.svelte'
   import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import ScopeSwitcher from '$lib/components/domain/ScopeSwitcher.svelte'
@@ -52,16 +46,6 @@
   let dash = $state<Dashboard | null>(null)
   let alloc = $state<DashboardAllocation | null>(null)
   let loading = $state(true)
-
-  // Session price-refresh outcome (EPIC K.3a, spec §8.8): the timestamp and
-  // the partial/failed flags feed the `FreshnessStamp` and the
-  // `DataQualityStrip`; the once-per-session semantics and the toasts are
-  // unchanged.
-  let lastUpdate = $state('')
-  let refreshing = $state(false)
-  let refreshRateLimited = $state(false)
-  let refreshIssueCount = $state(0)
-  let refreshFailed = $state(false)
 
   // Performance buckets (EPIC I.3): vault-wide percentage return and
   // invested-capital series in the base currency, monthly by default,
@@ -159,6 +143,9 @@
   onMount(async () => {
     try {
       dash = await portfolioApi.dashboard()
+      // Feed the global quality strip counters (the shell seeds them on
+      // mount; here they stay as fresh as the payload below).
+      if (dash) applyDashboardStatus(dash)
     } catch {
       dash = null
     } finally {
@@ -173,39 +160,32 @@
     } catch {
       alloc = null
     }
+  })
 
-    if (!sessionRefreshed) {
-      sessionRefreshed = true
-      refreshing = true
-      pricesApi
-        .refresh()
-        .then((report) => {
-          lastUpdate = report.finished_at
-          refreshRateLimited = report.rate_limited
-          refreshIssueCount = report.issues.length
-          if (report.rate_limited) {
-            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
-          } else if (report.issues.length > 0) {
-            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
-          }
-          return portfolioApi.dashboard()
-        })
-        .then((fresh) => {
-          dash = fresh
-          // The POST above cleared the GET cache and new prices can move the
-          // performance buckets: refresh the one fetch feeding both the hero
-          // chart and the Performance card.
-          void loadPerformance(granularity)
-        })
-        .catch(() => {
-          // Keep current data; the failure is now surfaced persistently by
-          // the freshness stamp + quality strip, not only as a toast.
-          refreshFailed = true
-        })
-        .finally(() => {
-          refreshing = false
-        })
+  // The once-per-session price refresh now lives in the shell; this page
+  // just listens for its completion (any trigger — auto, header, Fab,
+  // palette — bumps `revision`) and refetches the price-derived payloads:
+  // the POST cleared the GET cache and new prices move both the dashboard
+  // totals and the performance buckets. `seenRefresh` is deliberately NOT
+  // `$state`: it is the effect's private baseline, seeded at page init so
+  // the mount never self-refetches.
+  async function reloadAfterRefresh(): Promise<void> {
+    try {
+      const fresh = await portfolioApi.dashboard()
+      dash = fresh
+      if (fresh) applyDashboardStatus(fresh)
+    } catch {
+      // Keep current data; the strip/header already reflect the outcome.
     }
+    void loadPerformance(granularity)
+  }
+
+  let seenRefresh = priceRefresh.revision
+  $effect(() => {
+    const rev = priceRefresh.revision
+    if (rev === seenRefresh) return
+    seenRefresh = rev
+    void reloadAfterRefresh()
   })
 
   const hasMultipleCurrencies = $derived((dash?.by_currency?.length ?? 0) > 1)
@@ -367,22 +347,11 @@
     />
   {:else}
     <div class="space-y-6">
-      <!-- Data-quality strip (spec §6.1): thin, rendered only when a chip is
-           actionable; each chip links to its fixing surface. -->
-      <DataQualityStrip
-        currency={dash.base_currency}
-        fxMissingCount={dash.summary?.fx_missing_count ?? 0}
-        fxMissingValue={dash.summary?.fx_missing_value ?? '0'}
-        rateLimited={refreshRateLimited}
-        issueCount={refreshIssueCount}
-        refreshFailed={refreshFailed}
-      />
-
       {#if dash.summary}
         <!-- Zone A — hero (K.3a): ONE number (net market value of the active
              breakdown in the user's base currency), the signed P/L beneath it
              via `PnlValue` (never colour alone, D6), muted secondary chips
-             (realized/dividends/invested) and the freshness stamp. Desktop:
+             (realized/dividends/invested). Desktop:
              2-up with the compact value-vs-invested chart (the former
              "Capital invested" card content, folded in here with the D10
              period chips); phones stack it under the number. -->
@@ -422,13 +391,6 @@
                   {formatCurrency(dash.summary.active.invested, dash.base_currency)}
                 </span>
               </div>
-              <FreshnessStamp
-                class="mt-3"
-                finishedAt={lastUpdate}
-                refreshing={refreshing}
-                partial={refreshRateLimited || refreshIssueCount > 0}
-              />
-
               <!-- The Active/Closed roll-up stays available on demand instead
                    of dominating the top of the page (progressive density). -->
               <details class="group mt-4">

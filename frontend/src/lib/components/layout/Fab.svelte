@@ -3,8 +3,8 @@
   import { goto } from '$app/navigation'
   import { resolve } from '$app/paths'
   import { t } from '$lib/i18n/index.svelte'
-  import { portfolioApi, pricesApi } from '$lib/services/api'
-  import { toast } from '$lib/stores/toast.svelte'
+  import { portfolioApi } from '$lib/services/api'
+  import { refreshPrices } from '$lib/stores/priceRefresh.svelte'
   import QuickActionSheet, { type QuickAction } from './QuickActionSheet.svelte'
 
   /**
@@ -64,22 +64,12 @@
       labelKey: 'quickActions.refreshPrices',
       hintKey: 'quickActions.refreshPricesHint',
       icon: RefreshCw,
-      // Manual session refresh: toast feedback only, the user stays put (the
-      // POST clears the GET cache, so the next page fetch sees the new
-      // prices — same semantics as the dashboard's auto-refresh).
+      // Manual session refresh through the shared store path: toasts + the
+      // global stamp/strip update for everyone, the sheet awaits the shared
+      // promise so its spinner tracks the real in-flight POST (the POST
+      // clears the GET cache, so the next page fetch sees the new prices).
       onSelect: async () => {
-        try {
-          const report = await pricesApi.refresh()
-          if (report.rate_limited) {
-            toast.warning(t('quickActions.refreshRateLimited'))
-          } else if (report.issues.length > 0) {
-            toast.warning(t('quickActions.refreshIssues', { count: report.issues.length }))
-          } else {
-            toast.success(t('quickActions.refreshSuccess'))
-          }
-        } catch {
-          toast.error(t('quickActions.refreshError'))
-        }
+        await refreshPrices({ announceSuccess: true })
       },
     },
     {

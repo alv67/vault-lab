@@ -1,7 +1,3 @@
-<script module lang="ts">
-  let sessionRefreshed = false
-</script>
-
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { onMount } from 'svelte'
@@ -9,12 +5,12 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { toast } from '$lib/stores/toast.svelte'
+  import { priceRefresh } from '$lib/stores/priceRefresh.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import {
     portfolioApi,
     transactionApi,
     assetApi,
-    pricesApi,
     type Portfolio,
     type PortfolioSummary,
     type PortfolioHistory,
@@ -279,27 +275,31 @@
       const message = err instanceof Error ? err.message : 'Failed to load history'
       toast.error(message)
     }
-
-    if (!sessionRefreshed) {
-      sessionRefreshed = true
-      pricesApi.refresh(id)
-        .then((report) => {
-          if (report.rate_limited) {
-            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
-          } else if (report.issues.length > 0) {
-            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
-          }
-          return portfolioApi.summary(id)
-        })
-        .then((fresh) => {
-          summary = fresh
-          // The POST above cleared the GET cache and new prices can move the
-          // buckets: refresh the performance card too (same as the dashboard).
-          void loadPerformance(granularity)
-        })
-        .catch(() => { /* keep current data */ })
-    }
   }
+
+  // Refetch the price-derived data when the (globally triggered) session
+  // refresh completes: the POST cleared the GET cache, so the summary comes
+  // back with the fresh prices, and new prices can move the TWR buckets too
+  // (same refetch pair the dashboard runs — see its `revision` watcher).
+  async function refetchAfterRefresh(): Promise<void> {
+    if (!id) return
+    try {
+      summary = await portfolioApi.summary(id)
+    } catch {
+      // Keep current data.
+    }
+    void loadPerformance(granularity)
+  }
+
+  // Plain (non-`$state`) baseline seeded at component init: only refresh
+  // completions that happen while this layout is mounted refetch.
+  let seenRefresh = priceRefresh.revision
+  $effect(() => {
+    const rev = priceRefresh.revision
+    if (rev === seenRefresh) return
+    seenRefresh = rev
+    void refetchAfterRefresh()
+  })
 
   async function loadAllocations(): Promise<void> {
     if (!id) return

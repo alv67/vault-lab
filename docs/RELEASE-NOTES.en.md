@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Features
+- Price freshness now lives in the app header on every page: the "Prices as of" stamp is always visible and clickable to refresh quotes on demand, and data-quality warnings (rate-limited or failed updates, holdings missing an FX rate) follow you as a strip under the header instead of sitting on the dashboard
+
 ### Fixes
 - On phones the allocation drill-down no longer closes as soon as it opens: the bottom sheet stays up so you can read the assets behind the slice
 - The search panel (⌘K/Ctrl+K, or the header search button) no longer gets stuck after the first use: on a vault with no portfolios or assets it now opens every time instead of working only once

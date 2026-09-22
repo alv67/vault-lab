@@ -1,7 +1,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { onMount } from 'svelte'
+  import { portfolioApi } from '$lib/services/api'
   import { t } from '$lib/i18n/index.svelte'
+  import { priceRefresh, refreshPrices } from '$lib/stores/priceRefresh.svelte'
+  import { applyDashboardStatus, vaultStatus } from '$lib/stores/vaultStatus.svelte'
   import { viewport } from '$lib/stores/viewport.svelte'
+  import DataQualityStrip from '../domain/DataQualityStrip.svelte'
   import AppHeader from './AppHeader.svelte'
   import BottomNav from './BottomNav.svelte'
   import CommandPalette from './CommandPalette.svelte'
@@ -93,6 +98,24 @@
   // gap while the bar condenses 56px → 44px). Keep in sync with the
   // `h-*`/`top-*` utilities and the `:root` fallback in app.css.
   const headerHeight = $derived(condensed ? '2.75rem' : '3.5rem')
+
+  // Global session boot (shell = mounted once per authenticated visit, on
+  // ANY landing page): fire the once-per-session price refresh through the
+  // shared store path — silent, both toasts are disabled because the header
+  // freshness control and the strip below render the outcome persistently —
+  // and seed the strip's FX counters from the vault dashboard payload (the
+  // dashboard page keeps them fresh afterwards via `applyDashboardStatus`).
+  onMount(() => {
+    if (!priceRefresh.started) void refreshPrices({ announceSuccess: false, announceError: false })
+    if (!vaultStatus.loaded) {
+      portfolioApi
+        .dashboard()
+        .then(applyDashboardStatus)
+        .catch(() => {
+          // Silent: the strip simply has nothing to report yet.
+        })
+    }
+  })
 </script>
 
 <a
@@ -123,6 +146,22 @@
       ontogglecollapse={toggleCollapsed}
       onopenpalette={() => (paletteOpen = true)}
     />
+    <!-- Global data-quality strip (was the dashboard hero's): a thin sticky
+         band under the condensing header, rendered only when at least one
+         vault counter or refresh outcome has something to report, so the
+         warnings travel with the user on every page. -->
+    {#if vaultStatus.fxMissingCount > 0 || priceRefresh.rateLimited || priceRefresh.issueCount > 0 || priceRefresh.failed}
+      <div class="sticky top-[var(--app-header-h)] z-10 border-b border-border bg-background px-4 py-2 lg:px-6">
+        <DataQualityStrip
+          currency={vaultStatus.currency}
+          fxMissingCount={vaultStatus.fxMissingCount}
+          fxMissingValue={vaultStatus.fxMissingValue}
+          rateLimited={priceRefresh.rateLimited}
+          issueCount={priceRefresh.issueCount}
+          refreshFailed={priceRefresh.failed}
+        />
+      </div>
+    {/if}
     <!-- Longhand padding utilities only: `p-*` shorthand would fight the
          phone-only `pb-[…]` clearance below the fixed bottom nav. -->
     <main

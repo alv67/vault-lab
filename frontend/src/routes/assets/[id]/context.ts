@@ -47,8 +47,8 @@ export interface HeldRow {
  *
  * The layout OWNS all data loading: the asset payload, quote, full price
  * history, splits and stored exposure fetched together on mount, the
- * once-per-session `pricesApi.refresh()` with the fresh quote/prices
- * refetch, the isolated `portfolioApi.dashboard()` behind the "Where
+ * fresh quote/prices refetch when the shell's session price refresh
+ * completes, the isolated `portfolioApi.dashboard()` behind the "Where
  * held" rows, and every mutation the old single page performed — the
  * metadata PATCH (and the shared `form` the prefills write into), the
  * exposure saves/prefills/derives behind `openGeoModal`/`openSectorModal`

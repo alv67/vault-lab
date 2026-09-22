@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Nuove funzionalità
+- Lo stato di aggiornamento dei prezzi ora vive nell'header dell'app, su ogni pagina: il timbro "Prezzi alle HH:MM" è sempre visibile e cliccabile per aggiornare le quotazioni su richiesta, e gli avvisi sulla qualità dei dati (rate-limit o aggiornamenti falliti, posizioni senza tasso di cambio) ti seguono in una fascia sotto l'header invece di stare nella dashboard
+
 ### Correzioni
 - Sul telefono il drill-down delle allocazioni non si chiude più appena si apre: la sheet dal basso resta visibile e puoi leggere gli asset che compongono la fetta
 - Il pannello di ricerca (⌘K/Ctrl+K, o il pulsante di ricerca nell'header) non si blocca più dopo il primo uso: su un vault senza portafogli o asset ora si apre ogni volta invece di funzionare una sola volta

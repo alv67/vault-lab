@@ -4,6 +4,7 @@
   import { resolve } from '$app/paths'
   import { t } from '$lib/i18n/index.svelte'
   import Button from '../ui/Button.svelte'
+  import PriceRefreshButton from './PriceRefreshButton.svelte'
   import ThemeToggle from './ThemeToggle.svelte'
   import UserMenu from './UserMenu.svelte'
 
@@ -12,8 +13,10 @@
    * collapse toggle — `lg`+ only, since phones have no sidebar (bottom nav
    * + More sheet, decision D2) and tablets are a forced icon rail — plus the
    * brand link shown below `lg` (the rail/drawer carry it otherwise).
-   * Right: the command-palette trigger (EPIC K.5a — a search affordance at
-   * every size, spec §8.1; on `lg`+ it grows into a labelled pill with the
+   * Right: the global price-freshness control (`PriceRefreshButton` —
+   * stamp + manual refresh trigger, always immediately before the search
+   * button), the command-palette trigger (EPIC K.5a — a search affordance
+   * at every size, spec §8.1; on `lg`+ it grows into a labelled pill with the
    * ⌘K chord hint, on smaller viewports it stays the icon-only button, so
    * phones get palette access without a 5th bottom-nav item), the theme
    * toggle at every size (the rail and the More sheet have no theme control
@@ -78,6 +81,9 @@
   </div>
 
   <div class="flex shrink-0 items-center gap-1">
+    <!-- Global price freshness + manual refresh trigger (always visible,
+         immediately before the search button). -->
+    <PriceRefreshButton />
     <!-- Command-palette trigger (K.5a): icon-only below `lg`, a labelled
          pill with the chord hint from `lg`. aria-haspopup mirrors the Fab's
          quick-actions wiring: it opens a dialog, not a menu. -->

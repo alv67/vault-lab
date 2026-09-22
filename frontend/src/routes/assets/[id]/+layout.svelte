@@ -1,7 +1,3 @@
-<script module lang="ts">
-  let sessionRefreshed = false
-</script>
-
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { onMount } from 'svelte'
@@ -9,6 +5,7 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { toast } from '$lib/stores/toast.svelte'
+  import { priceRefresh } from '$lib/stores/priceRefresh.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import type { MessageKey } from '$lib/i18n/index.svelte'
   import {
@@ -53,8 +50,10 @@
    *
    * Data ownership: every fetch the old page performed is performed here
    * unchanged (asset + quote + prices + exposure + splits together, the
-   * once-per-session `pricesApi.refresh()` with the fresh quote/prices
-   * refetch, the metadata PATCH and the whole exposure save/prefill/derive
+   * fresh quote/prices refetch when the session price refresh completes —
+   * the refresh itself is triggered globally by the shell now, watched here
+   * via `priceRefresh.revision` so deep links update like everywhere else —
+   * the metadata PATCH and the whole exposure save/prefill/derive
    * machinery) and handed to the tab pages through the typed context in
    * `./context.ts` — no tab re-fetches anything on its own. The geo/sector
    * edit modals and the delete confirmation are mounted here (same
@@ -266,30 +265,38 @@
       loading = false
     }
 
-    // "Where held" (K.4b): fired alongside the refresh block below, never
-    // awaited — the tabs render as soon as the main payload is in.
+    // "Where held" (K.4b): never awaited — the tabs render as soon as the
+    // main payload is in.
     void loadHoldings()
+  }
 
-    // Refresh prezzi una volta per sessione: la pagina può essere aperta come
-    // deep-link senza passare dalla dashboard, che normalmente fa il refresh.
-    if (!sessionRefreshed) {
-      sessionRefreshed = true
-      pricesApi.refresh()
-        .then((report) => {
-          if (report.rate_limited) {
-            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
-          } else if (report.issues.length > 0) {
-            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
-          }
-          return Promise.all([assetApi.quote(id), pricesApi.byAsset(id)])
-        })
-        .then(([freshQuote, freshPrices]) => {
-          quote = freshQuote
-          prices = freshPrices
-        })
-        .catch(() => { /* keep current data */ })
+  // Refetch the price-derived header data when the (globally triggered)
+  // session refresh completes: the POST cleared the GET cache, so the quote
+  // strip and the price history come back fresh — same on a deep link, where
+  // this layout is the first page mounted.
+  async function refetchAfterRefresh(): Promise<void> {
+    if (!id) return
+    try {
+      const [freshQuote, freshPrices] = await Promise.all([
+        assetApi.quote(id),
+        pricesApi.byAsset(id),
+      ])
+      quote = freshQuote
+      prices = freshPrices
+    } catch {
+      // Keep current data.
     }
   }
+
+  // Plain (non-`$state`) baseline seeded at component init: only refresh
+  // completions that happen while this layout is mounted refetch.
+  let seenRefresh = priceRefresh.revision
+  $effect(() => {
+    const rev = priceRefresh.revision
+    if (rev === seenRefresh) return
+    seenRefresh = rev
+    void refetchAfterRefresh()
+  })
 
   /** Fill `held` with one row per portfolio currently holding this asset
    * (qty > 0: closed holdings are skipped), derived from the per-portfolio

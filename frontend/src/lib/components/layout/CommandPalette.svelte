@@ -26,14 +26,13 @@
   import {
     assetApi,
     portfolioApi,
-    pricesApi,
     type Asset,
     type AssetLookupResult,
     type Portfolio,
   } from '$lib/services/api'
   import { palette, setCvd } from '$lib/stores/palette.svelte'
+  import { refreshPrices } from '$lib/stores/priceRefresh.svelte'
   import { setThemeMode, theme, type ThemeMode } from '$lib/stores/theme.svelte'
-  import { toast } from '$lib/stores/toast.svelte'
   import { viewport } from '$lib/stores/viewport.svelte'
   import { focusTrap } from '../ui/focus-trap'
   import { backdropFade } from '../ui/transitions'
@@ -56,7 +55,7 @@
    *   selecting it navigates to `/assets` (creating assets stays out of
    *   the palette's scope);
    * - *Actions*: Add transaction (the same single-portfolio shortcut the
-   *   K.2 `Fab` uses), Refresh prices (`pricesApi.refresh()` + toast),
+   *   K.2 `Fab` uses), Refresh prices (the shared `priceRefresh` store path,
    *   Toggle theme (cycles light → dark → system on the theme store),
    *   Toggle CVD palette (palette store) and Toggle sidebar (only when a
    *   sidebar exists to toggle, i.e. desktop — the callback lives in the
@@ -181,20 +180,10 @@
     }
   }
 
-  /** Manual session refresh + toast feedback (same semantics as the Fab). */
-  async function refreshPrices(): Promise<void> {
-    try {
-      const report = await pricesApi.refresh()
-      if (report.rate_limited) {
-        toast.warning(t('quickActions.refreshRateLimited'))
-      } else if (Array.isArray(report.issues) && report.issues.length > 0) {
-        toast.warning(t('quickActions.refreshIssues', { count: report.issues.length }))
-      } else {
-        toast.success(t('quickActions.refreshSuccess'))
-      }
-    } catch {
-      toast.error(t('quickActions.refreshError'))
-    }
+  /** Manual session refresh through the shared store path (same semantics
+   * as the Fab): toasts + global stamp/strip, pages refetch on `revision`. */
+  function runRefreshPrices(): void {
+    void refreshPrices({ announceSuccess: true })
   }
 
   /** Score of a haystack vs the normalized query; `null` = no match. */
@@ -372,7 +361,7 @@
         hint: t('quickActions.refreshPricesHint'),
         icon: RefreshCw,
         keywords: 'quote yahoo sync',
-        run: refreshPrices,
+        run: runRefreshPrices,
       }),
       row({
         id: 'act-toggle-theme',

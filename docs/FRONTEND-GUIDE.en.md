@@ -753,7 +753,8 @@ JS state and CSS never disagree.
   `assetApi.lookup()` from 2 characters; selecting it just navigates to
   `/assets`, creation stays out of scope) and **Actions** (Add transaction —
   the same single-portfolio shortcut the `Fab` uses —, Refresh prices —
-  `pricesApi.refresh()` + the `quickActions.*` toasts —, Toggle theme —
+  the shared `refreshPrices()` store path + the `quickActions.*` toasts —,
+  Toggle theme —
   cycles light → dark → system on the theme store —, Toggle CVD palette —
   `setCvd` —, and Toggle sidebar, desktop-only, driving the shell's
   `collapsed` state). Matching is a dependency-free local matcher
@@ -772,10 +773,11 @@ JS state and CSS never disagree.
   and `preferences.palette*` keys, and the dynamic sections preview their
   toggles' target state (next theme, palette variant).
 
-`ScopeSwitcher` and `FreshnessStamp` (originally listed under K.2 in the
-spec) shipped with the Overview hero in **K.3a**, as `domain/` components —
-they consume the dashboard payload, not shell state. The whole shell replaced
-the old fixed `Layout.svelte`.
+`ScopeSwitcher` shipped with the Overview hero in **K.3a** as a `domain/`
+component (it consumes the dashboard payload, not shell state). The
+price-freshness control and the `DataQualityStrip` started there too, but now
+live in the shell/header (`PriceRefreshButton`, `DataQualityStrip`) so they are
+visible on every page. The whole shell replaced the old fixed `Layout.svelte`.
 
 ### Icons, toasts and language
 
@@ -884,25 +886,31 @@ A rune-based store that holds `auth.user` and `auth.isLoading`:
 
 ### The session price refresh
 
-The dashboard, the portfolio detail and the asset detail pages use a
-module-level flag (`sessionRefreshed`) so that, **once per session**, they call
-`pricesApi.refresh()` and then refetch the data. The returned `RefreshReport`
-drives toast warnings:
+The **shell** (`AppShell.svelte`) owns the once-per-session price refresh: on
+mount — on any landing page, including deep links — it calls `refreshPrices()`
+from the shared `$lib/stores/priceRefresh.svelte` store. That store is the
+**single refresh path** for the whole app (the shell's automatic trigger, the
+header control, the Fab and the command palette all go through it), so
+concurrent triggers de-duplicate into one POST and a shared `revision` counter
+lets price-derived pages refetch on completion. The returned `RefreshReport`
+drives the store and the toast warnings:
 
 - `rate_limited` → "Yahoo Finance ha limitato le richieste: alcuni prezzi non
   aggiornati";
 - otherwise `issues.length > 0` → "N aggiornamenti prezzi non riusciti
-  (Yahoo)".
+  (Yahoo)";
+- the plain success toast fires only on manual triggers, and a failed POST
+  tints the header control and surfaces in the quality strip instead of a
+  toast on the automatic run.
 
-The dashboard additionally keeps `finished_at`, `rate_limited` and
-`issues.length` from the report: `finished_at` drives the **`FreshnessStamp`**
-("Prices as of HH:MM") next to the hero value, and the rate-limit/issues
-outcome feeds an actionable chip in the **`DataQualityStrip`** (EPIC K.3a,
-spec §8.5). The "Prices updated: …" header line that used to carry the
-timestamp was folded into the freshness stamp.
-
-This keeps the UI working when it is opened as a deep link without passing
-through the dashboard.
+The outcome is reactive and module-scoped, so it survives SPA navigation:
+`finished_at` drives the always-visible **`PriceRefreshButton`** in the app
+header ("Prices as of HH:MM", clickable to refresh quotes on demand), while
+the rate-limit / issues / failure outcome and the dashboard's `fx_missing_*`
+counters (mirrored in the `vaultStatus` store, seeded by the shell so they are
+available on non-dashboard pages too) feed the **`DataQualityStrip`**, now
+rendered globally as a thin sticky band under the header and shown only when
+something is actionable.
 
 ---
 
@@ -911,14 +919,16 @@ through the dashboard.
 ### `/` — Dashboard (`routes/+page.svelte`)
 
 Called endpoints: `portfolioApi.dashboard()` and
-`portfolioApi.dashboardPerformance(granularity)`, then the session
-`pricesApi.refresh()` + a fresh dashboard and a performance refetch (one
-fetch feeding both the hero value-vs-invested chart and the Performance
-card). The only other calls are the K.3b sparkline histories: once the
-dashboard payload lands, one background `portfolioApi.history(id)` GET per
-portfolio fires in parallel (non-blocking, silent on failure — see the
-portfolio cards below). The scope switcher and the first-run checklist are
-both built from data already carried by the `dashboard()` payload.
+`portfolioApi.dashboardPerformance(granularity)`. The session price refresh
+itself lives in the shell; this page only watches the store's `revision`
+counter and, when a refresh completes, refetches the dashboard payload plus the
+performance buckets (one fetch feeding both the hero value-vs-invested chart
+and the Performance card). The only other calls are the K.3b sparkline
+histories: once the dashboard payload lands, one background
+`portfolioApi.history(id)` GET per portfolio fires in parallel (non-blocking,
+silent on failure — see the portfolio cards below). The scope switcher and the
+first-run checklist are both built from data already carried by the
+`dashboard()` payload.
 
 **Rebuilt around the hero model in EPIC K.3a** (redesign spec §6.1 zones
 A–B, decisions D3/D8/D10); zones C–E (portfolio cards, overall allocation,
@@ -932,17 +942,9 @@ cards gaining a value-history sparkline strip in K.3b (spec §6.1 zone C).
   Choosing a portfolio **navigates** — `goto()` to `/portfolios/{id}`, the
   same analytics at portfolio scope — it is tier-2 scope navigation, not a
   data filter on this page. Rendered only when the vault has portfolios.
-- **`DataQualityStrip`** (new, `domain/DataQualityStrip.svelte`; spec
-  §6.1/§8.5): a thin row of warning-toned **link chips** above the hero,
-  rendered only when something is actionable. Today it consumes
-  `summary.fx_missing_count` / `summary.fx_missing_value` —
-  "{amount} excluded — missing FX ({count} holdings)", linking to
-  `/settings/currencies` — plus the session price-refresh outcome
-  (rate-limited / N failed updates / refresh failed, each linking to
-  `/admin/health`). The missing-sector / missing-country / stale-count chips
-  sketched in the spec are **deliberately not rendered** — those counters
-  are not on the `Dashboard` type; a code comment in the component marks
-  them for a future backend field.
+  (The **`DataQualityStrip`** and the price-freshness control are no longer
+  page-local: they live in the shell/header and are visible on every page —
+  see "The session price refresh" above.)
 - **Zone A — hero card** (replaces the old top Investments table): when the
   response carries `summary`, the page opens with **one hero number** —
   `summary.active.value` (net market value of the open positions) via
@@ -953,14 +955,7 @@ cards gaining a value-history sparkline strip in K.3b (spec §6.1 zone C).
   sign + ▲▼ + colour, D6) with an "all-time" caption. A muted secondary
   chip row follows: **Realized** (`summary.closed.realized`, via
   `PnlValue`), **Dividends** (`summary.active.dividends`) and **Invested**
-  (`summary.active.invested`). The old header "Prices updated: …" line is
-  replaced by the compact **`FreshnessStamp`** (new,
-  `domain/FreshnessStamp.svelte`) under the chips: "Prices as of HH:MM"
-  from the session refresh's `finished_at`, muted normally and `--info`-
-  tinted when the outcome was partial (rate-limit / failed fetches keep
-  their toasts and also surface in the quality strip); while the refresh is
-  in flight it shows a spinning glyph (`role="status"`). The once-per-
-  session refresh semantics are unchanged. Finally the shared
+  (`summary.active.invested`). Finally the shared
   **`InvestmentsTable`** (unchanged component and data: Active/Closed rows
   in the base currency) moved into a progressive-disclosure **Breakdown
   `<details>`** under the chips, so the roll-up stays reachable without
@@ -1120,9 +1115,10 @@ header, the data and the transactions page survive navigation.
 Called endpoints: `portfolioApi.get`, `.summary`,
 `.performanceBuckets`, `.history`, `.classAllocation`, `.geographyAllocation`,
 `.sectorAllocation`, `transactionApi.list(id, { limit, offset, type?, asset_id?,
-from?, to? })`, `transactionApi.create` (undo), `assetApi.list`, then the
-session `pricesApi.refresh(id)` + fresh summary + a performance-buckets
-refetch; the header adds `portfolioApi.exportDoc`,
+from?, to? })`, `transactionApi.create` (undo), `assetApi.list`; the shell's
+session price refresh is watched via `priceRefresh.revision`, and on completion
+this page refetches the summary plus the performance buckets; the header adds
+`portfolioApi.exportDoc`,
 `.delete` (⋯ menu) and reuses `ImportPortfolioModal` (import → full shell
 reload, transactions reset to the first page).
 
@@ -1163,8 +1159,9 @@ transactions which moved to their tabs):
   (default `month`), refetched on every toggle change guarded by a monotonic
   request id (stale responses discarded), a `Spinner` while loading and the
   chart's "No data" empty state on failure. The fetch lives in the layout
-  because the session `pricesApi.refresh(id)` and any transaction mutation
-  refetch the buckets from whichever tab is open (E.9).
+  because the shell's session price refresh (watched via
+  `priceRefresh.revision`) and any transaction mutation refetch the buckets
+  from whichever tab is open (E.9).
 - **Performance history** (secondary view, kept below the percentage chart
   since EPIC I.8 #87): `PositionChart` with a dropdown to switch between the
   portfolio and each asset (splits drawn on the chart); the selection is
@@ -1277,8 +1274,9 @@ list-normalisation helpers (`positiveCountries`/`withoutOther`/
 `exposure-utils.ts` next to the routes, shared by the shell and the tab.
 
 Called endpoints: `assetApi.get`, `.quote`, `pricesApi.byAsset(id)`,
-`assetApi.exposure(id)`, `assetApi.splits(id)`, then the session
-`pricesApi.refresh()` + fresh quote/prices — all unchanged; **new** the
+`assetApi.exposure(id)`, `assetApi.splits(id)`; the shell's session price
+refresh is watched via `priceRefresh.revision` and refetches the quote/prices —
+all unchanged; **new** the
 isolated, non-blocking, silent-on-error `portfolioApi.dashboard()` fetch
 behind "Where held" (below). The tabs add no endpoint that the old page
 didn't call: `assetApi.update`/`.meta`/`.backfillHistory`/`.remove` (now

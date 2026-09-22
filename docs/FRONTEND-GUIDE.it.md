@@ -617,8 +617,8 @@ definisce un insieme di token di colore **semantici** — `background`,
 `surface` = `surface-1` e `surface-raised` = `surface-2`), `muted`,
 `muted-foreground`, `border`, `input`, `ring`, `accent` (+
 `accent-hover`/`accent-foreground`/`accent-text`), `positive`, `negative`,
-`warning`, `info` (+ `info-foreground`, per l'indicazione di freschezza
-prezzi/informativa), `overlay`, `chart-1..12`, `chart-muted`, `chart-grid` —
+`warning`, `info` (+ `info-foreground`, per gli stati informativi come
+l'aggiornamento dei prezzi), `overlay`, `chart-1..12`, `chart-muted`, `chart-grid` —
 mappati su custom property CSS definite in `app.css` (`:root` e `.dark`).
 Poiché i valori sono terne HSL composte con
 `hsl(var(--token) / <alpha-value>)`, i modificatori di opacità funzionano
@@ -795,7 +795,7 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   300 ms da 2 caratteri in su; la selezione naviga semplicemente a `/assets`,
   la creazione resta fuori scope) e **Azioni** (Aggiungi transazione — la
   stessa scorciatoia a portafoglio unico del `Fab` —, Aggiorna prezzi —
-  `pricesApi.refresh()` + i toast `quickActions.*` —, Cambia tema — cicla
+  `refreshPrices()` condiviso dello store + i toast `quickActions.*` —, Cambia tema — cicla
   chiaro → scuro → sistema sullo store del tema —, Attiva/disattiva palette
   CVD — `setCvd` — e Mostra/nascondi barra laterale, solo su desktop, che
   pilota lo stato `collapsed` della shell). La corrispondenza è un matcher
@@ -815,10 +815,12 @@ Tailwind (gli stessi 640/1024px), quindi stato JS e CSS non divergono mai.
   esistenti, e le sezioni dinamiche anticipano negli hint lo stato target dei
   toggle (tema successivo, variante di palette).
 
-`ScopeSwitcher` e `FreshnessStamp` (elencati nella spec sotto K.2) sono arrivati
-con l'hero dell'Overview in **K.3a**, come componenti `domain/`: consumano il
-payload della dashboard, non lo stato della shell. L'intera shell ha
-sostituito il vecchio `Layout.svelte` fisso.
+`ScopeSwitcher` è arrivato con l'hero dell'Overview in **K.3a** come componente
+`domain/` (consuma il payload della dashboard, non lo stato della shell). Anche
+il controllo di aggiornamento dei prezzi e la `DataQualityStrip` sono nati lì, ma ora
+vivono nello shell/header (`PriceRefreshButton`, `DataQualityStrip`) così da
+essere visibili su ogni pagina. L'intera shell ha sostituito il vecchio
+`Layout.svelte` fisso.
 
 ### Icone, toast e lingua
 
@@ -934,25 +936,31 @@ Uno store a rune che contiene `auth.user` e `auth.isLoading`:
 
 ### Il refresh prezzi di sessione
 
-La dashboard, il dettaglio portafoglio e il dettaglio asset usano un flag a
-livello di modulo (`sessionRefreshed`) così da chiamare, **una volta per
-sessione**, `pricesApi.refresh()` e poi rifare il fetch dei dati. Il
-`RefreshReport` restituito guida i toast di avviso:
+Lo **shell** (`AppShell.svelte`) possiede il refresh prezzi una-volta-per-sessione:
+al mount — su qualunque pagina d'ingresso, deep-link inclusi — chiama
+`refreshPrices()` dallo store condiviso `$lib/stores/priceRefresh.svelte`. Quello
+store è il **percorso di refresh unico** dell'app (il trigger automatico dello
+shell, il controllo nell'header, il Fab e la palette comandi passano tutti di
+qui), quindi trigger concorrenti si de-duplicano in una sola POST e un contatore
+`revision` condiviso permette alle pagine che mostrano prezzi di rifare il fetch
+al termine. Il `RefreshReport` restituito guida lo store e i toast di avviso:
 
 - `rate_limited` → "Yahoo Finance ha limitato le richieste: alcuni prezzi non
   aggiornati";
 - altrimenti, se `issues.length > 0` → "N aggiornamenti prezzi non riusciti
-  (Yahoo)".
+  (Yahoo)";
+- il toast di successo semplice scatta solo sui trigger manuali, mentre una
+  POST fallita tinge il controllo nell'header e compare nella strip qualità
+  invece di un toast sul run automatico.
 
-La dashboard conserva inoltre `finished_at`, `rate_limited` e
-`issues.length` dal report: `finished_at` guida lo **`FreshnessStamp`**
-("Prezzi alle HH:MM") accanto al valore dell'hero, e l'esito rate-limit/issues
-alimenta un chip azionabile nella **`DataQualityStrip`** (EPIC K.3a, spec
-§8.5). La riga "Prices updated: …" dell'header che mostrava il timestamp è
-stata assorbita nello freshness stamp.
-
-Questo mantiene l'UI funzionante quando viene aperta come deep-link senza
-passare dalla dashboard.
+L'esito è reattivo e a livello di modulo, quindi sopravvive alla navigazione
+SPA: `finished_at` guida il **`PriceRefreshButton`** sempre visibile nell'header
+("Prezzi alle HH:MM", cliccabile per aggiornare le quotazioni su richiesta),
+mentre l'esito rate-limit / issues / fallimento e i contatori `fx_missing_*`
+della dashboard (rispecchiati nello store `vaultStatus`, seminato dallo shell
+così da essere disponibili anche fuori dalla dashboard) alimentano la
+**`DataQualityStrip`**, ora resa globalmente come sottile banda sticky sotto
+l'header e mostrata solo quando c'è qualcosa da segnalare.
 
 ---
 
@@ -961,15 +969,16 @@ passare dalla dashboard.
 ### `/` — Dashboard (`routes/+page.svelte`)
 
 Endpoint chiamati: `portfolioApi.dashboard()` e
-`portfolioApi.dashboardPerformance(granularity)`, poi il `pricesApi.refresh()`
-di sessione + una dashboard fresca e un refill delle performance (una sola
-chiamata che alimenta sia il grafico "valore vs investito" dell'hero sia la
-card Performance). Le uniche chiamate aggiuntive sono gli storici delle
-sparkline di K.3b: quando il payload della dashboard arriva, partono in
-parallelo e in background uno `portfolioApi.history(id)` GET per portafoglio
-(non bloccanti, silenziose in caso di errore — vedi le card portafogli qui
-sotto). Lo scope switcher e la checklist di primo avvio usano dati già
-presenti nel payload di `dashboard()`.
+`portfolioApi.dashboardPerformance(granularity)`. Il refresh prezzi di sessione
+vive nello shell; questa pagina osserva solo il contatore `revision` dello store
+e, al termine di un refresh, rifà il fetch del payload della dashboard e dei
+bucket di performance (una sola chiamata che alimenta sia il grafico "valore vs
+investito" dell'hero sia la card Performance). Le uniche chiamate aggiuntive
+sono gli storici delle sparkline di K.3b: quando il payload della dashboard
+arriva, partono in parallelo e in background uno `portfolioApi.history(id)` GET
+per portafoglio (non bloccanti, silenziose in caso di errore — vedi le card
+portafogli qui sotto). Lo scope switcher e la checklist di primo avvio usano
+dati già presenti nel payload di `dashboard()`.
 
 **Ricostruita attorno al modello hero in EPIC K.3a** (spec di ridisegno
 §6.1 zone A–B, decisioni D3/D8/D10); le zone C–E (card portafogli,
@@ -984,18 +993,9 @@ storico del valore in K.3b (spec §6.1 zona C).
   Selezionare un portafoglio **naviga** — `goto()` verso `/portfolios/{id}`,
   la stessa analisi a scope portafoglio — è navigazione di secondo livello,
   non un filtro sui dati di questa pagina. Renderizzato solo quando il vault
-  ha portafogli.
-- **`DataQualityStrip`** (nuovo, `domain/DataQualityStrip.svelte`; spec
-  §6.1/§8.5): sottile riga di chip-link su fondo warning sopra l'hero,
-  renderizzata solo quando qualcosa è azionabile. Oggi consuma
-  `summary.fx_missing_count` / `summary.fx_missing_value` — "{amount}
-  esclusi — cambio mancante ({count} posizioni)", con link a
-  `/settings/currencies` — più l'esito del refresh prezzi di sessione
-  (rate-limit / N aggiornamenti falliti / refresh fallito, tutti con link a
-  `/admin/health`). I chip "settori/paesi mancanti" e "prezzi obsoleti"
-  abbozzati nella spec **non sono renderizzati deliberatamente**: quei
-  contatori non fanno parte del tipo `Dashboard`; un commento nel componente
-  li segna come futura richiesta al backend.
+  ha portafogli. (La **`DataQualityStrip`** e il controllo di aggiornamento
+  dei prezzi non sono più locali alla pagina: vivono nello shell/header e sono
+  visibili su ogni pagina — vedi "Il refresh prezzi di sessione" sopra.)
 - **Zona A — card hero** (sostituisce la vecchia tabella Investments in
   cima): quando la risposta porta `summary`, la pagina si apre con **un solo
   numero hero** — `summary.active.value` (valore di mercato netto delle
@@ -1007,17 +1007,10 @@ storico del valore in K.3b (spec §6.1 zona C).
   "complessivo". Seguono i chip secondari muted: **Realizzato**
   (`summary.closed.realized`, via `PnlValue`), **Dividendi**
   (`summary.active.dividends`) e **Investito** (`summary.active.invested`).
-  La vecchia riga "Prices updated: …" dell'header è sostituita dal compatto
-  **`FreshnessStamp`** (nuovo, `domain/FreshnessStamp.svelte`) sotto i chip:
-  "Prezzi alle HH:MM" dal `finished_at` del refresh di sessione, in tono
-  muted normale e colorato di `--info` quando l'esito è parziale (rate-limit
-  e fetch fallite mantengono i toast e compaiono anche nella strip qualità);
-  mentre il refresh è in volo mostra una glifo rotante (`role="status"`). La
-  semantica del refresh una-volta-per-sessione resta invariata. Infine la
-  condivisa **`InvestmentsTable`** (componente e dati invariati: righe
-  Active/Closed in valuta base) è spostata in un **`<details>` "Dettaglio"**
-  a divulgazione progressiva sotto i chip, così il riepilogo resta
-  raggiungibile senza dominare la pagina.
+  Infine la condivisa **`InvestmentsTable`** (componente e dati invariati:
+  righe Active/Closed in valuta base) è spostata in un **`<details>`
+  "Dettaglio"** a divulgazione progressiva sotto i chip, così il riepilogo
+  resta raggiungibile senza dominare la pagina.
 - **Grafico hero** (colonna di destra su desktop, impilato sotto il numero
   sui telefoni): le serie **valore vs investito** — `CapitalChart` alimentato
   dagli **stessi** bucket `dashboardPerformance` della card Performance, nella
@@ -1178,9 +1171,10 @@ sopravvivono alla navigazione.
 Endpoint chiamati: `portfolioApi.get`, `.summary`,
 `.performanceBuckets`, `.history`, `.classAllocation`, `.geographyAllocation`,
 `.sectorAllocation`, `transactionApi.list(id, { limit, offset, type?, asset_id?,
-from?, to? })`, `transactionApi.create` (undo), `assetApi.list`, poi il
-`pricesApi.refresh(id)` di sessione + summary fresco + refill dei bucket di
-performance; l'header aggiunge `portfolioApi.exportDoc`,
+from?, to? })`, `transactionApi.create` (undo), `assetApi.list`; il refresh
+prezzi di sessione dello shell è osservato via `priceRefresh.revision` e al
+termine questa pagina rifà il fetch di summary e bucket di performance; l'header
+aggiunge `portfolioApi.exportDoc`,
 `.delete` (menu ⋯) e riusa `ImportPortfolioModal` (import → refill completo
 della shell, transazioni riportate alla prima pagina).
 
@@ -1223,9 +1217,9 @@ e transazioni, migrate alle rispettive tab):
   al mount (default `month`), refill a ogni cambio del selettore con id di
   richiesta monotònico (le risposte obsolete vengono scartate), `Spinner` in
   caricamento e stato vuoto "No data" del grafico in caso di errore. Il
-  fetch vive nel layout perché il `pricesApi.refresh(id)` di sessione e ogni
-  mutazione di transazioni rifetchano i bucket da qualunque tab sia aperta
-  (E.9).
+  fetch vive nel layout perché il refresh prezzi di sessione dello shell
+  (osservato via `priceRefresh.revision`) e ogni mutazione di transazioni
+  rifetchano i bucket da qualunque tab sia aperta (E.9).
 - **Performance history** (vista secondaria, mantenuta sotto la nuova card
   dall'EPIC I.8 #87): `PositionChart` con un menu a tendina per passare dal
   portafoglio al singolo asset (gli split sono disegnati sul grafico); la
@@ -1344,8 +1338,9 @@ di normalizzazione delle liste (`positiveCountries`/`withoutOther`/
 trasferiti in `exposure-utils.ts` accanto alle rotte, condivisi da shell e tab.
 
 Endpoint chiamati: `assetApi.get`, `.quote`, `pricesApi.byAsset(id)`,
-`assetApi.exposure(id)`, `assetApi.splits(id)`, poi il
-`pricesApi.refresh()` di sessione + quote/prezzi freschi — tutto invariato;
+`assetApi.exposure(id)`, `assetApi.splits(id)`; il refresh prezzi di sessione
+dello shell è osservato via `priceRefresh.revision` e rifà il fetch di
+quote/prezzi — tutto invariato;
 **nuova** la chiamata isolata, non bloccante e silenziosa in caso di errore
 `portfolioApi.dashboard()` dietro "Dove è detenuto" (sotto). Le tab non
 aggiungono alcun endpoint che la vecchia pagina non chiamasse:
