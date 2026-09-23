@@ -143,14 +143,14 @@
 
   function validate(): ErrorBag {
     const next = emptyErrors()
-    if (!form.asset_id) next.asset = 'Select an asset'
-    if (!form.date) next.date = 'Date is required'
+    if (!form.asset_id) next.asset = t('tx.selectAsset')
+    if (!form.date) next.date = t('tx.dateRequired')
     if (isDividend) {
-      if (!(Number(dividendAmount) > 0)) next.amount = 'Amount must be greater than 0'
+      if (!(Number(dividendAmount) > 0)) next.amount = t('tx.amountRequired')
     } else {
-      if (!(Number(form.quantity) > 0)) next.quantity = 'Quantity must be greater than 0'
+      if (!(Number(form.quantity) > 0)) next.quantity = t('tx.quantityRequired')
       if (toStr(form.price) === '' || !(Number(form.price) >= 0)) {
-        next.price = 'Price must be 0 or greater'
+        next.price = t('tx.priceRequired')
       }
     }
     return next
@@ -175,11 +175,11 @@
       } else {
         await transactionApi.create(portfolioId, payload)
       }
-      toast.success(editing ? 'Transaction updated' : 'Transaction added')
+      toast.success(editing ? t('tx.updated') : t('tx.added'))
       open = false
       onsuccess?.()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed'
+      const message = err instanceof Error ? err.message : t('common.saveFailed')
       toast.error(message)
     } finally {
       saving = false
@@ -223,7 +223,7 @@
         },
       })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
+      const message = err instanceof Error ? err.message : t('common.deleteFailed')
       toast.error(message)
     } finally {
       deleting = false
@@ -253,23 +253,23 @@
 {#snippet footer()}
   <div class="flex flex-wrap items-center justify-end gap-2">
     <Button variant="secondary" onclick={requestClose} disabled={saving || deleting}>
-      Cancel
+      {t('common.cancel')}
     </Button>
     {#if editing}
       <!-- D11: one click deletes, the toast's Undo (5 s) puts it back. -->
       <Button variant="danger" onclick={() => void deleteTransaction()} disabled={saving || deleting} loading={deleting}>
-        Delete
+        {t('common.delete')}
       </Button>
     {/if}
     <Button onclick={submit} loading={saving} disabled={deleting}>
-      {editing ? 'Save Changes' : 'Save'}
+      {editing ? t('common.saveChanges') : t('common.save')}
     </Button>
   </div>
 {/snippet}
 
 {#snippet formBody()}
   <div class="grid gap-3 sm:grid-cols-2">
-    <Field label="Asset" for={`${uid}-asset`} error={errors.asset || undefined}>
+    <Field label={t('common.colAsset')} for={`${uid}-asset`} error={errors.asset || undefined}>
       <AssetCombobox
         inputId={`${uid}-asset`}
         bind:value={form.asset_id}
@@ -278,7 +278,7 @@
         disabled={saving || deleting}
       />
     </Field>
-    <Field label="Type">
+    <Field label={t('common.colType')}>
       <Select
         bind:value={form.type}
         oninput={() => {
@@ -287,46 +287,46 @@
           errors.amount = ''
         }}
       >
-        <option value="buy">Buy</option>
-        <option value="sell">Sell</option>
-        <option value="dividend">Dividend</option>
+        <option value="buy">{t('activity.typeBuy')}</option>
+        <option value="sell">{t('activity.typeSell')}</option>
+        <option value="dividend">{t('activity.typeDividend')}</option>
       </Select>
     </Field>
     {#if isDividend}
-      <Field label="Amount" error={errors.amount || undefined}>
+      <Field label={t('tx.amount')} error={errors.amount || undefined}>
         <Input
           type="number"
           step="0.01"
           min="0"
-          placeholder="Amount"
+          placeholder={t('tx.amount')}
           bind:value={dividendAmount}
           error={errors.amount || undefined}
           oninput={() => (errors.amount = '')}
         />
       </Field>
     {:else}
-      <Field label="Quantity" error={errors.quantity || undefined}>
+      <Field label={t('tx.quantity')} error={errors.quantity || undefined}>
         <Input
           type="number"
           step="any"
-          placeholder="Quantity"
+          placeholder={t('tx.quantity')}
           bind:value={form.quantity}
           error={errors.quantity || undefined}
           oninput={() => (errors.quantity = '')}
         />
       </Field>
-      <Field label="Price" error={errors.price || undefined}>
+      <Field label={t('common.colPrice')} error={errors.price || undefined}>
         <Input
           type="number"
           step="0.01"
-          placeholder="Price"
+          placeholder={t('common.colPrice')}
           bind:value={form.price}
           error={errors.price || undefined}
           oninput={() => (errors.price = '')}
         />
       </Field>
     {/if}
-    <Field label="Date" error={errors.date || undefined}>
+    <Field label={t('common.colDate')} error={errors.date || undefined}>
       <Input
         type="date"
         bind:value={form.date}
@@ -334,16 +334,16 @@
         oninput={() => (errors.date = '')}
       />
     </Field>
-    <Field label="Fees">
-      <Input type="number" step="0.01" placeholder="Fees" bind:value={form.fees} />
+    <Field label={t('tx.fees')}>
+      <Input type="number" step="0.01" placeholder={t('tx.fees')} bind:value={form.fees} />
     </Field>
-    <Field label="Notes" class="sm:col-span-2">
-      <Textarea placeholder="Notes" rows={2} bind:value={form.notes} />
+    <Field label={t('tx.notes')} class="sm:col-span-2">
+      <Textarea placeholder={t('tx.notes')} rows={2} bind:value={form.notes} />
     </Field>
   </div>
 
   <div class="mt-4 flex items-baseline justify-end gap-2 text-sm">
-    <span class="text-muted-foreground">Total</span>
+    <span class="text-muted-foreground">{t('common.colTotal')}</span>
     <span class="font-semibold tabular-nums text-foreground">{totalText}</span>
   </div>
 {/snippet}

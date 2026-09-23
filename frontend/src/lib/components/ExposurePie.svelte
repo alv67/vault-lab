@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
   import { Chart } from 'svelte-echarts'
-  import { init, use } from 'echarts/core'
+  import { init, use, type EChartsType } from 'echarts/core'
   import { PieChart } from 'echarts/charts'
   import { TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
@@ -9,6 +9,7 @@
   import type { ExposureRow } from '$lib/services/api'
   import { resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { dismissTooltipOutside } from '$lib/chartTooltip'
   import { resolved } from '$lib/stores/theme.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import ChartTableToggle from '$lib/components/ui/ChartTableToggle.svelte'
@@ -100,10 +101,23 @@
   const showTable = $derived(showTableToggle && view === 'table')
   const caption = $derived(t('chartView.caption', { name: title }))
 
+  // The live ECharts instance (bound via `bind:chart`, refreshed on every
+  // `{#key}` theme re-init). The tap-outside action dismisses the tooltip
+  // through it: on touch there is no hover-out, so a tap would otherwise
+  // leave the tooltip pinned on screen (issue #123).
+  let chartInstance = $state<EChartsType | undefined>(undefined)
+
   const options = $derived.by((): EChartsOption => ({
     color: palette,
     tooltip: {
       trigger: 'item',
+      // Explicit show/dismiss policy (issue #123): 'mousemove|click' is
+      // ECharts' default, but pinning it keeps desktop hover behavior
+      // identical while making the touch-tap toggle intentional; `hideDelay`
+      // lets the tooltip fade shortly after a tap/tap-outside instead of
+      // staying pinned on touch, where there is no hover-out event.
+      triggerOn: 'mousemove|click',
+      hideDelay: 150,
       formatter: (params: unknown) => {
         const p = params as TooltipItem
         // Guard: the synthetic residual slice has an empty name and must never
@@ -167,9 +181,9 @@
       </TBody>
     </Table>
   {:else}
-    <div class="h-[240px] w-full">
+    <div class="h-[240px] w-full" use:dismissTooltipOutside={chartInstance}>
       {#key resolved()}
-        <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+        <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} bind:chart={chartInstance} />
       {/key}
     </div>
     {#if showLegend}

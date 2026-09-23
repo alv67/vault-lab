@@ -137,7 +137,7 @@ func (r *fxRepo) History(ctx context.Context, base, quote string) ([]model.FXRat
 	}
 	defer rows.Close()
 
-	var points []model.FXRatePoint
+	points := make([]model.FXRatePoint, 0)
 	for rows.Next() {
 		var p model.FXRatePoint
 		if err := rows.Scan(&p.Date, &p.Rate); err != nil {

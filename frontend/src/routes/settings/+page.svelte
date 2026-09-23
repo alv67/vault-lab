@@ -3,6 +3,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { auth, updateProfile } from '$lib/stores/auth.svelte'
   import { settingsApi, type Currency } from '$lib/services/api'
+  import { t } from '$lib/i18n/index.svelte'
   import SettingsTabs from '$lib/components/domain/SettingsTabs.svelte'
   import CurrencySelect from '$lib/components/domain/CurrencySelect.svelte'
   import Button from '$lib/components/ui/Button.svelte'
@@ -23,7 +24,7 @@
       const res = await settingsApi.listCurrencies()
       currencies = res.currencies
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load currencies'
+      const message = err instanceof Error ? err.message : t('currencies.loadFailed')
       toast.error(message)
     }
   })
@@ -32,9 +33,9 @@
     savingProfile = true
     try {
       await updateProfile(name, email, baseCurrency)
-      toast.success('Profile updated')
+      toast.success(t('profile.updated'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Update failed'
+      const message = err instanceof Error ? err.message : t('profile.updateFailed')
       toast.error(message)
     } finally {
       savingProfile = false
@@ -43,27 +44,27 @@
 </script>
 
 <div class="p-6">
-  <h1 class="mb-6 text-2xl font-bold">Settings</h1>
+  <h1 class="mb-6 text-2xl font-bold">{t('nav.settings')}</h1>
 
   <SettingsTabs class="mb-6" />
 
   <Card class="max-w-lg p-6">
-    <h2 class="mb-4 font-semibold">Profile</h2>
+    <h2 class="mb-4 font-semibold">{t('settingsTabs.profile')}</h2>
     <div class="space-y-4">
-      <Field label="Name">
+      <Field label={t('chartView.colName')}>
         <Input type="text" bind:value={name} autocomplete="name" />
       </Field>
-      <Field label="Email">
+      <Field label={t('profile.email')}>
         <Input type="email" bind:value={email} autocomplete="email" />
       </Field>
       <Field
-        label="Base currency"
-        hint="Used to consolidate values across portfolios on the dashboard."
+        label={t('profile.baseCurrency')}
+        hint={t('profile.baseCurrencyHint')}
       >
-        <CurrencySelect bind:value={baseCurrency} {currencies} ariaLabel="Base currency" />
+        <CurrencySelect bind:value={baseCurrency} {currencies} ariaLabel={t('profile.baseCurrency')} />
       </Field>
       <Button onclick={saveProfile} disabled={savingProfile || !name || !email}>
-        {savingProfile ? 'Saving...' : 'Save'}
+        {savingProfile ? t('common.saving') : t('common.save')}
       </Button>
     </div>
   </Card>

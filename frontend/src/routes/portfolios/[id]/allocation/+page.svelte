@@ -4,7 +4,7 @@
   import AllocationDrillPanel from '$lib/components/domain/AllocationDrillPanel.svelte'
   import { countryDisplayName } from '$lib/countryNames'
   import { chartSemanticColors } from '$lib/chartPalette'
-  import { ASSET_CLASS_LABELS } from '$lib/format'
+  import { assetClassLabel } from '$lib/format'
   import { t } from '$lib/i18n/index.svelte'
   import { resolved } from '$lib/stores/theme.svelte'
   import {
@@ -96,10 +96,6 @@
     if (!ctx.id) return Promise.reject(new Error(t('drill.error')))
     return portfolioApi.allocationDrill(ctx.id, dim, key)
   }
-  // Friendly class label, same ASSET_CLASS_LABELS table the donut slices use.
-  function classLabel(cls: string): string {
-    return ASSET_CLASS_LABELS[cls] ?? cls
-  }
 </script>
 
 <div class="grid gap-4 lg:grid-cols-2">
@@ -112,7 +108,7 @@
         data={ctx.classAlloc?.classes ?? []}
         currency={ctx.classAlloc?.currency || currency}
         label={t('allocation.assetClasses')}
-        onDrill={(cls) => openDrill('class', cls, classLabel(cls))}
+        onDrill={(cls) => openDrill('class', cls, assetClassLabel(cls))}
       />
     {/if}
   </div>

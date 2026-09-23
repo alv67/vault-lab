@@ -64,7 +64,7 @@ What the product does today, independently of the screens:
 | **Portfolios** | CRUD; per-portfolio currency; JSON export/import (new/overwrite); summary (active/closed); TWR buckets; value history chart (portfolio or single asset, with splits); positions table; paginated transactions (20/page) |
 | **Transactions** | buy/sell/dividend can be created from the UI (split/fee exist in the API, display/edit only); asset combobox; live total; edit/delete with confirm; pagination; refetch of everything affected after a mutation (E.9) |
 | **Assets** | Library shared across portfolios; CRUD; Yahoo lookup/autocomplete; metadata (ticker, ISIN, name, type, currency, exchange, `asset_class`, `price_source` yahoo/manual/none); price chart with in-place zoom (1M/3M/1Y/YTD/MAX) + split markers; quote metrics (1D/1W/1M/1Y/YTD); **3-dimensional exposure** (countries, regions aligned to Morningstar, GICS sectors) with per-dimension **provenance** (manual/JustETF/Morningstar/derived, persisted and dated); non-persistent prefill previews (JustETF/Morningstar/Yahoo); regions derived from countries; Yahoo meta refresh + full history backfill |
-| **Prices** | Refresh once per session (per page family); rate-limit/failure toasts; "Prices updated" timestamp; background worker |
+| **Prices** | Refresh once per session (triggered by the shell on any page); rate-limit/failure toasts; clickable "Prices as of" control in the header + global DataQualityStrip; background worker |
 | **Ops/health** | Price sync health: period selector (Today/24h/last-100), 4 summary metrics, paginated event log, "Refresh now" |
 | **Settings** | Profile (name/email/base currency), password, currency whitelist CRUD, theme (light/dark/system), toasts |
 | **Known next scope** | **EPIC J**: manual price entry in the UI (J.1), fixed-income metadata — maturity/coupon/issuer (J.2), types `cash` + `certificate` (J.3), opt-in FI exposure (J.4), deposit interest accrual (J.5), bond metrics duration/YTM (J.6), **credit-rating allocation** (J.7), pension wrappers (J.8). **EPIC C**: Sharpe, max drawdown, volatility, regression, Monte Carlo. **Phase 3**: portfolio sharing/roles. **Phase 4**: expenses, budget, goals. Pending: cash/deposits–withdrawals (#101), CSV import, autocomplete in the transaction form |
@@ -576,7 +576,7 @@ maintain.
 |---|---|
 | `ui/*` primitives (Button, Card, Modal → restyled as the Dialog/Sheet base, Table primitives, SegmentedControl, StatCard, Badge, EmptyState, Skeleton, Spinner, ConfirmDialog) — solid: extend, don't replace | **Shell**: `layout/BottomNav.svelte`, `layout/Fab.svelte` + `QuickActionSheet.svelte`, `layout/ScopeSwitcher.svelte`, `AppShell` evolved (rail @md, condensing header), `CommandPalette.svelte` |
 | Charts (`PerformanceChart`, `CapitalChart`, `ClassDonut`, `ExposureBarChart`, `ExposurePie`, `PriceChart`, `PositionChart`, `AllocationDonut`) — keep ECharts + tree-shaking; restyle to the new palette/gridline rules | **Data**: `ui/DataTable.svelte` (responsive collapse, sort, sticky head, row-tap), `ui/Drawer.svelte` (right drawer ≥lg: trap, Esc, restore), `ui/Sheet.svelte` (bottom sheet <lg), `ui/Tabs.svelte` (route-linked, ARIA), `ui/AsyncCard.svelte` (loading/error/empty/data + retry), `ui/KpiStrip.svelte` (sticky, condensing), `ui/PnlValue.svelte` (sign+arrow+color, D6), `ui/PeriodChips.svelte`, `ui/FilterChips.svelte`, `ui/Sparkline.svelte` |
-| Domain modals (`AddTransactionModal` → sheet form, `ExposureGeo/SectorModal` logic kept + restyle, `CreatePortfolio/Asset`, `Import`) | **Quality**: `DataQualityStrip.svelte`, `FreshnessStamp.svelte` ("prices as of …"), `ProvenanceBadge` evolved (tap → popover) |
+| Domain modals (`AddTransactionModal` → sheet form, `ExposureGeo/SectorModal` logic kept + restyle, `CreatePortfolio/Asset`, `Import`) | **Quality**: `DataQualityStrip.svelte` (global, under the header), `PriceRefreshButton.svelte` ("prices as of …", header, clickable), `ProvenanceBadge` evolved (tap → popover) |
 | `format.ts`, `ui-colors.ts`, stores (`auth`, `toast`, `theme`), 60s GET cache | **Stores/i18n**: `lib/i18n/` dictionaries + locale store (D1), `scope` store (last scope for the switcher), `command` store (palette), toast gains an **action slot** (Undo, D11), theme store default → `system` (D9) |
 
 ---
@@ -604,8 +604,9 @@ maintain.
 5. **Data-quality & provenance affordances**: a vault-level
    `DataQualityStrip`, shown only when actionable ("€1,204 excluded — missing
    FX (2 assets)", "3 assets without sector", "prices stale 26h"), each chip
-   linking to the fixing surface; `FreshnessStamp` next to the hero ("prices
-   as of 14:32 ⟳"); provenance badges on every exposure panel (tap → source +
+   linking to the fixing surface; a `PriceRefreshButton` in the app header
+   ("prices as of 14:32 ⟳", clickable to refresh) with the strip rendered
+   globally under the header; provenance badges on every exposure panel (tap → source +
    date popover); `no price` badge → "Enter price" inline CTA once J.1 ships.
 6. **Undo over confirm** (D11): transaction delete → toast with ⟲ Undo (5s);
    `ConfirmDialog` only for destructive/irreducible actions (portfolio/asset
@@ -673,7 +674,7 @@ flowchart LR
         f0["i18n IT/EN (D1) ·<br/>theme default→system (D9)"]
     end
     subgraph K2["EPIC K.2 — Adaptive shell"]
-        f3["BottomNav+FAB+QuickAction (D2),<br/>rail@md, condensing header,<br/>ScopeSwitcher (D3), FreshnessStamp,<br/>relocatable Data&Sync entry (D7)"]
+        f3["BottomNav+FAB+QuickAction (D2),<br/>rail@md, condensing header,<br/>ScopeSwitcher (D3), PriceRefreshButton,<br/>relocatable Data&Sync entry (D7)"]
     end
     subgraph K3["EPIC K.3 — Overview rebuild"]
         f4["hero zone, bucket-driven chips (D10),<br/>digest cards, sparkline cards,<br/>DataQualityStrip, checklist (D8)"]
@@ -696,8 +697,8 @@ flowchart LR
 | Phase | Content | Backend asks (for the `backend` agent) |
 |---|---|---|
 | **K.1 Foundations** | Token extensions (elevation ladder, type scale, Inter+mono self-hosted — D5, CVD-considerate chart palette); primitives (DataTable, Drawer/Sheet — D4, Tabs, AsyncCard, KpiStrip, PnlValue — D6, PeriodChips); **i18n layer IT/EN — D1**; **theme default → system — D9** | none |
-| **K.2 Adaptive shell** | BottomNav + FAB + QuickActionSheet (D2), rail @md, condensing sticky header, ScopeSwitcher (D3), FreshnessStamp; nav config with the **relocatable** "Data & Sync" entry (D7) | none |
-| **K.3 Overview rebuild** | Hero zone, bucket-driven period chips (D10), allocation digest, sparkline portfolio cards, DataQualityStrip, first-run checklist (D8) | *(fast-follow)* daily vault series for true 1M/3M ranges (D10) |
+| **K.2 Adaptive shell** | BottomNav + FAB + QuickActionSheet (D2), rail @md, condensing sticky header, ScopeSwitcher (D3), PriceRefreshButton (header, global); nav config with the **relocatable** "Data & Sync" entry (D7) | none |
+| **K.3 Overview rebuild** | Hero zone, bucket-driven period chips (D10), allocation digest, sparkline portfolio cards, DataQualityStrip (global, shell), first-run checklist (D8) | *(fast-follow)* daily vault series for true 1M/3M ranges (D10) |
 | **K.4 Entity tabs** | Nested-route tabs for portfolio/asset; Activity filters (URL state); sheet forms; undo toast (D11); "Where held" | holdings-by-portfolio for an asset (derivable from existing endpoints; a small consolidation endpoint is a nice-to-have) |
 | **K.5 Power layer** | ⌘K palette, drill-down drawers, charts view-as-table, CVD palette toggle (D6) | allocation drill contributions (`dim` + `key` → contributing assets) |
 | **EPIC J integration** | Manual price form + entry history (J.1) with "Enter price" CTAs; FI attributes panel (J.2; J.6 metrics display); type taxonomy with icons incl. `cash`/`certificate` (J.3); credit-rating panel in the Allocation tab (J.7) | already scoped in EPIC J |

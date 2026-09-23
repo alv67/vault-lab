@@ -1,14 +1,15 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
   import { Chart, type ECMouseEvent } from 'svelte-echarts'
-  import { init, use } from 'echarts/core'
+  import { init, use, type EChartsType } from 'echarts/core'
   import { PieChart } from 'echarts/charts'
   import { LegendComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
-  import { ASSET_CLASS_LABELS, formatCurrency, formatPercent } from '$lib/format'
+  import { assetClassLabel, formatCurrency, formatPercent } from '$lib/format'
   import type { AssetClassSlice } from '$lib/services/api'
   import { chartSemanticColors, resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { dismissTooltipOutside } from '$lib/chartTooltip'
   import { resolved } from '$lib/stores/theme.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import { cx } from '$lib/components/ui/utils'
@@ -49,15 +50,18 @@
     onDrill?: (classKey: string) => void
   } = $props()
 
-  // Backend class keys are mapped to friendly labels through the shared
-  // ASSET_CLASS_LABELS table; zero/negative weights are dropped.
+  // Backend class keys are mapped to localized labels through the shared
+  // `assetClassLabel` helper; zero/negative weights are dropped.
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
-  function labelFor(cls: string): string {
-    return ASSET_CLASS_LABELS[cls] ?? cls
-  }
   function isOther(cls: string): boolean {
     return cls.toLowerCase() === 'other'
   }
+
+  // The live ECharts instance (bound via `bind:chart`, refreshed on every
+  // `{#key}` theme re-init). Needed to dismiss the tooltip imperatively:
+  // on touch there is no hover-out, so a tap would otherwise leave the
+  // tooltip pinned above the drill sheet (issue #123).
+  let chartInstance = $state<EChartsType | undefined>(undefined)
 
   // Drill-down click (EPIC K.5, spec §6.5): the svelte-echarts wrapper
   // forwards the ECharts instance `click` event through its `onclick` prop,
@@ -68,7 +72,12 @@
   function handleSliceClick(event: ECMouseEvent): void {
     if (!onDrill || event.componentType !== 'series') return
     const row = rows[event.dataIndex]
-    if (row) onDrill(row.class)
+    if (row) {
+      // Dismiss the tooltip the same tap popped up before opening the
+      // drill panel, so it never lingers over the sheet (issue #123).
+      chartInstance?.dispatchAction({ type: 'hideTip' })
+      onDrill(row.class)
+    }
   }
 
   // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
@@ -95,9 +104,16 @@
     color: palette,
     tooltip: {
       trigger: 'item',
+      // Explicit show/dismiss policy (issue #123): 'mousemove|click' is
+      // ECharts' default, but pinning it keeps desktop hover behavior
+      // identical while making the touch-tap toggle intentional; `hideDelay`
+      // lets the tooltip fade shortly after a tap/tap-outside instead of
+      // staying pinned on touch, where there is no hover-out event.
+      triggerOn: 'mousemove|click',
+      hideDelay: 150,
       formatter: (params: unknown) => {
         const p = params as TooltipItem
-        const row = rows.find((r) => labelFor(r.class) === p.name)
+        const row = rows.find((r) => assetClassLabel(r.class) === p.name)
         if (!row) return ''
         return `${p.marker}${p.name}<br/>${t('chartView.colValue')}: <b>${formatCurrency(row.value, currency)}</b><br/>${t('chartView.colWeight')}: <b>${formatPercent(row.weight)}</b>`
       },
@@ -126,7 +142,7 @@
         // Slice angles come from the amounts, so they stay truthful even when
         // the caller sends weights computed over a different base.
         data: rows.map((r) => ({
-          name: labelFor(r.class),
+          name: assetClassLabel(r.class),
           value: Number(r.value),
           // The aggregated "other" bucket is muted in grey like in the
           // sibling donut charts.
@@ -172,9 +188,9 @@
     <TBody class="max-sm:block">
       {#each rows as r (r.class)}
         <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-          <!-- Friendly class label, same mapping the slice names use. -->
+          <!-- Localized class label, same mapping the slice names use. -->
           <Td class="max-sm:col-span-2 max-sm:py-0.5 font-medium break-words">
-            {labelFor(r.class)}
+            {assetClassLabel(r.class)}
           </Td>
           <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">
             {formatCurrency(r.value, currency)}
@@ -185,16 +201,19 @@
     </TBody>
   </Table>
 {:else}
-  <div class="h-[280px] w-full">
+  <div class="h-[280px] w-full" use:dismissTooltipOutside={chartInstance}>
     {#key resolved()}
       <!-- `onclick` is the svelte-echarts wrapper's ECharts event prop (it
            registers `chart.on('click')` at init), so the drill-down binding
-           is re-created together with each re-initialised instance. -->
+           is re-created together with each re-initialised instance;
+           `bind:chart` keeps `chartInstance` pointed at the live instance
+           so the tooltip can be dismissed imperatively (issue #123). -->
       <Chart
         {init}
         {options}
         theme={VAULTLAB_CHART_THEMES[resolved()]}
         onclick={handleSliceClick}
+        bind:chart={chartInstance}
       />
     {/key}
   </div>

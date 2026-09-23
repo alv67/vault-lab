@@ -67,7 +67,7 @@ Cosa fa oggi il prodotto, indipendentemente dalle schermate:
 | **Portafogli** | CRUD; valuta per portafoglio; export/import JSON (nuovo/sovrascrittura); summary (attivo/chiuso); bucket TWR; grafico dello storico valore (portafoglio o singolo asset, con split); tabella posizioni; transazioni paginate (20/pagina) |
 | **Transazioni** | buy/sell/dividend creabili dalla UI (split/fee esistono nelle API, solo visualizzazione/modifica); combobox asset; totale live; modifica/eliminazione con conferma; paginazione; refetch di tutto ciò che è coinvolto dopo una mutazione (E.9) |
 | **Asset** | Libreria condivisa tra portafogli; CRUD; lookup/autocomplete Yahoo; metadati (ticker, ISIN, nome, tipo, valuta, exchange, `asset_class`, `price_source` yahoo/manual/none); grafico prezzi con zoom in-place (1M/3M/1Y/YTD/MAX) + marcatori di split; metriche di quotazione (1G/1S/1M/1Y/YTD); **esposizione a 3 dimensioni** (paesi, regioni allineate a Morningstar, settori GICS) con **provenienza** per dimensione (manuale/JustETF/Morningstar/derivata, persistita e datata); anteprime di prefill non persistenti (JustETF/Morningstar/Yahoo); regioni derivate dai paesi; refresh meta da Yahoo + backfill storico completo |
-| **Prezzi** | Refresh una volta per sessione (per famiglia di pagine); toast su rate-limit/fallimenti; timestamp "Prices updated"; worker in background |
+| **Prezzi** | Refresh una volta per sessione (avviato dallo shell su ogni pagina); toast su rate-limit/fallimenti; controllo "Prezzi alle" cliccabile nell'header + DataQualityStrip globale; worker in background |
 | **Ops/health** | Health del sync prezzi: selettore periodo (Oggi/24h/ultimi-100), 4 metriche di sintesi, log eventi paginato, "Refresh now" |
 | **Impostazioni** | Profilo (nome/email/valuta base), password, CRUD whitelist valute, tema (light/dark/system), toast |
 | **Scope futuro noto** | **EPIC J**: inserimento prezzo manuale in UI (J.1), metadati fixed income — scadenza/cedola/emittente (J.2), tipi `cash` + `certificate` (J.3), esposizione FI opt-in (J.4), maturazione interessi conti deposito (J.5), metriche bond duration/YTM (J.6), **allocazione per merito di credito** (J.7), wrapper pensionistici (J.8). **EPIC C**: Sharpe, max drawdown, volatilità, regressione, Monte Carlo. **Fase 3**: condivisione portafogli/ruoli. **Fase 4**: spese, budget, obiettivi. In sospeso: capitale disponibile/versamenti-prelievi (#101), import CSV, autocomplete nel form transazioni |
@@ -589,7 +589,7 @@ trovi `sveltekit-i18n`/Paraglide più economico da mantenere.
 |---|---|
 | Primitive `ui/*` (Button, Card, Modal → restyling come base Dialog/Sheet, primitive Table, SegmentedControl, StatCard, Badge, EmptyState, Skeleton, Spinner, ConfirmDialog) — solide: estendere, non sostituire | **Shell**: `layout/BottomNav.svelte`, `layout/Fab.svelte` + `QuickActionSheet.svelte`, `layout/ScopeSwitcher.svelte`, `AppShell` evoluta (rail @md, header che si condensa), `CommandPalette.svelte` |
 | Grafici (`PerformanceChart`, `CapitalChart`, `ClassDonut`, `ExposureBarChart`, `ExposurePie`, `PriceChart`, `PositionChart`, `AllocationDonut`) — mantenere ECharts + tree-shaking; restyling secondo le nuove regole di palette/griglie | **Dati**: `ui/DataTable.svelte` (collapse responsive, ordinamento, head sticky, row-tap), `ui/Drawer.svelte` (drawer destro ≥lg: trap, Esc, restore), `ui/Sheet.svelte` (bottom sheet <lg), `ui/Tabs.svelte` (collegate alle rotte, ARIA), `ui/AsyncCard.svelte` (loading/errore/vuoto/dati + retry), `ui/KpiStrip.svelte` (sticky, condensabile), `ui/PnlValue.svelte` (segno+freccia+colore, D6), `ui/PeriodChips.svelte`, `ui/FilterChips.svelte`, `ui/Sparkline.svelte` |
-| Modali di dominio (`AddTransactionModal` → form sheet, logica di `ExposureGeo/SectorModal` mantenuta + restyling, `CreatePortfolio/Asset`, `Import`) | **Qualità**: `DataQualityStrip.svelte`, `FreshnessStamp.svelte` ("prezzi al …"), `ProvenanceBadge` evoluto (tap → popover) |
+| Modali di dominio (`AddTransactionModal` → form sheet, logica di `ExposureGeo/SectorModal` mantenuta + restyling, `CreatePortfolio/Asset`, `Import`) | **Qualità**: `DataQualityStrip.svelte` (globale, sotto l'header), `PriceRefreshButton.svelte` ("prezzi al …", header, cliccabile), `ProvenanceBadge` evoluto (tap → popover) |
 | `format.ts`, `ui-colors.ts`, store (`auth`, `toast`, `theme`), cache GET 60s | **Store/i18n**: dizionari `lib/i18n/` + store locale (D1), store `scope` (ultimo scope per lo switcher), store `command` (palette), toast con **action slot** (Undo, D11), theme store default → `system` (D9) |
 
 ---
@@ -621,8 +621,9 @@ trovi `sveltekit-i18n`/Paraglide più economico da mantenere.
 5. **Affordance di qualità dati e provenienza**: una `DataQualityStrip` a
    livello vault, mostrata solo quando azionabile ("€1,204 esclusi — FX
    mancante (2 asset)", "3 asset senza settore", "prezzi stale da 26h"), ogni
-   chip collegato alla superficie di correzione; `FreshnessStamp` accanto
-   all'hero ("prezzi al 14:32 ⟳"); badge di provenienza su ogni pannello di
+   chip collegato alla superficie di correzione; un `PriceRefreshButton`
+   nell'header ("prezzi al 14:32 ⟳", cliccabile per aggiornare) con la strip
+   resa globalmente sotto l'header; badge di provenienza su ogni pannello di
    esposizione (tap → popover fonte + data); badge `no price` → CTA inline
    "Inserisci prezzo" quando J.1 sarà rilasciata.
 6. **Undo al posto della conferma** (D11): elimina transazione → toast con ⟲
@@ -699,7 +700,7 @@ flowchart LR
         f0["i18n IT/EN (D1) ·<br/>tema default→system (D9)"]
     end
     subgraph K2["EPIC K.2 — Shell adattiva"]
-        f3["BottomNav+FAB+QuickAction (D2),<br/>rail@md, header che si condensa,<br/>ScopeSwitcher (D3), FreshnessStamp,<br/>voce Dati&Sync spostabile (D7)"]
+        f3["BottomNav+FAB+QuickAction (D2),<br/>rail@md, header che si condensa,<br/>ScopeSwitcher (D3), PriceRefreshButton,<br/>voce Dati&Sync spostabile (D7)"]
     end
     subgraph K3["EPIC K.3 — Rebuild Overview"]
         f4["zona hero, chip bucket-driven (D10),<br/>card digest, card con sparkline,<br/>DataQualityStrip, checklist (D8)"]
@@ -722,8 +723,8 @@ flowchart LR
 | Fase | Contenuto | Richieste backend (per l'agente `backend`) |
 |---|---|---|
 | **K.1 Fondamenta** | Estensioni token (scala di elevazione, scala tipografica, Inter+mono self-hosted — D5, palette grafici CVD-considerate); primitive (DataTable, Drawer/Sheet — D4, Tabs, AsyncCard, KpiStrip, PnlValue — D6, PeriodChips); **layer i18n IT/EN — D1**; **tema default → system — D9** | nessuna |
-| **K.2 Shell adattiva** | BottomNav + FAB + QuickActionSheet (D2), rail @md, header sticky che si condensa, ScopeSwitcher (D3), FreshnessStamp; config nav con la voce **spostabile** "Dati & Sync" (D7) | nessuna |
-| **K.3 Rebuild Overview** | Zona hero, chip periodo bucket-driven (D10), sintesi allocazione, card portafogli con sparkline, DataQualityStrip, checklist primo utilizzo (D8) | *(fast-follow)* serie vault giornaliera per range 1M/3M veri (D10) |
+| **K.2 Shell adattiva** | BottomNav + FAB + QuickActionSheet (D2), rail @md, header sticky che si condensa, ScopeSwitcher (D3), PriceRefreshButton (header, globale); config nav con la voce **spostabile** "Dati & Sync" (D7) | nessuna |
+| **K.3 Rebuild Overview** | Zona hero, chip periodo bucket-driven (D10), sintesi allocazione, card portafogli con sparkline, DataQualityStrip (globale, shell), checklist primo utilizzo (D8) | *(fast-follow)* serie vault giornaliera per range 1M/3M veri (D10) |
 | **K.4 Tab delle entità** | Tab a nested route per portafoglio/asset; filtri Attività (stato URL); form sheet; toast undo (D11); "Dove è detenuto" | holding-per-portafoglio di un asset (derivabile dagli endpoint esistenti; un piccolo endpoint di consolidamento è un nice-to-have) |
 | **K.5 Power layer** | Palette ⌘K, drawer di drill-down, vista tabella dei grafici, toggle palette CVD (D6) | contributi drill allocazione (`dim` + `key` → asset che contribuiscono) |
 | **Integrazione EPIC J** | Form prezzo manuale + storico inserimenti (J.1) con CTA "Inserisci prezzo"; pannello attributi FI (J.2; display metriche J.6); tassonomia tipi con icone incl. `cash`/`certificate` (J.3); pannello rating di credito nella tab Allocazione (J.7) | già nello scope dell'EPIC J |

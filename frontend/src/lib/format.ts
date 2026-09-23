@@ -1,3 +1,5 @@
+import { t, type MessageKey } from '$lib/i18n/index.svelte'
+
 const currencySymbols: Record<string, string> = {
   USD: '$',
   EUR: '€',
@@ -46,32 +48,71 @@ export function formatSignedPercent(value: number | string): string {
   return `${val > 0 ? '+' : ''}${val.toFixed(2)}%`
 }
 
-// Etichette italiane per le classi di asset (valore backend → label UI).
-export const ASSET_CLASS_LABELS: Record<string, string> = {
-  equity: 'Azioni',
-  bond: 'Obbligazioni',
-  commodity: 'Materie prime',
-  currency: 'Valute',
-  crypto: 'Crypto',
-  real_estate: 'Immobiliare',
-  mixed: 'Misto',
-  other: 'Altro',
+// ── Localized asset vocabulary (types, classes, price sources) ──────────────
+// Raw backend values render through the active locale via `t()`, so chips,
+// quick facts, selects and donut slices all follow the interface language.
+
+/** Type values offered by the Type selects (Data tab + create-asset modal).
+ * The stored enum is wider — the backend also accepts `cash` — and any value
+ * outside the selects still gets a localized label from the tables below. */
+export const ASSET_TYPES = ['stock', 'etf', 'bond', 'mutual_fund', 'crypto', 'commodity'] as const
+
+/** Class values offered by the Data-tab Class select. */
+export const ASSET_CLASSES = [
+  'equity',
+  'bond',
+  'commodity',
+  'currency',
+  'crypto',
+  'real_estate',
+  'mixed',
+  'other',
+] as const
+
+const ASSET_TYPE_KEYS: Record<string, MessageKey> = {
+  stock: 'asset.typeStock',
+  etf: 'asset.typeEtf',
+  bond: 'asset.typeBond',
+  mutual_fund: 'asset.typeMutualFund',
+  crypto: 'asset.typeCrypto',
+  commodity: 'asset.typeCommodity',
+  cash: 'asset.typeCash',
 }
 
-// Etichette dei tipi asset (stesse coppie valore/label del form "Type" della
-// pagina asset pre-K.4b): centralizzate perché header, quick facts e select
-// del tab Data le leggano tutte dalla stessa mappa.
-export const ASSET_TYPE_LABELS: Record<string, string> = {
-  stock: 'Stock',
-  etf: 'ETF',
-  bond: 'Bond',
-  mutual_fund: 'Mutual fund',
-  crypto: 'Crypto',
-  commodity: 'Commodity',
+const ASSET_CLASS_KEYS: Record<string, MessageKey> = {
+  equity: 'asset.classEquity',
+  bond: 'asset.classBond',
+  commodity: 'asset.classCommodity',
+  currency: 'asset.classCurrency',
+  crypto: 'asset.classCrypto',
+  real_estate: 'asset.classRealEstate',
+  mixed: 'asset.classMixed',
+  other: 'asset.classOther',
 }
 
-export const PRICE_SOURCE_LABELS: Record<string, string> = {
-  yahoo: 'Yahoo Finance',
-  manual: 'Prezzo manuale',
-  none: 'Nessun prezzo',
+const PRICE_SOURCE_KEYS: Record<string, MessageKey> = {
+  yahoo: 'asset.priceSourceYahoo',
+  manual: 'asset.priceSourceManual',
+  none: 'asset.priceSourceNone',
+}
+
+/** Resolve a raw backend value to its localized label; values absent from
+ * the table fall back to the raw string so nothing ever disappears. The
+ * `t()` call reads the reactive locale, so callers re-render on language
+ * changes. */
+function localizedValue(keys: Record<string, MessageKey>, value: string): string {
+  const key = keys[value]
+  return key === undefined ? value : t(key)
+}
+
+export function assetTypeLabel(type: string): string {
+  return localizedValue(ASSET_TYPE_KEYS, type)
+}
+
+export function assetClassLabel(cls: string): string {
+  return localizedValue(ASSET_CLASS_KEYS, cls)
+}
+
+export function priceSourceLabel(source: string): string {
+  return localizedValue(PRICE_SOURCE_KEYS, source)
 }

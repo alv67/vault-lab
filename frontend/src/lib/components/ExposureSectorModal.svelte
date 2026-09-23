@@ -99,8 +99,8 @@
             <button
               onclick={prefillSectorsFromETF}
               disabled={fetchingETF || assetType !== 'etf'}
-              title="Prefill da JustETF"
-              aria-label="Prefill settori da JustETF"
+              title={t('exposure.prefillJustEtf')}
+              aria-label={t('exposure.prefillSectorsJustEtf')}
               class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if fetchingETF}
@@ -116,8 +116,8 @@
             <button
               onclick={prefillSectorsFromYahoo}
               disabled={prefilling}
-              title="Prefill da Yahoo"
-              aria-label="Prefill settori da Yahoo"
+              title={t('exposure.prefillYahoo')}
+              aria-label={t('exposure.prefillSectorsYahoo')}
               class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if prefilling}
@@ -133,8 +133,8 @@
             <button
               onclick={prefillSectorsFromMorningstar}
               disabled={fetchingMorningstar || assetType !== 'etf'}
-              title="Prefill da Morningstar"
-              aria-label="Prefill settori da Morningstar"
+              title={t('exposure.prefillMorningstar')}
+              aria-label={t('exposure.prefillSectorsMorningstar')}
               class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               {#if fetchingMorningstar}
@@ -154,8 +154,8 @@
             <table class="w-full text-left text-sm">
               <thead>
                 <tr class="border-b border-border text-muted-foreground">
-                  <th class="pb-2">Settore GICS</th>
-                  <th class="pb-2 text-right">Peso %</th>
+                  <th class="pb-2">{t('exposure.gicsSector')}</th>
+                  <th class="pb-2 text-right">{t('exposure.colWeightPct')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -187,7 +187,7 @@
                   </tr>
                 {/each}
                 <tr class="border-t border-border font-semibold">
-                  <td class="py-2">Totale</td>
+                  <td class="py-2">{t('common.colTotal')}</td>
                   <td class="py-2 text-right tabular-nums {sectorsValid ? 'text-positive' : 'text-negative'}">
                     {sumSectors.toFixed(2)}%
                   </td>
@@ -196,7 +196,7 @@
             </table>
             {#if !sectorsValid}
               <p class="mt-2 text-sm text-negative">
-                La somma dei pesi deve essere 100 (±0.5) — attuale: {sumSectors.toFixed(2)}%
+                {t('exposure.sumMustBe100', { pct: sumSectors.toFixed(2) })}
               </p>
             {/if}
           </div>
@@ -218,7 +218,7 @@
             disabled={!sectorsValid || savingSectors}
             class="rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
           >
-            {savingSectors ? 'Salvataggio...' : 'Salva'}
+            {savingSectors ? t('common.saving') : t('common.save')}
           </button>
         </div>
       </div>

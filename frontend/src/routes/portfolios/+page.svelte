@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { resolve } from '$app/paths'
   import { toast } from '$lib/stores/toast.svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import { portfolioApi, settingsApi, type Portfolio, type Currency } from '$lib/services/api'
   import { Plus, ExternalLink, Upload } from 'lucide-svelte'
   import Button from '$lib/components/ui/Button.svelte'
@@ -28,7 +29,7 @@
       portfolios = portfolioList
       currencies = curList.currencies
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load portfolios'
+      const message = err instanceof Error ? err.message : t('portfolio.loadFailed')
       toast.error(message)
     } finally {
       loading = false
@@ -50,9 +51,9 @@
     try {
       await portfolioApi.delete(portfolioToDelete)
       portfolios = await portfolioApi.list()
-      toast.success('Portfolio deleted')
+      toast.success(t('portfolio.deleted'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
+      const message = err instanceof Error ? err.message : t('common.deleteFailed')
       toast.error(message)
     } finally {
       deleting = false
@@ -63,27 +64,27 @@
 {#snippet createAction()}
   <Button onclick={() => (showCreate = true)}>
     <Plus class="h-4 w-4" />
-    New Portfolio
+    {t('portfolio.new')}
   </Button>
 {/snippet}
 
 <div class="p-6">
   <div class="mb-6 flex items-center justify-between">
-    <h1 class="text-2xl font-bold">Portfolios</h1>
+    <h1 class="text-2xl font-bold">{t('nav.portfolios')}</h1>
     <div class="flex items-center gap-2">
       <Button variant="secondary" onclick={() => (showImport = true)}>
         <Upload class="h-4 w-4" />
-        Import
+        {t('portfolio.import')}
       </Button>
       <Button onclick={() => (showCreate = true)}>
         <Plus class="h-4 w-4" />
-        New Portfolio
+        {t('portfolio.new')}
       </Button>
     </div>
   </div>
 
   {#if loading}
-    <p class="text-muted-foreground">Loading...</p>
+    <p class="text-muted-foreground">{t('common.loading')}</p>
   {:else}
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each portfolios ?? [] as p (p.id)}
@@ -95,7 +96,7 @@
             </div>
             <a
               href={resolve(`/portfolios/${p.id}`)}
-              aria-label={`Open ${p.name}`}
+              aria-label={t('portfolio.openNamed', { name: p.name })}
               class="text-accent-text hover:underline"
             >
               <ExternalLink class="h-4 w-4" />
@@ -108,15 +109,15 @@
             onclick={() => requestDeletePortfolio(p.id)}
             class="text-xs text-negative hover:underline"
           >
-            Delete
+            {t('common.delete')}
           </button>
         </Card>
       {/each}
       {#if (portfolios ?? []).length === 0}
         <EmptyState
           class="col-span-full"
-          title="No portfolios yet"
-          description="Create one to get started"
+          title={t('portfolio.emptyTitle')}
+          description={t('portfolio.emptyHint')}
           action={createAction}
         />
       {/if}
@@ -135,10 +136,10 @@
 <ConfirmDialog
   bind:open={showDeleteDialog}
   variant="danger"
-  title="Delete portfolio"
-  message="Delete this portfolio?"
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
+  title={t('portfolio.delete')}
+  message={t('portfolio.deleteQuestion')}
+  confirmLabel={t('common.delete')}
+  cancelLabel={t('common.cancel')}
   loading={deleting}
   onconfirm={deletePortfolio}
 />

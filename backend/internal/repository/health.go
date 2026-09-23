@@ -45,7 +45,7 @@ func (r *healthRepo) GetEventsPage(ctx context.Context, limit, offset int) ([]*m
 	}
 	defer rows.Close()
 
-	var events []*model.HealthEvent
+	events := make([]*model.HealthEvent, 0)
 	for rows.Next() {
 		e := &model.HealthEvent{}
 		var assetID *uuid.UUID

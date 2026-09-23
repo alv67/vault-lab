@@ -19,12 +19,13 @@ import type { TransactionFilters } from './tx-filters'
  * The layout OWNS all data loading: the portfolio payload, the summary,
  * the transactions page (EPIC I.9 pagination), the monthly/annual TWR
  * buckets (EPIC I.8), the value history, the three allocation endpoints
- * (EPIC I.7), the once-per-session `pricesApi.refresh(id)` and every
- * post-mutation refetch (E.9). The tabs read the same reactive state
- * through the getters below — nothing is ever fetched twice — and hand
- * user intents (pagination, add/edit transaction) back through the
- * methods. View-level derivations (position rows, exposure-bar rows,
- * coverage notes) are re-computed inside the tab that renders them.
+ * (EPIC I.7), the summary/performance refetch that follows the shell's
+ * session price refresh, and every post-mutation refetch (E.9). The tabs
+ * read the same reactive state through the getters below — nothing is
+ * ever fetched twice — and hand user intents (pagination, add/edit
+ * transaction) back through the methods. View-level derivations
+ * (position rows, exposure-bar rows, coverage notes) are re-computed
+ * inside the tab that renders them.
  *
  * The state members are getters on purpose: they proxy the layout's
  * `$state`, and only reads performed *in the tab* register as that tab's

@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import { X } from 'lucide-svelte'
   import Button from './Button.svelte'
-  import { cx } from './utils'
+  import { cx, OVERLAY_OPEN_GRACE_MS } from './utils'
 
   /**
    * Accessible modal dialog (EPIC D.2).
@@ -63,6 +63,10 @@
   let panel = $state<HTMLDivElement | null>(null)
   let lastFocused: HTMLElement | null = null
 
+  // Timestamp of the last open, used to swallow the synthetic click a touch
+  // tap fires right after opening (click-through — see utils).
+  let openedAt = 0
+
   const FOCUSABLE =
     'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -73,8 +77,11 @@
   }
 
   function handleBackdropClick(event: MouseEvent): void {
-    // Only clicks that land on the overlay itself (not bubbled from the panel).
-    if (event.target === event.currentTarget) close()
+    // Only clicks that land on the overlay itself (not bubbled from the panel),
+    // and not the ghost click that immediately follows the opening tap.
+    if (event.target !== event.currentTarget) return
+    if (performance.now() - openedAt < OVERLAY_OPEN_GRACE_MS) return
+    close()
   }
 
   function handleWindowKeydown(event: KeyboardEvent): void {
@@ -105,6 +112,7 @@
   // which a plain `else` branch would miss.
   $effect(() => {
     if (!open) return
+    openedAt = performance.now()
     lastFocused =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     document.body.style.overflow = 'hidden'

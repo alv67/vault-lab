@@ -182,14 +182,16 @@ vault-lab/
 
 ---
 
-## Stato attuale (21 Set 2026)
+## Stato attuale (23 Set 2026)
 
-**Release v0.6.0** pubblicata su `main` (redesign UX/UI, EPIC K: fondazioni token/font/tema,
-shell adattiva, dashboard con hero, pagine portafoglio/asset a tab, i18n IT/EN, command palette,
-vista tabella dei grafici, palette CVD, drill-down delle allocazioni).
+**Release v0.6.1** pubblicata su `main` (bug release: stato aggiornamento prezzi globale
+nell'header — stampa cliccabile e fascia qualità dati su ogni pagina —, traduzione completa IT/EN
+delle schermate rimanenti, fix UX mobile di menu entità, drill-down allocazioni, tooltip grafici e
+command palette).
 Precedenti release: **v0.1.0** (25 Ago 2026), **v0.2.0** (30 Ago 2026, EPIC A + EPIC B),
 **v0.3.0** (11 Set 2026, asset editing overhaul), **v0.4.0** (13 Set 2026, design system & dark
-mode, EPIC D/E) e **v0.5.0** (17 Set 2026, EPIC I — dashboard & portfolio v2).
+mode, EPIC D/E), **v0.5.0** (17 Set 2026, EPIC I — dashboard & portfolio v2) e **v0.6.0**
+(21 Set 2026, EPIC K — redesign UX/UI).
 
 Fase 0 e Fase 1 completate (incluso EPIC A — data correctness & security). Lo sviluppo attivo
 procede su `develop`. Realizzate in EPIC B: la **pagina dettaglio asset** (#45, B.10),

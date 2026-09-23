@@ -15,6 +15,7 @@
   import { chartSemanticColors, resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
+  import { t } from '$lib/i18n/index.svelte'
 
   use([LineChart, DataZoomComponent, GridComponent, MarkLineComponent, TooltipComponent, CanvasRenderer])
 
@@ -103,7 +104,7 @@
     },
     series: [
       {
-        name: 'close',
+        name: t('chartView.seriesClose'),
         type: 'line',
         data: series.map((p) => [p.date, parseFloat(p.close)]),
         connectNulls: true,
@@ -125,7 +126,7 @@
                 },
                 data: splits.map((s) => ({
                   xAxis: new Date(s.date).getTime(),
-                  name: `Split ${s.ratio}`,
+                  name: t('chartView.splitRatio', { ratio: s.ratio }),
                 })),
               },
             }
@@ -137,7 +138,7 @@
 
 {#if series.length === 0}
   <div class="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
-    Nessun dato prezzi disponibile
+    {t('chartView.noPriceData')}
   </div>
 {:else}
   <div class="h-[340px] w-full">

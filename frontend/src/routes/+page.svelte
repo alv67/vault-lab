@@ -1,13 +1,8 @@
-<script module lang="ts">
-  let sessionRefreshed = false
-</script>
-
 <script lang="ts">
   import { onMount } from 'svelte'
   import { resolve } from '$app/paths'
   import {
     portfolioApi,
-    pricesApi,
     type AllocationDrill,
     type AllocationDrillDim,
     type Dashboard,
@@ -15,13 +10,12 @@
     type DashboardPerformance,
     type PortfolioPerformanceSummary,
   } from '$lib/services/api'
-  import { toast } from '$lib/stores/toast.svelte'
+  import { priceRefresh } from '$lib/stores/priceRefresh.svelte'
+  import { applyDashboardStatus } from '$lib/stores/vaultStatus.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import AllocationDonut from '$lib/components/domain/AllocationDonut.svelte'
   import CapitalChart from '$lib/components/domain/CapitalChart.svelte'
-  import DataQualityStrip from '$lib/components/domain/DataQualityStrip.svelte'
   import FirstRunChecklist from '$lib/components/domain/FirstRunChecklist.svelte'
-  import FreshnessStamp from '$lib/components/domain/FreshnessStamp.svelte'
   import InvestmentsTable from '$lib/components/domain/InvestmentsTable.svelte'
   import PerformanceChart from '$lib/components/domain/PerformanceChart.svelte'
   import ScopeSwitcher from '$lib/components/domain/ScopeSwitcher.svelte'
@@ -46,22 +40,12 @@
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
   import { ChevronDown } from 'lucide-svelte'
-  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
+  import { formatCurrency, formatPercent, assetClassLabel } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
 
   let dash = $state<Dashboard | null>(null)
   let alloc = $state<DashboardAllocation | null>(null)
   let loading = $state(true)
-
-  // Session price-refresh outcome (EPIC K.3a, spec §8.8): the timestamp and
-  // the partial/failed flags feed the `FreshnessStamp` and the
-  // `DataQualityStrip`; the once-per-session semantics and the toasts are
-  // unchanged.
-  let lastUpdate = $state('')
-  let refreshing = $state(false)
-  let refreshRateLimited = $state(false)
-  let refreshIssueCount = $state(0)
-  let refreshFailed = $state(false)
 
   // Performance buckets (EPIC I.3): vault-wide percentage return and
   // invested-capital series in the base currency, monthly by default,
@@ -71,10 +55,10 @@
   let perf = $state<DashboardPerformance | null>(null)
   let perfLoading = $state(true)
   let granularity = $state<'month' | 'year'>('month')
-  const perfItems = [
-    { value: 'month', label: 'Monthly' },
-    { value: 'year', label: 'Annual' },
-  ]
+  const perfItems = $derived([
+    { value: 'month', label: t('performance.monthly') },
+    { value: 'year', label: t('performance.annual') },
+  ])
 
   // SegmentedControl binds a plain string; the accessors keep the union type.
   function getGranularity(): string {
@@ -159,6 +143,9 @@
   onMount(async () => {
     try {
       dash = await portfolioApi.dashboard()
+      // Feed the global quality strip counters (the shell seeds them on
+      // mount; here they stay as fresh as the payload below).
+      if (dash) applyDashboardStatus(dash)
     } catch {
       dash = null
     } finally {
@@ -173,39 +160,32 @@
     } catch {
       alloc = null
     }
+  })
 
-    if (!sessionRefreshed) {
-      sessionRefreshed = true
-      refreshing = true
-      pricesApi
-        .refresh()
-        .then((report) => {
-          lastUpdate = report.finished_at
-          refreshRateLimited = report.rate_limited
-          refreshIssueCount = report.issues.length
-          if (report.rate_limited) {
-            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
-          } else if (report.issues.length > 0) {
-            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
-          }
-          return portfolioApi.dashboard()
-        })
-        .then((fresh) => {
-          dash = fresh
-          // The POST above cleared the GET cache and new prices can move the
-          // performance buckets: refresh the one fetch feeding both the hero
-          // chart and the Performance card.
-          void loadPerformance(granularity)
-        })
-        .catch(() => {
-          // Keep current data; the failure is now surfaced persistently by
-          // the freshness stamp + quality strip, not only as a toast.
-          refreshFailed = true
-        })
-        .finally(() => {
-          refreshing = false
-        })
+  // The once-per-session price refresh now lives in the shell; this page
+  // just listens for its completion (any trigger — auto, header, Fab,
+  // palette — bumps `revision`) and refetches the price-derived payloads:
+  // the POST cleared the GET cache and new prices move both the dashboard
+  // totals and the performance buckets. `seenRefresh` is deliberately NOT
+  // `$state`: it is the effect's private baseline, seeded at page init so
+  // the mount never self-refetches.
+  async function reloadAfterRefresh(): Promise<void> {
+    try {
+      const fresh = await portfolioApi.dashboard()
+      dash = fresh
+      if (fresh) applyDashboardStatus(fresh)
+    } catch {
+      // Keep current data; the strip/header already reflect the outcome.
     }
+    void loadPerformance(granularity)
+  }
+
+  let seenRefresh = priceRefresh.revision
+  $effect(() => {
+    const rev = priceRefresh.revision
+    if (rev === seenRefresh) return
+    seenRefresh = rev
+    void reloadAfterRefresh()
   })
 
   const hasMultipleCurrencies = $derived((dash?.by_currency?.length ?? 0) > 1)
@@ -336,15 +316,11 @@
   function drillFetch(dim: AllocationDrillDim, key: string): Promise<AllocationDrill> {
     return portfolioApi.dashboardAllocationDrill(dim, key)
   }
-  // Friendly class label, same ASSET_CLASS_LABELS table the donut slices use.
-  function classLabel(cls: string): string {
-    return ASSET_CLASS_LABELS[cls] ?? cls
-  }
 </script>
 
 <div class="p-6">
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-2xl font-bold">Dashboard</h1>
+    <h1 class="text-2xl font-bold">{t('nav.dashboard')}</h1>
     {#if !loading && dash?.portfolios?.length}
       <!-- Scope switcher (D3): navigation, not a filter — picking a portfolio
            leaves for its detail page, which is the same analytics at
@@ -367,22 +343,11 @@
     />
   {:else}
     <div class="space-y-6">
-      <!-- Data-quality strip (spec §6.1): thin, rendered only when a chip is
-           actionable; each chip links to its fixing surface. -->
-      <DataQualityStrip
-        currency={dash.base_currency}
-        fxMissingCount={dash.summary?.fx_missing_count ?? 0}
-        fxMissingValue={dash.summary?.fx_missing_value ?? '0'}
-        rateLimited={refreshRateLimited}
-        issueCount={refreshIssueCount}
-        refreshFailed={refreshFailed}
-      />
-
       {#if dash.summary}
         <!-- Zone A — hero (K.3a): ONE number (net market value of the active
              breakdown in the user's base currency), the signed P/L beneath it
              via `PnlValue` (never colour alone, D6), muted secondary chips
-             (realized/dividends/invested) and the freshness stamp. Desktop:
+             (realized/dividends/invested). Desktop:
              2-up with the compact value-vs-invested chart (the former
              "Capital invested" card content, folded in here with the D10
              period chips); phones stack it under the number. -->
@@ -422,13 +387,6 @@
                   {formatCurrency(dash.summary.active.invested, dash.base_currency)}
                 </span>
               </div>
-              <FreshnessStamp
-                class="mt-3"
-                finishedAt={lastUpdate}
-                refreshing={refreshing}
-                partial={refreshRateLimited || refreshIssueCount > 0}
-              />
-
               <!-- The Active/Closed roll-up stays available on demand instead
                    of dominating the top of the page (progressive density). -->
               <details class="group mt-4">
@@ -487,11 +445,11 @@
              above (both share the one `dashboardPerformance` fetch). -->
         <Card class="p-4">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 class="font-semibold">Performance</h2>
+            <h2 class="font-semibold">{t('performance.title')}</h2>
             <SegmentedControl
               items={perfItems}
               bind:value={getGranularity, setGranularity}
-              ariaLabel="Performance granularity"
+              ariaLabel={t('performance.granularity')}
             />
           </div>
           {#if perfLoading}
@@ -520,7 +478,7 @@
       </div>
 
       <div>
-        <h2 class="mb-4 font-semibold">Portfolios</h2>
+        <h2 class="mb-4 font-semibold">{t('nav.portfolios')}</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {#each dash.portfolios as p (p.portfolio_id)}
             {@const spark = sparklines[p.portfolio_id]}
@@ -541,14 +499,14 @@
                 </div>
                 {#if hasClosedActivity(p)}
                   <p class="mt-2 text-xs tabular-nums text-muted-foreground">
-                    Closed: {formatCurrency(p.closed.invested, p.currency)} ·
+                    {t('dashboard.closedPrefix')} {formatCurrency(p.closed.invested, p.currency)} ·
                     {formatCurrency(p.closed.proceeds, p.currency)} ·
                     <span class="font-medium {pnlColorClass(p.closed.realized)}">
                       {formatCurrency(p.closed.realized, p.currency)}
                     </span>
                   </p>
                 {/if}
-                <p class="mt-2 text-xs text-muted-foreground">{p.asset_count} assets</p>
+                <p class="mt-2 text-xs text-muted-foreground">{t('common.assetCount', { count: p.asset_count })}</p>
                 {#if spark && spark.length > 1}
                   <!-- Value-history sparkline as a bottom strip (K.3b): only
                        present once the background fetch has landed, so the
@@ -582,7 +540,7 @@
                 data={alloc.classes ?? []}
                 currency={alloc.currency}
                 label={t('allocation.assetClasses')}
-                onDrill={(cls) => openDrill('class', cls, classLabel(cls))}
+                onDrill={(cls) => openDrill('class', cls, assetClassLabel(cls))}
               />
             </div>
             <div class="rounded-card border-border bg-surface p-4 shadow-card">
@@ -637,23 +595,23 @@
            portfolios, in the base currency, ordered by value descending as
            returned by the backend. -->
       <Card class="p-4">
-        <h2 class="mb-3 font-semibold">Invested assets</h2>
+        <h2 class="mb-3 font-semibold">{t('dashboard.investedAssets')}</h2>
         {#if investedAssets.length === 0}
           <EmptyState
             dashed
-            title="No invested assets yet"
-            description="Open positions will appear here once you record transactions in your portfolios."
+            title={t('dashboard.noInvestedAssets')}
+            description={t('dashboard.noInvestedAssetsHint')}
           />
         {:else}
           <div class="overflow-x-auto">
-            <Table aria-label="Invested assets">
+            <Table aria-label={t('dashboard.investedAssets')}>
               <THead>
                 <Tr>
-                  <Th>Asset</Th>
-                  <Th align="right">Invested</Th>
-                  <Th align="right">Value</Th>
-                  <Th align="right">Gain/Loss</Th>
-                  <Th align="right">P/L %</Th>
+                  <Th>{t('dashboard.colAsset')}</Th>
+                  <Th align="right">{t('chartView.colInvested')}</Th>
+                  <Th align="right">{t('chartView.colValue')}</Th>
+                  <Th align="right">{t('dashboard.colGainLoss')}</Th>
+                  <Th align="right">{t('dashboard.colPnlPct')}</Th>
                 </Tr>
               </THead>
               <TBody>
@@ -670,9 +628,9 @@
                         <Badge
                           variant="neutral"
                           class="ml-1.5 align-middle"
-                          title="No price data: value is carried at cost, so its P/L is 0"
+                          title={t('dashboard.noPriceHint')}
                         >
-                          no price
+                          {t('dashboard.noPrice')}
                         </Badge>
                       {/if}
                       <span class="block text-xs text-muted-foreground">{a.name}</span>

@@ -36,7 +36,12 @@ fondazioni (token, font self-hosted, tema di sistema, i18n IT/EN, primitive), sh
 periodo, pagine portafoglio/asset a tab, filtri Attività con undo e form a sheet, command
 palette ⌘K, vista tabella dei grafici, palette CVD e drill-down delle allocazioni; include i
 filtri transazioni e l'endpoint di drill-down lato backend.
-Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0`/`v0.6.0` su `main`.
+**v0.6.1** — settima release su `main` (23 Set 2026): bug release — stato aggiornamento prezzi
+spostato nell'header globale (stampa cliccabile + fascia qualità dati su ogni pagina), traduzione
+completa IT/EN di dashboard, dettaglio portafoglio, liste, modali, Impostazioni e pagina Health
+(con etichette tipo/classe/fonte asset locale-aware), fix mobile di menu entità, drill-down
+allocazioni, tooltip dei grafici e command palette.
+Flusso: branch → PR su `develop` → merge → tag `v0.1.x`/`v0.2.0`/`v0.3.0`/`v0.4.0`/`v0.5.0`/`v0.6.0`/`v0.6.1` su `main`.
 
 ## Fase 0 — ✅ Completata
 

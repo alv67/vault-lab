@@ -153,7 +153,7 @@ Ogni riga è un account. La password non è salvata in chiaro, ma come **hash**
 | `name` | TEXT | il nome visibile |
 | `password_hash` | TEXT | l'impronta cifrata della password |
 | `role` | TEXT | ruolo: `owner`, `admin`, `editor` o `viewer` |
-| `base_currency` | TEXT | la valuta preferita dell'utente per le aggregazioni della dashboard (default `EUR`, migrazione 000018) |
+| `base_currency` | TEXT | la valuta preferita dell'utente per le aggregazioni della dashboard (default `EUR`) |
 | `created_at` / `updated_at` | TIMESTAMPTZ | quando l'account è stato creato/modificato |
 
 ### `assets` — i titoli
@@ -163,13 +163,13 @@ esistono due titoli con lo stesso simbolo. `price_fetched_at` ricorda quando è
 stato scaricato l'ultimo prezzo, per evitare chiamate inutili a Yahoo.
 `exchange`, `sector`, `industry` e `asset_class` sono metadati descrittivi
 modificabili sulla pagina asset; `history_backfilled` indica se lo storico
-prezzi completo è già stato scaricato (vedi sotto).
+prezzi completo è stato scaricato (vedi sotto).
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
 | `id` | UUID (PK) | identificatore |
 | `ticker` | TEXT (UNIQUE) | simbolo, es. `AAPL` |
-| `isin` | TEXT | codice ISIN internazionale (può mancare) |
+| `isin` | TEXT | codice ISIN internazionale (può mancare); per gli ETF viene risolto automaticamente dal ticker tramite il servizio JustETF e resta modificabile a mano |
 | `name` | TEXT | nome del titolo |
 | `type` | TEXT (CHECK) | `stock`, `etf`, `bond`, `mutual_fund`, `crypto`, `commodity`, `cash` |
 | `asset_class` | TEXT (CHECK) | classe di investimento: `equity`, `bond`, `commodity`, `currency`, `crypto`, `real_estate`, `mixed`, `other` (default `other`) |
@@ -208,6 +208,7 @@ investimenti in euro o in dollari).
 Collega due tabelle tra loro (relazione "molti a molti"): dice **quali utenti
 possono vedere quali portafogli** e con che ruolo. La chiave primaria è
 composta da entrambe le colonne: la stessa coppia non può ripetersi.
+L'applicazione controlla solo il proprietario del portafoglio.
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
@@ -272,10 +273,10 @@ può avere un solo split per giorno.
 
 Per ogni titolo, quanto del suo valore è distribuito tra i **singoli paesi**
 (ISO-3166 alpha-2). Una riga per ogni `asset_id + country`; i pesi dello
-stesso titolo dovrebbero sommare a 100%. Questa tabella è stata aggiunta in
-B.13: prima i paesi raw venivano aggregati nelle macro-regioni e scartati. Ora
-l'esposizione JustETF (e da B.14 quella Morningstar) conserva i paesi raw e il
-backend ne deriva le regioni, così le due restano sempre coerenti.
+stesso titolo dovrebbero sommare a 100%. L'esposizione JustETF e Morningstar
+conserva i paesi raw e il backend ne deriva le regioni, così le due restano
+sempre coerenti. La risposta di esposizione restituisce i paesi zero-filled
+sull'intera lista ISO canonica.
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
@@ -289,8 +290,8 @@ Per ogni titolo, quanto del suo valore è distribuito tra le **macro-regioni**
 (Nord America, Europa, Asia...). Una riga per ogni `asset_id + region`; i pesi
 dello stesso titolo dovrebbero idealmente sommare a 100%. Per una singola
 azione c'è una sola riga (il paese mappato alla sua regione al 100%); per un
-ETF è un mix inserito a mano, scaricato da Yahoo o — da B.5 — scaricato
-completamente da JustETF (`POST /assets/{id}/fetch-etf-exposure`).
+ETF è un mix inserito a mano, scaricato da Yahoo o scaricato completamente da
+JustETF (`POST /assets/{id}/fetch-etf-exposure`).
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
@@ -383,8 +384,9 @@ in un giorno.
 ### `supported_currencies` — le valute consentite
 
 La **whitelist** delle valute che si possono usare (vedi la guida, capitolo
-11). Contiene già USD ed EUR come valute di base. La colonna `enabled` permette
-di disattivare una valuta senza cancellarla.
+11). Contiene USD ed EUR come valute di base. Le altre valute si aggiungono via
+API, e solo se Yahoo conosce la conversione dal dollaro. La colonna `enabled`
+permette di disattivare una valuta senza cancellarla.
 
 | Colonna | Tipo | Spiegazione |
 |---|---|---|
@@ -460,53 +462,28 @@ In sintesi, chi scrive e chi legge:
 
 - **Prezzi, split e tassi di cambio** li scarica il worker da Yahoo e li salva
   in `prices`, `splits`, `fx_rates` (guidato dal capitolo 12 e 13 della guida).
-  Il primo sync scarica lo **storico completo** per i titoli non ancora
-  backfillati (`history_backfilled`).
+  Il primo sync scarica lo **storico completo** per i titoli il cui flag
+  `history_backfilled` è `FALSE`.
 - **Le serie** (`portfolio_series`, `asset_series`) le ricostruisce il motore
   AVCO quando cambiano transazioni o prezzi, e le leggi per disegnare i grafici
   (capitolo 9 della guida).
 - **Le operazioni** le scrive l'utente dalla pagina (via API), dentro
   `transactions`.
 - **L'esposizione** (`asset_country_weights`, `asset_region_weights`,
-  `asset_sector_weights`) la si
-  modifica dalla pagina asset, oppure la si scarica da Yahoo per i pesi
-  settoriali di un ETF quando l'utente clicca "Aggiorna da Yahoo". Da B.5
-  l'esposizione **completa** paesi/regioni e settori di un ETF si scarica
-  automaticamente da JustETF tramite il `python-service`
-  (`POST /assets/{id}/fetch-etf-exposure`); da B.13 i paesi raw vengono
-  conservati in `asset_country_weights`. Da B.14 è disponibile una seconda
-  fonte via Morningstar (`POST /assets/{id}/fetch-morningstar-exposure`). Ogni
-  salvataggio esplicito registra anche la provenienza di ciascuna dimensione
-  salvata in `asset_exposure_provenance` (sorgente + timestamp, default
-  `manual`), così i badge dell'UI sopravvivono a un reload.
+  `asset_sector_weights`) la si modifica dalla pagina asset, oppure la si
+  scarica da Yahoo per i pesi settoriali di un ETF quando l'utente clicca
+  "Aggiorna da Yahoo". L'esposizione **completa** paesi/regioni e settori di un
+  ETF si scarica automaticamente da JustETF tramite il `python-service`
+  (`POST /assets/{id}/fetch-etf-exposure`); i paesi raw vengono conservati in
+  `asset_country_weights`. È disponibile una seconda fonte via Morningstar
+  (`POST /assets/{id}/fetch-morningstar-exposure`). Ogni salvataggio esplicito
+  registra anche la provenienza di ciascuna dimensione salvata in
+  `asset_exposure_provenance` (sorgente + timestamp, default `manual`), così i
+  badge dell'UI sopravvivono a un reload.
 - **La whitelist delle valute** la gestisce l'amministratore via API in
   `supported_currencies` (capitolo 11 della guida).
-
----
-
-## 8. Note e punti aperti
-
-- **`portfolio_shares` è pronta ma non ancora usata**: la tabella della
-  condivisione esiste, ma oggi l'applicazione controlla solo il proprietario
-  del portafoglio.
-- **`supported_currencies` parte con USD ed EUR**: le altre valute si
-  aggiungono via API, e solo se Yahoo conosce la conversione dal dollaro.
-- **`asset_series` e `portfolio_series` contengono dati precalcolati**:
-  sono derivate dalle transazioni e dai prezzi, non sono un'origine dati
-  indipendente.
-- **`fx_rates` ha solo USD come base**: la conversione tra due valute
-  qualsiasi passa sempre dal dollaro.
-- **Le tabelle di esposizione sono solo per-asset** (`asset_country_weights` da
-  B.13, più regioni e settori): esistono i pesi per-asset
-  e l'allocazione pesata **per classi** a livello portafoglio
-  (`GET /portfolios/{id}/allocation/class`); l'allocazione pesata geo/settore
-  a livello portafoglio è implementata da EPIC B.6/B.7
+- **L'allocazione a livello portafoglio** è derivata dai pesi di esposizione
+  per-asset: ponderata per classe di investimento
+  (`GET /portfolios/{id}/allocation/class`), per geografia e per settore
   (`GET /portfolios/{id}/allocation/geography` e `/allocation/sector`,
-  10 macro-regioni (allineate a Morningstar da B.14) / 11 settori GICS + `Other`, zero-filled).
-- **`assets.isin`**: Yahoo non espone l'ISIN in nessun modulo, ma da B.5 per gli
-  ETF il valore viene **risolto automaticamente dal ticker** tramite il servizio
-  JustETF (`POST /assets/{id}/fetch-etf-exposure` / il suo endpoint di search) e
-  persistito sull'asset; resta comunque modificabile a mano come fallback. Da
-  B.13 la risposta di esposizione include anche la dimensione **countries**
-  salvata in `asset_country_weights`, zero-filled sull'intera lista ISO
-  canonica.
+  10 macro-regioni (allineate a Morningstar) / 11 settori GICS + `Other`, zero-filled).

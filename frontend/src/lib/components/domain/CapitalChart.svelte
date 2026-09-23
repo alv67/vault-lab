@@ -87,6 +87,11 @@
   let view = $state<'chart' | 'table'>('chart')
   const showTable = $derived(showTableToggle && view === 'table')
 
+  // Series identities (legend/tooltip) are translated labels: `Invested`
+  // reuses the hero line key, `Value` the shared chart-table column header.
+  const investedName = $derived(t('hero.invested'))
+  const valueName = $derived(t('chartView.colValue'))
+
   const options = $derived.by((): EChartsOption => {
     const rows = buckets ?? []
     return {
@@ -106,7 +111,7 @@
         },
       },
       legend: {
-        data: ['Invested', 'Value'],
+        data: [investedName, valueName],
         top: 0,
       },
       grid: { left: 48, right: 16, top: 40, bottom: compact ? 24 : 52 },
@@ -130,7 +135,7 @@
       },
       series: [
         {
-          name: 'Invested',
+          name: investedName,
           type: 'line',
           // Net invested capital at the end of each bucket: it only moves on
           // cash flows, so a stepped line mirrors the PositionChart cost basis.
@@ -142,7 +147,7 @@
           itemStyle: { color: semantic.costBasis },
         },
         {
-          name: 'Value',
+          name: valueName,
           type: 'line',
           // Market value at the end of each bucket.
           data: rows.map((b) => Number(b.value)),

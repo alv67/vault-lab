@@ -27,10 +27,17 @@
   project documents first (AGENTS.md, PLAN.md, STATUS.md, `docs/` guides en/it)
   and update them together with the code. A PR must NOT be closed until its
   related documentation (endpoints, behavior, UI, status tables) is updated.
-  The guides (BACKEND/FRONTEND/DATABASE-GUIDE, UX-REDESIGN) describe **how the
-  app works**, not the development history: do not record the intermediate bugs
-  hit while building a feature (they are not meaningful for understanding the
-  app) — only the resulting behavior.
+- **The guides are a snapshot of the current version**: `docs/FRONTEND-GUIDE`,
+  `docs/BACKEND-GUIDE` and `docs/DATABASE-GUIDE` (both `.en.md` and `.it.md`)
+  describe **how the app works right now**, as if written against the latest
+  commit. Write in the present tense and keep the two languages mirror images
+  (same sections, same facts). Never add development history: no references to
+  issues/PRs, epics or phases, design-decision IDs, spec sections, release
+  versions, or change wording ("now", "no longer", "previously", "was
+  replaced/renamed/moved", "fast-follow", "coming soon", "Notes and open
+  points"). When a feature changes, rewrite the affected sentences so they state
+  the new behaviour directly — do not narrate the change. `docs/UX-REDESIGN.*.md`
+  is the separate redesign specification and is exempt from this rule.
 - **Release notes** (`docs/RELEASE-NOTES.en.md` / `.it.md`): one line per
   feature/fix, written from the end user's point of view (what they see and use
   in the app — no internal/backend details). Add the lines under an `Unreleased`

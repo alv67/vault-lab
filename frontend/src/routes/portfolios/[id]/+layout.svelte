@@ -1,7 +1,3 @@
-<script module lang="ts">
-  let sessionRefreshed = false
-</script>
-
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { onMount } from 'svelte'
@@ -9,12 +5,12 @@
   import { resolve } from '$app/paths'
   import { page } from '$app/state'
   import { toast } from '$lib/stores/toast.svelte'
+  import { priceRefresh } from '$lib/stores/priceRefresh.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import {
     portfolioApi,
     transactionApi,
     assetApi,
-    pricesApi,
     type Portfolio,
     type PortfolioSummary,
     type PortfolioHistory,
@@ -153,8 +149,12 @@
   // Same "1–20 of 137" range label and footer layout as the health page.
   const txRangeLabel = $derived(
     (transactions?.length ?? 0) === 0
-      ? `0 of ${txTotal}`
-      : `${txOffset + 1}–${txOffset + (transactions?.length ?? 0)} of ${txTotal}`,
+      ? t('common.rangeEmpty', { total: txTotal })
+      : t('common.rangeLabel', {
+          from: txOffset + 1,
+          to: txOffset + (transactions?.length ?? 0),
+          total: txTotal,
+        }),
   )
 
   // Monotonic request id (same guard as the performance card): rapid page
@@ -183,7 +183,7 @@
         txTotal = res.total
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load transactions'
+      const message = err instanceof Error ? err.message : t('activity.loadFailed')
       if (req === txReq) toast.error(message)
     } finally {
       if (req === txReq) txLoading = false
@@ -267,7 +267,7 @@
       summary = s
       assets = a
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load portfolio'
+      const message = err instanceof Error ? err.message : t('portfolio.detailLoadFailed')
       toast.error(message)
     }
 
@@ -276,30 +276,34 @@
     try {
       history = await portfolioApi.history(id)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load history'
+      const message = err instanceof Error ? err.message : t('portfolio.historyLoadFailed')
       toast.error(message)
     }
-
-    if (!sessionRefreshed) {
-      sessionRefreshed = true
-      pricesApi.refresh(id)
-        .then((report) => {
-          if (report.rate_limited) {
-            toast.warning('Yahoo Finance ha limitato le richieste: alcuni prezzi non aggiornati')
-          } else if (report.issues.length > 0) {
-            toast.warning(`${report.issues.length} aggiornamenti prezzi non riusciti (Yahoo)`)
-          }
-          return portfolioApi.summary(id)
-        })
-        .then((fresh) => {
-          summary = fresh
-          // The POST above cleared the GET cache and new prices can move the
-          // buckets: refresh the performance card too (same as the dashboard).
-          void loadPerformance(granularity)
-        })
-        .catch(() => { /* keep current data */ })
-    }
   }
+
+  // Refetch the price-derived data when the (globally triggered) session
+  // refresh completes: the POST cleared the GET cache, so the summary comes
+  // back with the fresh prices, and new prices can move the TWR buckets too
+  // (same refetch pair the dashboard runs — see its `revision` watcher).
+  async function refetchAfterRefresh(): Promise<void> {
+    if (!id) return
+    try {
+      summary = await portfolioApi.summary(id)
+    } catch {
+      // Keep current data.
+    }
+    void loadPerformance(granularity)
+  }
+
+  // Plain (non-`$state`) baseline seeded at component init: only refresh
+  // completions that happen while this layout is mounted refetch.
+  let seenRefresh = priceRefresh.revision
+  $effect(() => {
+    const rev = priceRefresh.revision
+    if (rev === seenRefresh) return
+    seenRefresh = rev
+    void refetchAfterRefresh()
+  })
 
   async function loadAllocations(): Promise<void> {
     if (!id) return
@@ -346,7 +350,7 @@
       summary = s
       history = h
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to refresh portfolio'
+      const message = err instanceof Error ? err.message : t('portfolio.refreshFailed')
       toast.error(message)
     }
     // New/edited transactions change the flows behind the TWR buckets too
@@ -381,7 +385,7 @@
       a.click()
       URL.revokeObjectURL(url)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Export failed'
+      const message = err instanceof Error ? err.message : t('portfolio.exportFailed')
       toast.error(message)
     }
   }
@@ -420,7 +424,7 @@
       toast.success(t('portfolio.deleted'))
       void goto(resolve('/portfolios'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
+      const message = err instanceof Error ? err.message : t('common.deleteFailed')
       toast.error(message)
     } finally {
       deleting = false
@@ -571,7 +575,7 @@
           {t('portfolio.back')}
         </a>
         <h1 class="mt-1 text-2xl font-bold">
-          {portfolio?.name ?? 'Portfolio'}
+          {portfolio?.name ?? t('portfolio.fallbackName')}
           {#if portfolio}
             <span class="text-sm font-medium text-muted-foreground">({portfolio.currency})</span>
           {/if}
@@ -580,7 +584,10 @@
           <p class="text-sm text-muted-foreground">{portfolio.description}</p>
         {/if}
       </div>
-      <div class="flex shrink-0 items-center gap-2">
+      <!-- `ml-auto` keeps the actions right-aligned when the wrap puts them
+           on their own line (`justify-between` alone would push the lone
+           trigger to the left, #117). -->
+      <div class="ml-auto flex shrink-0 items-center gap-2">
         <Button onclick={openAddTransaction}>
           <Plus class="h-4 w-4" />
           {t('portfolio.addTransaction')}
@@ -599,7 +606,7 @@
           </button>
           {#if menuOpen}
             <div
-              class="absolute right-0 top-full z-20 mt-2 w-52 rounded-card border border-border bg-surface p-1 shadow-raised"
+              class="absolute right-0 top-full z-20 mt-2 w-52 max-w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-1 shadow-raised"
             >
               <Button
                 variant="ghost"

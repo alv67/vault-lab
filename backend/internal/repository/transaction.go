@@ -148,7 +148,7 @@ func (r *transactionRepo) FindByPortfolio(ctx context.Context, portfolioID uuid.
 	}
 	defer rows.Close()
 
-	var txs []model.TransactionWithAsset
+	txs := make([]model.TransactionWithAsset, 0)
 	for rows.Next() {
 		var tx model.TransactionWithAsset
 		if err := rows.Scan(
@@ -214,7 +214,7 @@ func (r *transactionRepo) FindByPortfolioPage(ctx context.Context, portfolioID u
 	}
 	defer rows.Close()
 
-	var txs []model.TransactionWithAsset
+	txs := make([]model.TransactionWithAsset, 0)
 	for rows.Next() {
 		var tx model.TransactionWithAsset
 		if err := rows.Scan(
@@ -258,7 +258,7 @@ func (r *transactionRepo) FindByPortfoliosAsc(ctx context.Context, portfolioIDs 
 	}
 	defer rows.Close()
 
-	var txs []model.TransactionWithAsset
+	txs := make([]model.TransactionWithAsset, 0)
 	for rows.Next() {
 		var tx model.TransactionWithAsset
 		if err := rows.Scan(

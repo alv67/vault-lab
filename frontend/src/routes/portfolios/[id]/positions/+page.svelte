@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '$lib/i18n/index.svelte'
   import PositionTable, { type PositionRow } from '$lib/components/domain/PositionTable.svelte'
   import { getPortfolioPage } from '../context'
 
@@ -33,7 +34,7 @@
 
 {#if positionRows.length > 0}
   <div class="rounded-card border-border bg-surface p-4 shadow-card">
-    <h2 class="mb-4 font-semibold">Positions</h2>
+    <h2 class="mb-4 font-semibold">{t('positions.title')}</h2>
     <PositionTable
       rows={positionRows}
       {currency}
@@ -45,5 +46,5 @@
     />
   </div>
 {:else}
-  <p class="text-sm text-muted-foreground">No positions</p>
+  <p class="text-sm text-muted-foreground">{t('positions.noPositions')}</p>
 {/if}

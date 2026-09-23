@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Upload } from 'lucide-svelte'
   import { toast } from '$lib/stores/toast.svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import {
     assetApi,
     portfolioApi,
@@ -54,7 +55,7 @@
       const text = await file.text()
       const doc = JSON.parse(text) as PortfolioExportDocument
       if (!doc || doc.version !== 1 || !doc.portfolio?.name) {
-        throw new Error('File non valido: formato di export non riconosciuto')
+        throw new Error(t('portfolio.importInvalidFile'))
       }
       importDoc = doc
       importName = doc.portfolio.name
@@ -62,7 +63,7 @@
       importTarget = ''
     } catch (err: unknown) {
       importDoc = null
-      importError = err instanceof Error ? err.message : 'Impossibile leggere il file'
+      importError = err instanceof Error ? err.message : t('portfolio.importReadFailed')
       toast.error(importError)
     }
   }
@@ -88,11 +89,11 @@
       // Imported assets have no market data yet: trigger the backfill
       // (history + splits) right away instead of waiting for next app load.
       assetApi.sync().catch(() => {})
-      toast.success('Portfolio imported')
+      toast.success(t('portfolio.imported'))
       open = false
       onsuccess?.()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Import failed'
+      const message = err instanceof Error ? err.message : t('portfolio.importFailed')
       importError = message
       toast.error(message)
     } finally {
@@ -102,7 +103,7 @@
 </script>
 
 {#snippet footer()}
-  <Button variant="secondary" onclick={() => (open = false)} disabled={importing}>Cancel</Button>
+  <Button variant="secondary" onclick={() => (open = false)} disabled={importing}>{t('common.cancel')}</Button>
   {#if importDoc}
     <Button
       variant="ghost"
@@ -112,7 +113,7 @@
         fileInput?.click()
       }}
     >
-      Change file
+      {t('portfolio.changeFile')}
     </Button>
     <Button
       onclick={confirmImport}
@@ -122,12 +123,12 @@
         (importMode === 'overwrite' && !importTarget)
       }
     >
-      Import
+      {t('portfolio.import')}
     </Button>
   {/if}
 {/snippet}
 
-<Modal bind:open title="Import portfolio" {footer} dismissible={!importing}>
+<Modal bind:open title={t('portfolio.importTitle')} {footer} dismissible={!importing}>
   {#if importError}
     <div class="mb-4 rounded-control border border-negative/20 bg-negative/10 px-4 py-2 text-sm text-negative">
       {importError}
@@ -137,38 +138,38 @@
   {#if importDoc}
     <div class="mb-4 grid grid-cols-2 gap-3 text-sm">
       <div>
-        <p class="text-xs text-muted-foreground">Name</p>
+        <p class="text-xs text-muted-foreground">{t('chartView.colName')}</p>
         <p class="font-medium">{importDoc.portfolio.name}</p>
       </div>
       <div>
-        <p class="text-xs text-muted-foreground">Currency</p>
+        <p class="text-xs text-muted-foreground">{t('asset.factCurrency')}</p>
         <p class="font-medium">{importDoc.portfolio.currency || '—'}</p>
       </div>
       <div>
-        <p class="text-xs text-muted-foreground">Transactions</p>
+        <p class="text-xs text-muted-foreground">{t('activity.transactions')}</p>
         <p class="font-medium">{importDoc.transactions?.length ?? 0}</p>
       </div>
       <div>
-        <p class="text-xs text-muted-foreground">Date range</p>
+        <p class="text-xs text-muted-foreground">{t('portfolio.dateRange')}</p>
         <p class="font-medium">{importRange(importDoc)}</p>
       </div>
     </div>
     <div class="space-y-3">
       <label class="flex items-center gap-2 text-sm">
         <input type="radio" bind:group={importMode} value="new" />
-        Create as new portfolio
+        {t('portfolio.importModeNew')}
       </label>
       {#if importMode === 'new'}
-        <Input bind:value={importName} placeholder="Portfolio name" />
+        <Input bind:value={importName} placeholder={t('portfolio.namePlaceholder')} />
       {/if}
       <label class="flex items-center gap-2 text-sm">
         <input type="radio" bind:group={importMode} value="overwrite" />
-        Overwrite existing portfolio
+        {t('portfolio.importModeOverwrite')}
       </label>
       {#if importMode === 'overwrite'}
-        <Field label="Target portfolio">
+        <Field label={t('portfolio.importTarget')}>
           <Select bind:value={importTarget}>
-            <option value="" disabled>Select portfolio to overwrite</option>
+            <option value="" disabled>{t('portfolio.importTargetPlaceholder')}</option>
             {#each portfolios as p (p.id)}
               <option value={p.id}>{p.name}</option>
             {/each}
@@ -179,11 +180,11 @@
   {:else}
     <div class="flex flex-col items-center gap-3 py-6 text-center">
       <p class="text-sm text-muted-foreground">
-        Choose a VaultLab portfolio export (.json) to import.
+        {t('portfolio.importHint')}
       </p>
       <Button variant="secondary" onclick={() => fileInput?.click()}>
         <Upload class="h-4 w-4" />
-        Choose file
+        {t('portfolio.chooseFile')}
       </Button>
     </div>
   {/if}

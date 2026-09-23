@@ -2,6 +2,7 @@
   import type { ActiveBreakdown, ClosedBreakdown } from '$lib/services/api'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
+  import { t } from '$lib/i18n/index.svelte'
   import Card from '$lib/components/ui/Card.svelte'
   import Table from '$lib/components/ui/Table.svelte'
   import THead from '$lib/components/ui/THead.svelte'
@@ -28,34 +29,40 @@
     active,
     closed,
     currency = 'USD',
-    title = 'Investments',
+    title,
   }: {
     active: ActiveBreakdown
     closed: ClosedBreakdown
     /** Currency the amounts are rendered in (base or portfolio currency). */
     currency?: string
-    /** Card heading; also used as the table's aria-label. */
+    /** Card heading; also used as the table's aria-label. Falls back to the
+     *  localized `investments.title` when omitted (kept reactive so a locale
+     *  switch updates the heading in place). */
     title?: string
   } = $props()
+
+  // Derived, not a destructuring default: a default would be evaluated once
+  // and never re-run when the locale changes.
+  const heading = $derived(title ?? t('investments.title'))
 </script>
 
 <Card class="p-4">
-  <h2 class="mb-3 font-semibold">{title}</h2>
+  <h2 class="mb-3 font-semibold">{heading}</h2>
   <div class="overflow-x-auto">
-    <Table aria-label={title}>
+    <Table aria-label={heading}>
       <THead>
         <Tr>
-          <Th class="sr-only">Group</Th>
-          <Th align="right">Invested</Th>
-          <Th align="right">Value / Proceeds</Th>
-          <Th align="right">Gain/Loss</Th>
-          <Th align="right">%</Th>
-          <Th align="right">Dividends</Th>
+          <Th class="sr-only">{t('investments.group')}</Th>
+          <Th align="right">{t('investments.invested')}</Th>
+          <Th align="right">{t('investments.valueProceeds')}</Th>
+          <Th align="right">{t('investments.gainLoss')}</Th>
+          <Th align="right">{t('investments.pct')}</Th>
+          <Th align="right">{t('investments.dividends')}</Th>
         </Tr>
       </THead>
       <TBody>
         <Tr>
-          <Td class="font-medium">Active</Td>
+          <Td class="font-medium">{t('investments.active')}</Td>
           <Td align="right">{formatCurrency(active.invested, currency)}</Td>
           <Td align="right">{formatCurrency(active.value, currency)}</Td>
           <Td align="right" class="font-medium {pnlColorClass(active.gain_loss)}">
@@ -67,7 +74,7 @@
           <Td align="right">{formatCurrency(active.dividends, currency)}</Td>
         </Tr>
         <Tr>
-          <Td class="font-medium">Closed</Td>
+          <Td class="font-medium">{t('investments.closed')}</Td>
           <Td align="right">{formatCurrency(closed.invested, currency)}</Td>
           <Td align="right">{formatCurrency(closed.proceeds, currency)}</Td>
           <Td align="right" class="font-medium {pnlColorClass(closed.realized)}">

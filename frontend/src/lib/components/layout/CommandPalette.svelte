@@ -26,14 +26,13 @@
   import {
     assetApi,
     portfolioApi,
-    pricesApi,
     type Asset,
     type AssetLookupResult,
     type Portfolio,
   } from '$lib/services/api'
   import { palette, setCvd } from '$lib/stores/palette.svelte'
+  import { refreshPrices } from '$lib/stores/priceRefresh.svelte'
   import { setThemeMode, theme, type ThemeMode } from '$lib/stores/theme.svelte'
-  import { toast } from '$lib/stores/toast.svelte'
   import { viewport } from '$lib/stores/viewport.svelte'
   import { focusTrap } from '../ui/focus-trap'
   import { backdropFade } from '../ui/transitions'
@@ -56,7 +55,7 @@
    *   selecting it navigates to `/assets` (creating assets stays out of
    *   the palette's scope);
    * - *Actions*: Add transaction (the same single-portfolio shortcut the
-   *   K.2 `Fab` uses), Refresh prices (`pricesApi.refresh()` + toast),
+   *   K.2 `Fab` uses), Refresh prices (the shared `priceRefresh` store path,
    *   Toggle theme (cycles light → dark → system on the theme store),
    *   Toggle CVD palette (palette store) and Toggle sidebar (only when a
    *   sidebar exists to toggle, i.e. desktop — the callback lives in the
@@ -151,8 +150,11 @@
     listsLoading = true
     void Promise.all([portfolioApi.list(), assetApi.list()])
       .then(([pf, as]) => {
-        portfolios = pf
-        assets = as
+        // Defensive (issue #121): a list endpoint can resolve to JSON `null`
+        // instead of `[]`; storing it would poison the `$state` and make the
+        // `view` derived throw on every later flush (palette unopenable).
+        portfolios = Array.isArray(pf) ? pf : []
+        assets = Array.isArray(as) ? as : []
       })
       .catch(() => {
         // Silent: a transient failure keeps whatever was loaded before; the
@@ -166,7 +168,10 @@
   /** Add Transaction shortcut, identical to the K.2 `Fab` action (spec §6.4). */
   async function addTransaction(): Promise<void> {
     try {
-      const rows = await portfolioApi.list()
+      const data = await portfolioApi.list()
+      // Coerce like `fetchLists` (issue #121): a `null` list must fall back to
+      // the portfolios page, not throw through the array access below.
+      const rows = Array.isArray(data) ? data : []
       await goto(
         rows.length === 1 ? resolve(`/portfolios/${rows[0].id}`) : resolve('/portfolios'),
       )
@@ -175,20 +180,10 @@
     }
   }
 
-  /** Manual session refresh + toast feedback (same semantics as the Fab). */
-  async function refreshPrices(): Promise<void> {
-    try {
-      const report = await pricesApi.refresh()
-      if (report.rate_limited) {
-        toast.warning(t('quickActions.refreshRateLimited'))
-      } else if (report.issues.length > 0) {
-        toast.warning(t('quickActions.refreshIssues', { count: report.issues.length }))
-      } else {
-        toast.success(t('quickActions.refreshSuccess'))
-      }
-    } catch {
-      toast.error(t('quickActions.refreshError'))
-    }
+  /** Manual session refresh through the shared store path (same semantics
+   * as the Fab): toasts + global stamp/strip, pages refetch on `revision`. */
+  function runRefreshPrices(): void {
+    void refreshPrices({ announceSuccess: true })
   }
 
   /** Score of a haystack vs the normalized query; `null` = no match. */
@@ -366,7 +361,7 @@
         hint: t('quickActions.refreshPricesHint'),
         icon: RefreshCw,
         keywords: 'quote yahoo sync',
-        run: refreshPrices,
+        run: runRefreshPrices,
       }),
       row({
         id: 'act-toggle-theme',
@@ -534,7 +529,11 @@
       assetApi
         .lookup(q)
         .then((results) => {
-          if (seq === lookupSeq) setLookup({ status: 'ready', results })
+          // Same guard as `fetchLists` (issue #121): the derived below reads
+          // `lookup.results[0]` during the reactive flush.
+          if (seq === lookupSeq) {
+            setLookup({ status: 'ready', results: Array.isArray(results) ? results : [] })
+          }
         })
         .catch(() => {
           if (seq === lookupSeq) setLookup({ status: 'ready', results: [] })

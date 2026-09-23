@@ -16,6 +16,7 @@
   import { chartSemanticColors } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
   import { resolved } from '$lib/stores/theme.svelte'
+  import { t, type MessageKey } from '$lib/i18n/index.svelte'
 
   use([
     LineChart,
@@ -40,11 +41,15 @@
     splits = [] as SplitInfo[],
   } = $props()
 
+  // Series identities resolve through the dictionary (legend/tooltip): cost
+  // basis and market value have dedicated keys, realized reuses the hero
+  // line. The names resolve inside the reactive `options` derived, so a
+  // locale flip re-labels the chart.
   const LINES = [
-    { key: 'cost_basis', name: 'Cost basis', colorKey: 'costBasis', step: 'end' },
-    { key: 'market_value', name: 'Market value', colorKey: 'marketValue', step: undefined },
-    { key: 'realized', name: 'Realized', colorKey: 'realized', step: 'end' },
-  ] as const
+    { key: 'cost_basis', nameKey: 'chartView.seriesCostBasis', colorKey: 'costBasis', step: 'end' },
+    { key: 'market_value', nameKey: 'chartView.seriesMarketValue', colorKey: 'marketValue', step: undefined },
+    { key: 'realized', nameKey: 'hero.realized', colorKey: 'realized', step: 'end' },
+  ] as const satisfies ReadonlyArray<{ nameKey: MessageKey; [prop: string]: unknown }>
 
   // Series/line colors come from the semantic chart tokens, re-evaluated on
   // theme flips (the {#key} block below also re-inits the chart with the new
@@ -70,7 +75,7 @@
       },
     },
     legend: {
-      data: LINES.map((l) => l.name),
+      data: LINES.map((l) => t(l.nameKey)),
       top: 0,
     },
     grid: { left: 48, right: 16, top: 40, bottom: 52 },
@@ -90,7 +95,7 @@
       axisLabel: { fontSize: 11 },
     },
     series: LINES.map((l) => ({
-      name: l.name,
+      name: t(l.nameKey),
       type: 'line',
       data: series.map((p) => [p.date, Number(p[l.key])]),
       sampling: 'lttb',
@@ -114,7 +119,7 @@
               },
               data: splits.map((s) => ({
                 xAxis: new Date(s.date).getTime(),
-                name: s.ratio,
+                name: t('chartView.splitRatio', { ratio: s.ratio }),
               })),
             },
           }
@@ -125,7 +130,7 @@
 
 {#if series.length === 0}
   <div class="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
-    No data
+    {t('chartView.noData')}
   </div>
 {:else}
   <div class="h-[340px] w-full">

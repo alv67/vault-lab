@@ -37,7 +37,7 @@ func (r *exposureRepo) FindRegions(ctx context.Context, assetID uuid.UUID) ([]mo
 	}
 	defer rows.Close()
 
-	var out []model.ExposureRow
+	out := make([]model.ExposureRow, 0)
 	for rows.Next() {
 		var row model.ExposureRow
 		if err := rows.Scan(&row.Name, &row.Weight); err != nil {
@@ -58,7 +58,7 @@ func (r *exposureRepo) FindCountries(ctx context.Context, assetID uuid.UUID) ([]
 	}
 	defer rows.Close()
 
-	var out []model.ExposureRow
+	out := make([]model.ExposureRow, 0)
 	for rows.Next() {
 		var row model.ExposureRow
 		if err := rows.Scan(&row.Name, &row.Weight); err != nil {
@@ -79,7 +79,7 @@ func (r *exposureRepo) FindSectors(ctx context.Context, assetID uuid.UUID) ([]mo
 	}
 	defer rows.Close()
 
-	var out []model.ExposureRow
+	out := make([]model.ExposureRow, 0)
 	for rows.Next() {
 		var row model.ExposureRow
 		if err := rows.Scan(&row.Name, &row.Weight); err != nil {

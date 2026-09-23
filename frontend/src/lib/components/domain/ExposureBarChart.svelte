@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { EChartsOption } from 'echarts'
   import { Chart, type ECMouseEvent } from 'svelte-echarts'
-  import { init, use } from 'echarts/core'
+  import { init, use, type EChartsType } from 'echarts/core'
   import { BarChart } from 'echarts/charts'
   import { GridComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
+  import { dismissTooltipOutside } from '$lib/chartTooltip'
   import { resolved } from '$lib/stores/theme.svelte'
   import { t } from '$lib/i18n/index.svelte'
   import { cx } from '$lib/components/ui/utils'
@@ -118,6 +119,12 @@
   const visible = $derived(capped && !showAll ? sorted.slice(0, maxVisibleRows as number) : sorted)
   const height = $derived(Math.max(150, visible.length * ROW_HEIGHT + 10))
 
+  // The live ECharts instance (bound via `bind:chart`, refreshed on every
+  // `{#key}` theme re-init). Needed to dismiss the tooltip imperatively:
+  // on touch there is no hover-out, so a tap would otherwise leave the
+  // tooltip pinned above the drill sheet (issue #123).
+  let chartInstance = $state<EChartsType | undefined>(undefined)
+
   // Drill-down click (EPIC K.5, spec §6.5): the svelte-echarts wrapper
   // forwards the ECharts instance `click` event through its `onclick` prop,
   // so the binding survives the `{#key}` theme re-init (the handlers are
@@ -130,7 +137,12 @@
   function handleBarClick(event: ECMouseEvent): void {
     if (!onDrill || event.componentType !== 'series') return
     const row = visible[event.dataIndex]
-    if (row) onDrill(row.name)
+    if (row) {
+      // Dismiss the tooltip the same tap popped up before opening the
+      // drill panel, so it never lingers over the sheet (issue #123).
+      chartInstance?.dispatchAction({ type: 'hideTip' })
+      onDrill(row.name)
+    }
   }
 
   // ── "View as table" (EPIC K.5b, spec §9.1) ──────────────────────────────
@@ -151,6 +163,13 @@
     color: palette,
     tooltip: {
       trigger: 'axis',
+      // Explicit show/dismiss policy (issue #123): 'mousemove|click' is
+      // ECharts' default, but pinning it keeps desktop hover behavior
+      // identical while making the touch-tap toggle intentional; `hideDelay`
+      // lets the tooltip fade shortly after a tap/tap-outside instead of
+      // staying pinned on touch, where there is no hover-out event.
+      triggerOn: 'mousemove|click',
+      hideDelay: 150,
       axisPointer: { type: 'shadow' },
       formatter: (params: unknown) => {
         const raw = Array.isArray(params) ? params : [params]
@@ -228,18 +247,21 @@
   <p class="mb-3 text-xs text-muted-foreground">{note}</p>
 {/if}
 {#snippet canvas()}
-  <div class="w-full" style="height: {height}px">
+  <div class="w-full" style="height: {height}px" use:dismissTooltipOutside={chartInstance}>
     <!-- {#key} re-inits the chart when the theme flips so the ECharts theme
          object passed below is picked up (svelte-echarts only reads `theme`
          at init time). `onclick` is the wrapper's ECharts event prop (it
          registers `chart.on('click')` at init), so the drill-down binding
-         is re-created together with each re-initialised instance. -->
+         is re-created together with each re-initialised instance; `bind:chart`
+         keeps `chartInstance` pointed at the live instance so the tooltip
+         can be dismissed imperatively (issue #123). -->
     {#key resolved()}
       <Chart
         {init}
         {options}
         theme={VAULTLAB_CHART_THEMES[resolved()]}
         onclick={handleBarClick}
+        bind:chart={chartInstance}
       />
     {/key}
   </div>

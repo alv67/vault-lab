@@ -80,7 +80,7 @@
 {/snippet}
 
 <div class="rounded-card border-border bg-surface p-4 shadow-card">
-  <h2 class="mb-4 font-semibold">Transactions</h2>
+  <h2 class="mb-4 font-semibold">{t('activity.transactions')}</h2>
 
   <!-- Filter row (spec §6.2/§8.2): chips + native select + native date
        inputs, wrapping on phones; the URL is the single source of truth, so
@@ -158,7 +158,7 @@
           disabled={ctx.txOffset === 0 || ctx.txLoading}
           onclick={() => ctx.gotoTxPage(ctx.txPage - 1)}
         >
-          Previous
+          {t('common.previous')}
         </Button>
         <Button
           variant="secondary"
@@ -166,7 +166,7 @@
           disabled={ctx.txOffset + ctx.txLimit >= ctx.txTotal || ctx.txLoading}
           onclick={() => ctx.gotoTxPage(ctx.txPage + 1)}
         >
-          Next
+          {t('common.next')}
         </Button>
       </div>
     </div>

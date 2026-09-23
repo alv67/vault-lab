@@ -84,6 +84,12 @@
   let view = $state<'chart' | 'table'>('chart')
   const showTable = $derived(showTableToggle && view === 'table')
 
+  // Series identities (legend/tooltip): the bar carries the per-bucket
+  // gain/loss (same label as the dashboard table column), the line the
+  // cumulative TWR.
+  const gainLossName = $derived(t('dashboard.colGainLoss'))
+  const cumulativeName = $derived(t('chartView.seriesCumulative'))
+
   const options = $derived.by((): EChartsOption => {
     const rows = buckets ?? []
     return {
@@ -105,7 +111,7 @@
         },
       },
       legend: {
-        data: ['Gain/Loss', 'Cumulative'],
+        data: [gainLossName, cumulativeName],
         top: 0,
       },
       grid: { left: 56, right: 16, top: 40, bottom: 52 },
@@ -126,7 +132,7 @@
       },
       series: [
         {
-          name: 'Gain/Loss',
+          name: gainLossName,
           type: 'bar',
           // Time-weighted return generated inside each bucket: green bar
           // when positive, red when negative (per-bar itemStyle, mirrors
@@ -139,7 +145,7 @@
           barMaxWidth: 28,
         },
         {
-          name: 'Cumulative',
+          name: cumulativeName,
           type: 'line',
           // Cumulative time-weighted return (TWR) up to the end of each
           // bucket; reuses the amber cumulative-line semantic token.
