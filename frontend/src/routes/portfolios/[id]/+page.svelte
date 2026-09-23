@@ -27,10 +27,10 @@
   // Card-level control state only: which history series is plotted.
   let selectedAsset = $state('')
 
-  const perfItems = [
-    { value: 'month', label: 'Monthly' },
-    { value: 'year', label: 'Annual' },
-  ]
+  const perfItems = $derived([
+    { value: 'month', label: t('performance.monthly') },
+    { value: 'year', label: t('performance.annual') },
+  ])
 </script>
 
 {#if ctx.summary}
@@ -54,11 +54,11 @@
      post-mutation refetches (E.9) keep updating the card from any tab. -->
 <Card class="mb-6 p-4">
   <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-    <h2 class="font-semibold">Performance</h2>
+    <h2 class="font-semibold">{t('performance.title')}</h2>
     <SegmentedControl
       items={perfItems}
       bind:value={ctx.getGranularity, ctx.setGranularity}
-      ariaLabel="Performance granularity"
+      ariaLabel={t('performance.granularity')}
     />
   </div>
   {#if ctx.perfLoading}
@@ -73,11 +73,11 @@
 <!-- Secondary view (kept below the percentage chart, EPIC I.8 #87): the
      raw invested/value/realized capital lines with the per-asset selector. -->
 <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
-  <h2 class="mb-4 font-semibold">Performance history</h2>
+  <h2 class="mb-4 font-semibold">{t('portfolio.performanceHistory')}</h2>
   {#if ctx.history && ctx.history.series.length > 0}
     <div class="mb-4">
       <select bind:value={selectedAsset} class="rounded-control border border-input px-3 py-2 text-sm">
-        <option value="">Portfolio</option>
+        <option value="">{t('portfolio.seriesPortfolio')}</option>
         {#each ctx.history.assets as a (a.asset_id)}
           <option value={a.asset_id}>{a.ticker} - {a.name}</option>
         {/each}
@@ -93,7 +93,7 @@
       {currency}
     />
   {:else}
-    <p class="text-sm text-muted-foreground">No data</p>
+    <p class="text-sm text-muted-foreground">{t('chartView.noData')}</p>
   {/if}
 </div>
 

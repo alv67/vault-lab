@@ -23,6 +23,18 @@ export const en = {
     close: 'Close',
     /** Held-asset count line (dashboard portfolio cards, portfolio detail). */
     assetCount: '{count} assets',
+    /** Column headers shared by the positions and transactions tables. */
+    colAsset: 'Asset',
+    colDate: 'Date',
+    colType: 'Type',
+    colQty: 'Qty',
+    colPrice: 'Price',
+    colValue: 'Value',
+    colTotal: 'Total',
+    colActions: 'Actions',
+    /** Pagination footer buttons of the transactions table. */
+    previous: 'Previous',
+    next: 'Next',
   },
   nav: {
     /** Accessible name of the sidebar/drawer `<nav>` landmark. */
@@ -234,7 +246,7 @@ export const en = {
   /**
    * Vault Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The
    * `Investments` roll-up heading lives in `investments.title` and the
-   * Performance card copy in `dashboard.*`.
+   * Performance card copy in `performance.*`.
    */
   hero: {
     netValue: 'Net value',
@@ -248,17 +260,22 @@ export const en = {
     invested: 'Invested',
   },
   /**
-   * Dashboard zone copy: card headings not owned by another group, the
-   * performance granularity control, the compact closed line on the
-   * portfolio cards and the consolidated "Invested assets" table
-   * (EPIC I.5) with its headers and no-price badge.
+   * Performance card (shared by the dashboard vault view and the portfolio
+   * detail Overview): the card heading and its Monthly/Annual granularity
+   * toggle.
    */
-  dashboard: {
-    performance: 'Performance',
-    performanceGranularity: 'Performance granularity',
-    /** Monthly/Annual granularity toggle of the performance card. */
+  performance: {
+    title: 'Performance',
+    granularity: 'Performance granularity',
     monthly: 'Monthly',
     annual: 'Annual',
+  },
+  /**
+   * Dashboard zone copy: card headings not owned by another group, the
+   * compact closed line on the portfolio cards and the consolidated
+   * "Invested assets" table (EPIC I.5) with its headers and no-price badge.
+   */
+  dashboard: {
     closedPrefix: 'Closed:',
     investedAssets: 'Invested assets',
     noInvestedAssets: 'No invested assets yet',
@@ -404,12 +421,32 @@ export const en = {
     deleted: 'Portfolio deleted',
     /** Overview allocation digest → link to the Allocation tab. */
     viewAllocation: 'View full allocation',
+    /** Overview capital-history card heading (below the percentage chart). */
+    performanceHistory: 'Performance history',
+    /** Aggregate-series option of that card's asset selector. */
+    seriesPortfolio: 'Portfolio',
   },
   /**
-   * Portfolio Activity tab filter row (EPIC K.4c, spec §6.2/§8.2): type
-   * chips, asset picker and date range, persisted in the tab's URL query.
-   * The "Transactions" card heading predates the dictionary and stays
-   * hardcoded until the page's migration sweep (progressive, D1).
+   * Portfolio Positions tab: the card heading (also the accessible name of
+   * the positions table), the empty line and the columns not covered by
+   * `common.col*`, plus the closed-position badge.
+   */
+  positions: {
+    title: 'Positions',
+    noPositions: 'No positions',
+    colTicker: 'Ticker',
+    colCost: 'Cost',
+    colRealized: 'Realized',
+    colUnrealized: 'Unrealized',
+    colRoi: 'ROI',
+    colStatus: 'Status',
+    closed: 'Closed',
+  },
+  /**
+   * Portfolio Activity tab (EPIC K.4c, spec §6.2/§8.2): the "Transactions"
+   * card heading (also the accessible name of the transactions table), the
+   * row edit button and the filter row — type chips, asset picker and date
+   * range, persisted in the tab's URL query.
    */
   activity: {
     /** Accessible name of the transaction-type chip radiogroup. */
@@ -432,6 +469,10 @@ export const en = {
     /** Filtered-empty state (the row exists but matches no filter). */
     emptyFiltered: 'No transactions match these filters',
     emptyFilteredHint: 'Try widening the date range or clearing a filter.',
+    /** Activity card heading (also the transactions table's accessible name). */
+    transactions: 'Transactions',
+    /** Accessible name of the row edit button in the transactions table. */
+    editTransaction: 'Edit transaction',
   },
   /**
    * Transaction form + delete feedback (EPIC K.4c): titles are shared by

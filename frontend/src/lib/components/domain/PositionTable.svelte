@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths'
+  import { t } from '$lib/i18n/index.svelte'
   import { formatCurrency, formatPercent } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
   import Table from '$lib/components/ui/Table.svelte'
@@ -63,26 +64,26 @@
 </script>
 
 <div class="overflow-x-auto">
-  <Table aria-label="Positions">
+  <Table aria-label={t('positions.title')}>
     <THead>
       <Tr>
-        <Th>Ticker</Th>
+        <Th>{t('positions.colTicker')}</Th>
         {#if showPrice}
-          <Th align="right">Price</Th>
+          <Th align="right">{t('common.colPrice')}</Th>
         {/if}
-        <Th align="right">Qty</Th>
-        <Th align="right">Value</Th>
+        <Th align="right">{t('common.colQty')}</Th>
+        <Th align="right">{t('common.colValue')}</Th>
         {#if showCost}
-          <Th align="right">Cost</Th>
+          <Th align="right">{t('positions.colCost')}</Th>
         {/if}
         {#if showRealized}
-          <Th align="right">Realized</Th>
+          <Th align="right">{t('positions.colRealized')}</Th>
         {/if}
         {#if showUnrealized}
-          <Th align="right">Unrealized</Th>
+          <Th align="right">{t('positions.colUnrealized')}</Th>
         {/if}
-        <Th align="right">ROI</Th>
-        <Th>Status</Th>
+        <Th align="right">{t('positions.colRoi')}</Th>
+        <Th>{t('positions.colStatus')}</Th>
       </Tr>
     </THead>
     <TBody>
@@ -126,7 +127,7 @@
           </Td>
           <Td>
             {#if row.closed}
-              <Badge variant="neutral">Closed</Badge>
+              <Badge variant="neutral">{t('positions.closed')}</Badge>
             {/if}
           </Td>
         </Tr>

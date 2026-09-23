@@ -858,11 +858,14 @@ essere visibili su ogni pagina.
    `noClassAllocation`/`noAllocation`/`seriesExposure`/
     `seriesClassAllocation`), il pannello di drill-down delle allocazioni
     (`drill.*`), etichetta+descrizione di `ProvenanceBadge`
-    (`provenance.*`) e l'**intera dashboard**
-    (titoli, il selettore di granularità della performance, la riga delle
-    chiuse e il conteggio asset nelle card portfolio, la tabella Investimenti
-    Attive/Chiuse e la tabella "Asset investiti" con il suo stato vuoto —
-    `dashboard.*`, `investments.*`, `common.assetCount`), tutti
+    (`provenance.*`), l'**intera dashboard**
+    (titoli, la riga delle chiuse e il conteggio asset nelle card portfolio,
+    la tabella Investimenti Attive/Chiuse e la tabella "Asset investiti" con
+    il suo stato vuoto — `dashboard.*`, `investments.*`, `common.assetCount`)
+    e il **dettaglio portafoglio** (la card Performance e il selettore
+    Mensile/Annuale, la card storico performance, le schede Posizioni e
+    Attività con le relative tabelle — `performance.*`, `positions.*`,
+    `activity.*`, `common.col*`), tutti
     strutturalmente identici in `en.ts`/`it.ts`; le
     altre pagine mantengono la copia mista inglese/italiano ("cambio
     mancante", "Aggiorna da Yahoo", le etichette dei campi delle modali di

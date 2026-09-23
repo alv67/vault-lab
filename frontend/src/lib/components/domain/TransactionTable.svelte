@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Pencil } from 'lucide-svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import { formatCurrency } from '$lib/format'
   import type { Transaction } from '$lib/services/api'
   import Table from '$lib/components/ui/Table.svelte'
@@ -32,19 +33,38 @@
     if (type === 'dividend') return 'accent'
     return 'neutral'
   }
+
+  /** Badge label: the known types reuse the `activity.type*` chip labels;
+   *  anything unexpected from the API falls back to the raw value. */
+  function typeLabel(type: Transaction['type']): string {
+    switch (type) {
+      case 'buy':
+        return t('activity.typeBuy')
+      case 'sell':
+        return t('activity.typeSell')
+      case 'dividend':
+        return t('activity.typeDividend')
+      case 'split':
+        return t('activity.typeSplit')
+      case 'fee':
+        return t('activity.typeFee')
+      default:
+        return type
+    }
+  }
 </script>
 
 <div class="overflow-x-auto">
-  <Table aria-label="Transactions">
+  <Table aria-label={t('activity.transactions')}>
     <THead>
       <Tr>
-        <Th>Date</Th>
-        <Th>Asset</Th>
-        <Th>Type</Th>
-        <Th align="right">Qty</Th>
-        <Th align="right">Price</Th>
-        <Th align="right">Total</Th>
-        <Th align="right">Actions</Th>
+        <Th>{t('common.colDate')}</Th>
+        <Th>{t('common.colAsset')}</Th>
+        <Th>{t('common.colType')}</Th>
+        <Th align="right">{t('common.colQty')}</Th>
+        <Th align="right">{t('common.colPrice')}</Th>
+        <Th align="right">{t('common.colTotal')}</Th>
+        <Th align="right">{t('common.colActions')}</Th>
       </Tr>
     </THead>
     <TBody>
@@ -56,7 +76,7 @@
             <span class="ml-1 text-xs text-muted-foreground">{tx.asset_name}</span>
           </Td>
           <Td>
-            <Badge variant={typeVariant(tx.type)}>{tx.type}</Badge>
+            <Badge variant={typeVariant(tx.type)}>{typeLabel(tx.type)}</Badge>
           </Td>
           <Td align="right">{tx.quantity}</Td>
           <Td align="right">{formatCurrency(tx.price, currency)}</Td>
@@ -67,7 +87,7 @@
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Edit transaction"
+              aria-label={t('activity.editTransaction')}
               onclick={() => onedit(tx)}
             >
               <Pencil class="h-4 w-4" />

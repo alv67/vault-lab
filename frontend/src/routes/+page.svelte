@@ -56,8 +56,8 @@
   let perfLoading = $state(true)
   let granularity = $state<'month' | 'year'>('month')
   const perfItems = $derived([
-    { value: 'month', label: t('dashboard.monthly') },
-    { value: 'year', label: t('dashboard.annual') },
+    { value: 'month', label: t('performance.monthly') },
+    { value: 'year', label: t('performance.annual') },
   ])
 
   // SegmentedControl binds a plain string; the accessors keep the union type.
@@ -449,11 +449,11 @@
              above (both share the one `dashboardPerformance` fetch). -->
         <Card class="p-4">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 class="font-semibold">{t('dashboard.performance')}</h2>
+            <h2 class="font-semibold">{t('performance.title')}</h2>
             <SegmentedControl
               items={perfItems}
               bind:value={getGranularity, setGranularity}
-              ariaLabel={t('dashboard.performanceGranularity')}
+              ariaLabel={t('performance.granularity')}
             />
           </div>
           {#if perfLoading}

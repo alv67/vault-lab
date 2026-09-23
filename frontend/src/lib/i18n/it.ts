@@ -18,6 +18,18 @@ export const it = {
     close: 'Chiudi',
     /** Riga con il numero di asset detenuti (card portfolio in dashboard, dettaglio portafoglio). */
     assetCount: '{count} asset',
+    /** Intestazioni di colonna condivise dalle tabelle posizioni e transazioni. */
+    colAsset: 'Asset',
+    colDate: 'Data',
+    colType: 'Tipo',
+    colQty: 'Qtà',
+    colPrice: 'Prezzo',
+    colValue: 'Valore',
+    colTotal: 'Totale',
+    colActions: 'Azioni',
+    /** Pulsanti del piè di pagina di paginazione della tabella transazioni. */
+    previous: 'Precedente',
+    next: 'Successivo',
   },
   nav: {
     main: 'Principale',
@@ -221,16 +233,23 @@ export const it = {
     invested: 'Investito',
   },
   /**
-   * Copy delle zone della dashboard: titoli delle card non gestiti da altri
-   * gruppi, il selettore di granularità della performance, la riga
-   * "chiuse" compatta sulle card portfolio e la tabella consolidata
-   * "Asset investiti" (EPIC I.5) con intestazioni e badge "senza prezzo".
+   * Card Performance (condivisa tra la vista vault della dashboard e la
+   * Panoramica del dettaglio portafoglio): titolo della card e relativo
+   * selettore di granularità Mensile/Annuale.
    */
-  dashboard: {
-    performance: 'Performance',
-    performanceGranularity: 'Granularità performance',
+  performance: {
+    title: 'Performance',
+    granularity: 'Granularità performance',
     monthly: 'Mensile',
     annual: 'Annuale',
+  },
+  /**
+   * Copy delle zone della dashboard: titoli delle card non gestiti da altri
+   * gruppi, la riga "chiuse" compatta sulle card portfolio e la tabella
+   * consolidata "Asset investiti" (EPIC I.5) con intestazioni e badge
+   * "senza prezzo".
+   */
+  dashboard: {
     closedPrefix: 'Chiuse:',
     investedAssets: 'Asset investiti',
     noInvestedAssets: 'Nessun asset investito',
@@ -349,6 +368,24 @@ export const it = {
     deleteConfirm: 'Eliminare questo portafoglio? Tutte le sue transazioni andranno perse.',
     deleted: 'Portafoglio eliminato',
     viewAllocation: 'Vedi allocazione completa',
+    performanceHistory: 'Storico performance',
+    seriesPortfolio: 'Portafoglio',
+  },
+  /**
+   * Tab Posizioni del portafoglio: titolo della card (anche nome accessibile
+   * della tabella delle posizioni), la riga di stato vuoto e le colonne non
+   * coperte da `common.col*`, più il badge delle posizioni chiuse.
+   */
+  positions: {
+    title: 'Posizioni',
+    noPositions: 'Nessuna posizione',
+    colTicker: 'Ticker',
+    colCost: 'Costo',
+    colRealized: 'Realizzato',
+    colUnrealized: 'Non realizzato',
+    colRoi: 'ROI',
+    colStatus: 'Stato',
+    closed: 'Chiusa',
   },
   activity: {
     typeGroup: 'Filtra per tipo di transazione',
@@ -366,6 +403,8 @@ export const it = {
     clearFilters: 'Cancella filtri',
     emptyFiltered: 'Nessuna transazione corrisponde ai filtri',
     emptyFilteredHint: 'Prova a estendere le date o a rimuovere un filtro.',
+    transactions: 'Transazioni',
+    editTransaction: 'Modifica transazione',
   },
   tx: {
     titleNew: 'Nuova transazione',
