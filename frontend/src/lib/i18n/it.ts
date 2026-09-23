@@ -16,6 +16,8 @@ export const it = {
     cancel: 'Annulla',
     /** Chiusura di sheet/dialoghi (es. sheet transazione, K.4c). */
     close: 'Chiudi',
+    /** Riga con il numero di asset detenuti (card portfolio in dashboard, dettaglio portafoglio). */
+    assetCount: '{count} asset',
   },
   nav: {
     main: 'Principale',
@@ -217,6 +219,43 @@ export const it = {
     realized: 'Realizzato',
     dividends: 'Dividendi',
     invested: 'Investito',
+  },
+  /**
+   * Copy delle zone della dashboard: titoli delle card non gestiti da altri
+   * gruppi, il selettore di granularità della performance, la riga
+   * "chiuse" compatta sulle card portfolio e la tabella consolidata
+   * "Asset investiti" (EPIC I.5) con intestazioni e badge "senza prezzo".
+   */
+  dashboard: {
+    performance: 'Performance',
+    performanceGranularity: 'Granularità performance',
+    monthly: 'Mensile',
+    annual: 'Annuale',
+    closedPrefix: 'Chiuse:',
+    investedAssets: 'Asset investiti',
+    noInvestedAssets: 'Nessun asset investito',
+    noInvestedAssetsHint: 'Le posizioni aperte compariranno qui non appena registri transazioni nei tuoi portafogli.',
+    colAsset: 'Asset',
+    colGainLoss: 'Guadagno/Perdita',
+    colPnlPct: 'P/L %',
+    noPrice: 'senza prezzo',
+    noPriceHint: 'Nessun dato di prezzo: il valore è mantenuto al costo, quindi il suo P/L è 0',
+  },
+  /**
+   * Card di riepilogo "Investimenti" (dettaglio Attive/Chiuse): condivisa
+   * tra la disclosure dell'hero in dashboard e la Panoramica del dettaglio
+   * portafoglio.
+   */
+  investments: {
+    title: 'Investimenti',
+    group: 'Gruppo',
+    invested: 'Investito',
+    valueProceeds: 'Valore / Incasso',
+    gainLoss: 'Guadagno/Perdita',
+    pct: '%',
+    dividends: 'Dividendi',
+    active: 'Attive',
+    closed: 'Chiuse',
   },
   period: {
     oneYear: '1Y',

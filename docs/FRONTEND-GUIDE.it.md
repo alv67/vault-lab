@@ -856,13 +856,17 @@ essere visibili su ogni pagina.
    vuoti dei grafici, le etichette `Valore:`/`Peso:` dei tooltip e i nomi di
    serie di riserva (`chartView.noData`/`noDistribution`/
    `noClassAllocation`/`noAllocation`/`seriesExposure`/
-   `seriesClassAllocation`), il pannello di drill-down delle allocazioni
-   (`drill.*`) ed etichetta+descrizione di `ProvenanceBadge`
-   (`provenance.*`), tutti strutturalmente identici in `en.ts`/`it.ts`; le
-   altre pagine mantengono la copia mista inglese/italiano ("cambio
-   mancante", "Aggiorna da Yahoo", le etichette dei campi delle modali di
-   esposizione, le card "Performance"/"Invested assets" di dashboard e
-   portafoglio, … — anche i formattatori del capitolo 6 seguono lo stesso mix).
+    `seriesClassAllocation`), il pannello di drill-down delle allocazioni
+    (`drill.*`), etichetta+descrizione di `ProvenanceBadge`
+    (`provenance.*`) e l'**intera dashboard**
+    (titoli, il selettore di granularità della performance, la riga delle
+    chiuse e il conteggio asset nelle card portfolio, la tabella Investimenti
+    Attive/Chiuse e la tabella "Asset investiti" con il suo stato vuoto —
+    `dashboard.*`, `investments.*`, `common.assetCount`), tutti
+    strutturalmente identici in `en.ts`/`it.ts`; le
+    altre pagine mantengono la copia mista inglese/italiano ("cambio
+    mancante", "Aggiorna da Yahoo", le etichette dei campi delle modali di
+    esposizione, … — anche i formattatori del capitolo 6 seguono lo stesso mix).
 
 ---
 

@@ -6,6 +6,7 @@
 - Lo stato di aggiornamento dei prezzi ora vive nell'header dell'app, su ogni pagina: il timbro "Prezzi alle HH:MM" è sempre visibile e cliccabile per aggiornare le quotazioni su richiesta, e gli avvisi sulla qualità dei dati (rate-limit o aggiornamenti falliti, posizioni senza tasso di cambio) ti seguono in una fascia sotto l'header invece di stare nella dashboard
 
 ### Correzioni
+- La dashboard è completamente tradotta in italiano: le card Performance e Portafogli, il selettore Mensile/Annuale, la tabella Investimenti Attive/Chiuse e la tabella "Asset investiti" con il suo stato vuoto seguono la lingua dell'interfaccia
 - Sul telefono il menu ⋯ dell'header dell'asset non c'è più: le sue azioni (aggiorna da Yahoo, recupera lo storico prezzi, elimina) erano già ripetute nella zona pericolosa del tab Dati, e il menu finiva fuori schermo quando l'header andava a capo
 - Sul telefono il menu ⋯ dell'header del portafoglio resta allineato a destra quando l'header va a capo, e il suo pannello non esce più dallo schermo
 - Sul telefono il drill-down delle allocazioni non si chiude più appena si apre: la sheet dal basso resta visibile e puoi leggere gli asset che compongono la fetta

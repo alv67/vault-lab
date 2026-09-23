@@ -41,7 +41,7 @@
        a muted secondary line under the card. -->
   <div class="mb-6">
     <InvestmentsTable active={ctx.summary.active} closed={ctx.summary.closed} {currency} />
-    <p class="mt-2 text-xs text-muted-foreground">{ctx.summary.asset_count} assets</p>
+    <p class="mt-2 text-xs text-muted-foreground">{t('common.assetCount', { count: ctx.summary.asset_count })}</p>
   </div>
 {/if}
 

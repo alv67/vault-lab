@@ -55,10 +55,10 @@
   let perf = $state<DashboardPerformance | null>(null)
   let perfLoading = $state(true)
   let granularity = $state<'month' | 'year'>('month')
-  const perfItems = [
-    { value: 'month', label: 'Monthly' },
-    { value: 'year', label: 'Annual' },
-  ]
+  const perfItems = $derived([
+    { value: 'month', label: t('dashboard.monthly') },
+    { value: 'year', label: t('dashboard.annual') },
+  ])
 
   // SegmentedControl binds a plain string; the accessors keep the union type.
   function getGranularity(): string {
@@ -324,7 +324,7 @@
 
 <div class="p-6">
   <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-    <h1 class="text-2xl font-bold">Dashboard</h1>
+    <h1 class="text-2xl font-bold">{t('nav.dashboard')}</h1>
     {#if !loading && dash?.portfolios?.length}
       <!-- Scope switcher (D3): navigation, not a filter — picking a portfolio
            leaves for its detail page, which is the same analytics at
@@ -449,11 +449,11 @@
              above (both share the one `dashboardPerformance` fetch). -->
         <Card class="p-4">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 class="font-semibold">Performance</h2>
+            <h2 class="font-semibold">{t('dashboard.performance')}</h2>
             <SegmentedControl
               items={perfItems}
               bind:value={getGranularity, setGranularity}
-              ariaLabel="Performance granularity"
+              ariaLabel={t('dashboard.performanceGranularity')}
             />
           </div>
           {#if perfLoading}
@@ -482,7 +482,7 @@
       </div>
 
       <div>
-        <h2 class="mb-4 font-semibold">Portfolios</h2>
+        <h2 class="mb-4 font-semibold">{t('nav.portfolios')}</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {#each dash.portfolios as p (p.portfolio_id)}
             {@const spark = sparklines[p.portfolio_id]}
@@ -503,14 +503,14 @@
                 </div>
                 {#if hasClosedActivity(p)}
                   <p class="mt-2 text-xs tabular-nums text-muted-foreground">
-                    Closed: {formatCurrency(p.closed.invested, p.currency)} ·
+                    {t('dashboard.closedPrefix')} {formatCurrency(p.closed.invested, p.currency)} ·
                     {formatCurrency(p.closed.proceeds, p.currency)} ·
                     <span class="font-medium {pnlColorClass(p.closed.realized)}">
                       {formatCurrency(p.closed.realized, p.currency)}
                     </span>
                   </p>
                 {/if}
-                <p class="mt-2 text-xs text-muted-foreground">{p.asset_count} assets</p>
+                <p class="mt-2 text-xs text-muted-foreground">{t('common.assetCount', { count: p.asset_count })}</p>
                 {#if spark && spark.length > 1}
                   <!-- Value-history sparkline as a bottom strip (K.3b): only
                        present once the background fetch has landed, so the
@@ -599,23 +599,23 @@
            portfolios, in the base currency, ordered by value descending as
            returned by the backend. -->
       <Card class="p-4">
-        <h2 class="mb-3 font-semibold">Invested assets</h2>
+        <h2 class="mb-3 font-semibold">{t('dashboard.investedAssets')}</h2>
         {#if investedAssets.length === 0}
           <EmptyState
             dashed
-            title="No invested assets yet"
-            description="Open positions will appear here once you record transactions in your portfolios."
+            title={t('dashboard.noInvestedAssets')}
+            description={t('dashboard.noInvestedAssetsHint')}
           />
         {:else}
           <div class="overflow-x-auto">
-            <Table aria-label="Invested assets">
+            <Table aria-label={t('dashboard.investedAssets')}>
               <THead>
                 <Tr>
-                  <Th>Asset</Th>
-                  <Th align="right">Invested</Th>
-                  <Th align="right">Value</Th>
-                  <Th align="right">Gain/Loss</Th>
-                  <Th align="right">P/L %</Th>
+                  <Th>{t('dashboard.colAsset')}</Th>
+                  <Th align="right">{t('chartView.colInvested')}</Th>
+                  <Th align="right">{t('chartView.colValue')}</Th>
+                  <Th align="right">{t('dashboard.colGainLoss')}</Th>
+                  <Th align="right">{t('dashboard.colPnlPct')}</Th>
                 </Tr>
               </THead>
               <TBody>
@@ -632,9 +632,9 @@
                         <Badge
                           variant="neutral"
                           class="ml-1.5 align-middle"
-                          title="No price data: value is carried at cost, so its P/L is 0"
+                          title={t('dashboard.noPriceHint')}
                         >
-                          no price
+                          {t('dashboard.noPrice')}
                         </Badge>
                       {/if}
                       <span class="block text-xs text-muted-foreground">{a.name}</span>

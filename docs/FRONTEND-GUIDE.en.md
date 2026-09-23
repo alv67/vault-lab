@@ -806,12 +806,15 @@ visible on every page.
   tooltip `Value:`/`Weight:` labels and fallback series names
   (`chartView.noData`/`noDistribution`/`noClassAllocation`/`noAllocation`/
   `seriesExposure`/`seriesClassAllocation`), the allocation drill-down panel
-  (`drill.*`) and the `ProvenanceBadge`
-  label+description (`provenance.*`), all shape-identical in `en.ts`/`it.ts`;
-  the other pages keep their mixed English/Italian copy
-  ("cambio mancante", "Aggiorna da Yahoo", exposure-modal field labels,
-  portfolio/dashboard "Performance"/"Invested assets" cards, … — the chapter 6
-  formatters follow the same mix).
+  (`drill.*`), the `ProvenanceBadge`
+  label+description (`provenance.*`) and the whole **dashboard**
+  (headings, the performance granularity toggle, the portfolio cards' closed
+  line and asset count, the Active/Closed investments table and the
+  "Invested assets" table with its empty state — `dashboard.*`,
+  `investments.*`, `common.assetCount`), all shape-identical in
+  `en.ts`/`it.ts`; the other pages keep their mixed English/Italian copy
+  ("cambio mancante", "Aggiorna da Yahoo", exposure-modal field labels, … —
+  the chapter 6 formatters follow the same mix).
 
 ---
 

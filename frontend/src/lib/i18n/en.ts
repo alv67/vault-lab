@@ -21,6 +21,8 @@ export const en = {
     cancel: 'Cancel',
     /** Close affordance on sheets/dialogs (e.g. the transaction sheet, K.4c). */
     close: 'Close',
+    /** Held-asset count line (dashboard portfolio cards, portfolio detail). */
+    assetCount: '{count} assets',
   },
   nav: {
     /** Accessible name of the sidebar/drawer `<nav>` landmark. */
@@ -231,8 +233,8 @@ export const en = {
   },
   /**
    * Vault Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The
-   * `Investments`/`Performance` card copy that predates the dictionary stays
-   * hardcoded until the dashboard sweep (progressive migration, D1).
+   * `Investments` roll-up heading lives in `investments.title` and the
+   * Performance card copy in `dashboard.*`.
    */
   hero: {
     netValue: 'Net value',
@@ -244,6 +246,43 @@ export const en = {
     realized: 'Realized',
     dividends: 'Dividends',
     invested: 'Invested',
+  },
+  /**
+   * Dashboard zone copy: card headings not owned by another group, the
+   * performance granularity control, the compact closed line on the
+   * portfolio cards and the consolidated "Invested assets" table
+   * (EPIC I.5) with its headers and no-price badge.
+   */
+  dashboard: {
+    performance: 'Performance',
+    performanceGranularity: 'Performance granularity',
+    /** Monthly/Annual granularity toggle of the performance card. */
+    monthly: 'Monthly',
+    annual: 'Annual',
+    closedPrefix: 'Closed:',
+    investedAssets: 'Invested assets',
+    noInvestedAssets: 'No invested assets yet',
+    noInvestedAssetsHint: 'Open positions will appear here once you record transactions in your portfolios.',
+    colAsset: 'Asset',
+    colGainLoss: 'Gain/Loss',
+    colPnlPct: 'P/L %',
+    noPrice: 'no price',
+    noPriceHint: 'No price data: value is carried at cost, so its P/L is 0',
+  },
+  /**
+   * "Investments" roll-up card (Active/Closed breakdown): shared by the
+   * dashboard hero disclosure and the portfolio detail Overview.
+   */
+  investments: {
+    title: 'Investments',
+    group: 'Group',
+    invested: 'Invested',
+    valueProceeds: 'Value / Proceeds',
+    gainLoss: 'Gain/Loss',
+    pct: '%',
+    dividends: 'Dividends',
+    active: 'Active',
+    closed: 'Closed',
   },
   /** Period chips on the hero chart (decision D10: bucket-driven ranges). */
   period: {
