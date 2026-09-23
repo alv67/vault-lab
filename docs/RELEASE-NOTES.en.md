@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v0.6.1 — 23 Sep 2026
 
 ### Features
 - Price freshness now lives in the app header on every page: the "Prices as of" stamp is always visible and clickable to refresh quotes on demand, and data-quality warnings (rate-limited or failed updates, holdings missing an FX rate) follow you as a strip under the header instead of sitting on the dashboard

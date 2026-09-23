@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## v0.6.1 — 23 Set 2026
 
 ### Nuove funzionalità
 - Lo stato di aggiornamento dei prezzi ora vive nell'header dell'app, su ogni pagina: il timbro "Prezzi alle HH:MM" è sempre visibile e cliccabile per aggiornare le quotazioni su richiesta, e gli avvisi sulla qualità dei dati (rate-limit o aggiornamenti falliti, posizioni senza tasso di cambio) ti seguono in una fascia sotto l'header invece di stare nella dashboard
