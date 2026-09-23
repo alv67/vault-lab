@@ -1,5 +1,7 @@
 <script lang="ts">
   import { toast } from '$lib/stores/toast.svelte'
+  import { t } from '$lib/i18n/index.svelte'
+  import { ASSET_TYPES, assetTypeLabel } from '$lib/format'
   import { assetApi, type AssetLookupResult, type Currency } from '$lib/services/api'
   import Modal from '$lib/components/ui/Modal.svelte'
   import Button from '$lib/components/ui/Button.svelte'
@@ -83,11 +85,11 @@
     saving = true
     try {
       await assetApi.create(form)
-      toast.success('Asset created')
+      toast.success(t('asset.created'))
       open = false
       onsuccess?.()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Create failed'
+      const message = err instanceof Error ? err.message : t('common.createFailed')
       toast.error(message)
     } finally {
       saving = false
@@ -96,46 +98,52 @@
 </script>
 
 {#snippet footer()}
-  <Button variant="secondary" onclick={() => (open = false)} disabled={saving}>Cancel</Button>
-  <Button onclick={submit} disabled={!form.ticker || !form.name} loading={saving}>Save</Button>
+  <Button variant="secondary" onclick={() => (open = false)} disabled={saving}>{t('common.cancel')}</Button>
+  <Button onclick={submit} disabled={!form.ticker || !form.name} loading={saving}>{t('common.save')}</Button>
 {/snippet}
 
-<Modal bind:open title="New Asset" description="Look up a ticker to prefill the details." size="lg" {footer} dismissible={!saving}>
+<Modal
+  bind:open
+  title={t('asset.newTitle')}
+  description={t('asset.lookupHint')}
+  size="lg"
+  {footer}
+  dismissible={!saving}
+>
   <div class="grid gap-3 sm:grid-cols-2">
-    <Field label="Ticker" for={`${uid}-ticker`}>
+    <Field label={t('positions.colTicker')} for={`${uid}-ticker`}>
       <AssetSearchAutocomplete
         inputId={`${uid}-ticker`}
         bind:ticker={form.ticker}
         onselect={handleSelect}
       />
     </Field>
-    <Field label="Name">
-      <Input bind:value={form.name} placeholder="Name" />
+    <Field label={t('chartView.colName')}>
+      <Input bind:value={form.name} placeholder={t('chartView.colName')} />
     </Field>
-    <Field label="ISIN" hint="optional">
+    <Field label={t('asset.factIsin')} hint={t('common.optional')}>
       <Input bind:value={form.isin} />
     </Field>
-    <Field label="Type">
+    <Field label={t('asset.factType')}>
+      <!-- Same value list the Data tab's Type select reads, localized labels
+           from format.ts. -->
       <Select bind:value={form.type}>
-        <option value="stock">Stock</option>
-        <option value="etf">ETF</option>
-        <option value="bond">Bond</option>
-        <option value="mutual_fund">Mutual fund</option>
-        <option value="crypto">Crypto</option>
-        <option value="commodity">Commodity</option>
+        {#each ASSET_TYPES as value (value)}
+          <option value={value}>{assetTypeLabel(value)}</option>
+        {/each}
       </Select>
     </Field>
-    <Field label="Currency">
+    <Field label={t('asset.factCurrency')}>
       <CurrencySelect bind:value={form.currency} {currencies} />
     </Field>
-    <Field label="Exchange">
-      <Input bind:value={form.exchange} placeholder="Exchange" />
+    <Field label={t('asset.factExchange')}>
+      <Input bind:value={form.exchange} placeholder={t('asset.factExchange')} />
     </Field>
-    <Field label="Price source">
+    <Field label={t('asset.factPriceSource')}>
       <Select bind:value={form.price_source}>
-        <option value="yahoo">Yahoo Finance</option>
-        <option value="manual">Prezzo manuale</option>
-        <option value="none">Nessun prezzo</option>
+        <option value="yahoo">{t('asset.priceSourceYahoo')}</option>
+        <option value="manual">{t('asset.priceSourceManual')}</option>
+        <option value="none">{t('asset.priceSourceNone')}</option>
       </Select>
     </Field>
   </div>

@@ -20,7 +20,7 @@
     type Price,
     type SplitInfo,
   } from '$lib/services/api'
-  import { formatCurrency, ASSET_CLASS_LABELS, ASSET_TYPE_LABELS, PRICE_SOURCE_LABELS } from '$lib/format'
+  import { formatCurrency, assetTypeLabel, assetClassLabel, priceSourceLabel } from '$lib/format'
   import { ArrowLeft } from 'lucide-svelte'
   import Badge from '$lib/components/ui/Badge.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
@@ -187,13 +187,13 @@
   ]
 
   // Identity chips of the header (spec §6.3 `[ETF | equity | EUR | XETRA]`):
-  // type and class go through the central label maps, currency and exchange
-  // are shown raw (exchange only when known).
+  // type and class go through the shared localized label helpers, currency
+  // and exchange are shown raw (exchange only when known).
   const identityChips = $derived.by(() => {
     if (!asset) return [] as string[]
-    const chips: string[] = [ASSET_TYPE_LABELS[asset.type] ?? asset.type]
+    const chips: string[] = [assetTypeLabel(asset.type)]
     if (asset.asset_class) {
-      chips.push(ASSET_CLASS_LABELS[asset.asset_class] ?? asset.asset_class)
+      chips.push(assetClassLabel(asset.asset_class))
     }
     chips.push(asset.currency)
     if (asset.exchange) chips.push(asset.exchange)
@@ -204,7 +204,7 @@
   // sources never participate in the automatic sync.
   const priceSourceWarning = $derived(
     asset?.price_source && asset.price_source !== 'yahoo'
-      ? `${PRICE_SOURCE_LABELS[asset.price_source] ?? asset.price_source} — nessun sync automatico`
+      ? t('asset.noAutoSync', { source: priceSourceLabel(asset.price_source) })
       : '',
   )
 
@@ -252,7 +252,7 @@
       sectorsUpdatedAt = ex.provenance?.sectors?.updated_at ?? null
       fillForm(a)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load asset'
+      const message = err instanceof Error ? err.message : t('asset.detailLoadFailed')
       toast.error(message)
       const status = (err as { status?: number } | null)?.status
       if (status === 404) {
@@ -333,7 +333,7 @@
   async function saveAsset(): Promise<void> {
     if (!id || !asset) return
     if (!form.ticker.trim() || !form.name.trim() || !form.currency.trim()) {
-      toast.error('Ticker, Name e Currency sono obbligatori')
+      toast.error(t('asset.formRequiredFields'))
       return
     }
     saving = true
@@ -351,9 +351,9 @@
       const updated = await assetApi.update(id, patch)
       asset = updated
       fillForm(updated)
-      toast.success('Asset aggiornato')
+      toast.success(t('asset.updated'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed'
+      const message = err instanceof Error ? err.message : t('common.saveFailed')
       toast.error(message)
     } finally {
       saving = false
@@ -378,9 +378,9 @@
             ? meta.asset_class || form.asset_class
             : form.asset_class,
       }
-      toast.success('Campi aggiornati da Yahoo')
+      toast.success(t('asset.metaRefreshed'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Aggiornamento fallito'
+      const message = err instanceof Error ? err.message : t('asset.metaRefreshFailed')
       toast.error(message)
     } finally {
       refreshingMeta = false
@@ -396,9 +396,9 @@
     try {
       await assetApi.backfillHistory(id)
       prices = await pricesApi.byAsset(id)
-      toast.success('Storico prezzi aggiornato')
+      toast.success(t('asset.backfillDone'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Backfill fallito'
+      const message = err instanceof Error ? err.message : t('asset.backfillFailed')
       toast.error(message)
     } finally {
       backfillingHistory = false
@@ -419,9 +419,9 @@
       // Unsaved preview: no persisted date yet (badge shows the label only).
       countriesUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
-      toast.success('Paesi precompilati da JustETF')
+      toast.success(t('asset.countriesPrefilledJustEtf'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
+      const message = err instanceof Error ? err.message : t('asset.downloadFailed')
       toast.error(message)
     } finally {
       fetchingETF = false
@@ -432,7 +432,7 @@
   async function deriveRegionsFromCountries(): Promise<void> {
     if (!id || !asset) return
     if (!countriesEdit.some((c) => Number(c.weight) > 0)) {
-      toast.error('Nessun paese con peso: aggiungi paesi prima')
+      toast.error(t('asset.noWeightedCountries'))
       return
     }
     derivingRegions = true
@@ -444,9 +444,9 @@
       regionsSource = countriesSource === 'justetf' ? 'derived-etf' : 'derived'
       // Preview only: drop any previously persisted date until it is saved.
       regionsUpdatedAt = null
-      toast.success('Regioni ricalcolate dai paesi')
+      toast.success(t('asset.regionsRecomputed'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Calcolo fallito'
+      const message = err instanceof Error ? err.message : t('asset.computeFailed')
       toast.error(message)
     } finally {
       derivingRegions = false
@@ -465,9 +465,9 @@
       regionsSource = 'morningstar-regions'
       regionsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
-      toast.success('Regioni precompilate da Morningstar')
+      toast.success(t('asset.regionsPrefilledMorningstar'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
+      const message = err instanceof Error ? err.message : t('asset.downloadFailed')
       toast.error(message)
     } finally {
       fetchingMorningstar = false
@@ -485,9 +485,9 @@
       sectorsSource = 'justetf'
       sectorsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
-      toast.success('Distribuzione settoriale precompilata da JustETF')
+      toast.success(t('asset.sectorsPrefilledJustEtf'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
+      const message = err instanceof Error ? err.message : t('asset.downloadFailed')
       toast.error(message)
     } finally {
       fetchingETF = false
@@ -506,15 +506,15 @@
       sectorsEdit = sectorsList(preview.sectors)
       sectorsSource = 'yahoo'
       sectorsUpdatedAt = null
-      toast.success('Distribuzione settoriale precompilata da Yahoo')
+      toast.success(t('asset.sectorsPrefilledYahoo'))
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status
       const message =
         status === 502
-          ? 'Yahoo non ha risposto'
+          ? t('asset.yahooNoResponse')
           : err instanceof Error
             ? err.message
-            : 'Prefill fallito'
+            : t('asset.prefillFailed')
       toast.error(message)
     } finally {
       prefilling = false
@@ -535,9 +535,9 @@
       sectorsSource = 'morningstar'
       sectorsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
-      toast.success('Distribuzione settoriale precompilata da Morningstar')
+      toast.success(t('asset.sectorsPrefilledMorningstar'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
+      const message = err instanceof Error ? err.message : t('asset.downloadFailed')
       toast.error(message)
     } finally {
       fetchingMorningstar = false
@@ -569,9 +569,9 @@
       // absent so the badge never shows a stale timestamp.
       regionsSource = saved.provenance?.regions?.source ?? sentSource
       regionsUpdatedAt = saved.provenance?.regions?.updated_at ?? null
-      toast.success('Distribuzione geografica salvata')
+      toast.success(t('asset.geoSaved'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed'
+      const message = err instanceof Error ? err.message : t('common.saveFailed')
       toast.error(message)
     } finally {
       savingRegions = false
@@ -591,9 +591,9 @@
       sectorsEdit = sectorsList(saved.sectors)
       sectorsSource = saved.provenance?.sectors?.source ?? sentSource
       sectorsUpdatedAt = saved.provenance?.sectors?.updated_at ?? null
-      toast.success('Distribuzione settoriale salvata')
+      toast.success(t('asset.sectorsSaved'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed'
+      const message = err instanceof Error ? err.message : t('common.saveFailed')
       toast.error(message)
     } finally {
       savingSectors = false
@@ -615,9 +615,9 @@
       sectorsSource = 'morningstar'
       sectorsUpdatedAt = null
       if (preview.isin) form.isin = preview.isin
-      toast.success('Paesi e settori precompilati da Morningstar')
+      toast.success(t('asset.countriesSectorsPrefilledMorningstar'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Download fallito'
+      const message = err instanceof Error ? err.message : t('asset.downloadFailed')
       toast.error(message)
     } finally {
       fetchingMorningstar = false
@@ -643,9 +643,9 @@
       // (manual or from a prefill). The stored data still refreshes via
       // `exposure` (cards), and regionsSource is left alone so the regions
       // provenance badge keeps reflecting its real source.
-      toast.success('Distribuzione paesi salvata')
+      toast.success(t('asset.countriesSaved'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Save failed'
+      const message = err instanceof Error ? err.message : t('common.saveFailed')
       toast.error(message)
     } finally {
       savingCountries = false
@@ -721,7 +721,7 @@
       toast.success(t('asset.deleted'))
       void goto(resolve('/assets'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
+      const message = err instanceof Error ? err.message : t('common.deleteFailed')
       toast.error(message)
     } finally {
       deleting = false
@@ -830,7 +830,7 @@
             {/if}
           </div>
         {:else if loading}
-          <p class="mt-1 text-sm text-muted-foreground">Loading...</p>
+          <p class="mt-1 text-sm text-muted-foreground">{t('common.loading')}</p>
         {/if}
       </div>
     </div>
@@ -856,7 +856,7 @@
         </span>
       </div>
     {:else if quote}
-      <p class="text-sm text-muted-foreground">Nessun dato prezzo</p>
+      <p class="text-sm text-muted-foreground">{t('asset.noPriceData')}</p>
     {/if}
 
     <Tabs items={tabItems} ariaLabel={t('asset.tabsLabel')} />

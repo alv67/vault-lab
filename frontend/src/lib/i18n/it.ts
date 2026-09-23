@@ -27,9 +27,28 @@ export const it = {
     colValue: 'Valore',
     colTotal: 'Totale',
     colActions: 'Azioni',
+    /** Etichetta Code condivisa tra form/tabella valute e tabella eventi health. */
+    colCode: 'Codice',
     /** Pulsanti del piè di pagina di paginazione della tabella transazioni. */
     previous: 'Precedente',
     next: 'Successivo',
+    /** Contatore di righe accanto ai pulsanti di paginazione ("1–20 di 137",
+     *  variante vuota quando la finestra non ha righe). */
+    rangeLabel: '{from}–{to} di {total}',
+    rangeEmpty: '0 di {total}',
+    /** Riga di avanzamento mentre una lista/tabella è in caricamento. */
+    loading: 'Caricamento…',
+    /** Etichette generiche dei pulsanti dei form delle modali di creazione/modifica. */
+    create: 'Crea',
+    save: 'Salva',
+    saving: 'Salvataggio…',
+    saveChanges: 'Salva modifiche',
+    /** Suggerimento sotto l'etichetta di un campo facoltativo. */
+    optional: 'facoltativo',
+    /** Fallback di errore generici quando l'API non porta un messaggio. */
+    deleteFailed: 'Eliminazione non riuscita',
+    saveFailed: 'Salvataggio non riuscito',
+    createFailed: 'Creazione non riuscita',
   },
   nav: {
     main: 'Principale',
@@ -131,6 +150,53 @@ export const it = {
     paletteCvd: 'Blu/Arancione',
     paletteHint: 'Sostituisce verde/rosso con blu/arancione in testi e grafici. Segni e frecce ▲▼ restano sempre.',
   },
+  /** Card Profilo delle Impostazioni (riusa `nav.settings`,
+   *  `settingsTabs.profile`, `chartView.colName`, `common.save/saving`). */
+  profile: {
+    email: 'Email',
+    baseCurrency: 'Valuta base',
+    baseCurrencyHint: 'Usata per consolidare i valori dei portafogli nella dashboard.',
+    updated: 'Profilo aggiornato',
+    updateFailed: 'Aggiornamento non riuscito',
+  },
+  /** Card Password delle Impostazioni: etichette, validazioni e toast. */
+  password: {
+    change: 'Cambia password',
+    current: 'Password attuale',
+    new: 'Nuova password',
+    confirm: 'Conferma nuova password',
+    minLengthHint: 'Almeno 8 caratteri',
+    currentRequired: 'La password attuale è obbligatoria',
+    tooShort: 'La password deve essere lunga almeno 8 caratteri',
+    mismatch: 'Le password non coincidono',
+    currentIncorrect: 'La password attuale non è corretta',
+    changed: 'Password modificata',
+    changeFailed: 'Modifica non riuscita',
+  },
+  /** Card Valute delle Impostazioni (riusa `common.colCode` per Code,
+   *  `chartView.colName`/`common.colActions` per la tabella, `common.*` per
+   *  caricamento e dialoghi; `{code}` porta il codice di valuta grezzo). */
+  currencies: {
+    title: 'Valute gestite',
+    select: 'Seleziona una valuta',
+    namePlaceholder: 'Facoltativo',
+    allManaged: 'Tutte le valute disponibili sono già gestite.',
+    empty: 'Nessuna valuta trovata.',
+    add: 'Aggiungi',
+    adding: 'Aggiunta…',
+    added: 'Valuta {code} aggiunta',
+    conversionUnavailable: 'Conversione USD->{code} non disponibile: valuta non gestibile',
+    alreadyPresent: 'Valuta già presente',
+    addFailed: 'Aggiunta della valuta non riuscita',
+    removed: 'Valuta {code} rimossa',
+    remove: 'Rimuovi valuta',
+    removeNamed: 'Rimuovi la valuta {code}',
+    removeFailed: 'Rimozione della valuta non riuscita',
+    inUse: 'Valuta in uso o protetta',
+    deleteTitle: 'Elimina valuta',
+    deleteConfirm: 'Eliminare la valuta {code}?',
+    loadFailed: 'Caricamento delle valute non riuscito',
+  },
   /**
    * Superfici di allocazione (bug-fix EPIC K, sweep progressivo D1): la card
    * "Allocazione complessiva" del vault in dashboard, il tab Allocazione del
@@ -145,9 +211,9 @@ export const it = {
     sectorUnavailable: 'Allocazione settoriale non disponibile',
     geoUnavailable: 'Allocazione geografica non disponibile',
     assetClasses: 'Classi di attività',
-    sectorsEquity: 'Settori (solo equity)',
-    regionsEquity: 'Regioni (solo equity)',
-    countriesEquity: 'Paesi (solo equity)',
+    sectorsEquity: 'Settori (solo azionario)',
+    regionsEquity: 'Regioni (solo azionario)',
+    countriesEquity: 'Paesi (solo azionario)',
     /** Nota di copertura dell'universo azionario mostrata quando c'era esclusioni. */
     equityUniverse: 'Universo azionario: {pct}% del portafoglio',
     /** Torta dashboard: valore del vault ripartito per portafoglio. */
@@ -198,6 +264,36 @@ export const it = {
     universeHint:
       'Questa distribuzione si applica solo agli asset azionari (azioni ed ETF/fondi di classe equity).',
     universeClassHint: "Imposta la classe 'Azioni' o 'Immobiliare' nelle Caratteristiche per attivarla.",
+    /** Chrome delle modali di modifica: intestazioni di colonna, nomi
+     *  accessibili delle righe e controllo di aggiunta (il piè di pagina
+     *  Salva riusa `common.save`/`common.saving`/`common.colTotal`). */
+    colCountry: 'Paese',
+    colWeightPct: 'Peso %',
+    geoArea: 'Area geografica',
+    gicsSector: 'Settore GICS',
+    weightAria: 'Peso di {name}',
+    removeAria: 'Rimuovi {name}',
+    addCountryAria: 'Paese da aggiungere',
+    add: 'Aggiungi',
+    /** Pulsanti di prefill dei provider: tooltip corti più aria specifica. */
+    prefillJustEtf: 'Prefill da JustETF',
+    prefillYahoo: 'Prefill da Yahoo',
+    prefillMorningstar: 'Prefill da Morningstar',
+    prefillCountriesJustEtf: 'Prefill paesi da JustETF',
+    prefillCountriesMorningstar: 'Prefill paesi da Morningstar',
+    prefillRegionsMorningstar: 'Prefill regioni da Morningstar',
+    prefillSectorsJustEtf: 'Prefill settori da JustETF',
+    prefillSectorsYahoo: 'Prefill settori da Yahoo',
+    prefillSectorsMorningstar: 'Prefill settori da Morningstar',
+    deriveTitle: 'Calcola da paesi',
+    deriveAria: 'Calcola regioni dai paesi',
+    /** Messaggi di validazione della somma dei pesi nei piè di pagina
+     *  ({pct} porta la somma già formattata con due decimali). */
+    overSum: 'La somma supera il 100% — attuale {pct}%. Riduci i pesi per salvare.',
+    over100Title: 'La somma dei pesi supera il 100%: riduci i pesi per poter salvare',
+    residualCountries: 'Residuo non attribuito: {pct}%.',
+    residualRegions: 'Residuo non classificato: {pct}% — escluso dal grafico.',
+    sumMustBe100: 'La somma dei pesi deve essere 100 (±0.5) — attuale: {pct}%',
   },
   /**
    * Badge di provenienza (bug-fix EPIC K): etichetta della pill, spiegazione
@@ -294,6 +390,42 @@ export const it = {
     hint: 'I valori consolidati usano questi prezzi',
     partialHint: 'Prezzi alle {time}: alcuni aggiornamenti non riusciti o limitati',
   },
+  /**
+   * Pagina di stato sincronizzazione prezzi (`/admin/health`, voce di nav
+   * `nav.dataSync`). I valori backend (`event_type`, `code`, `message`) sono
+   * mostrati verbatim; solo il badge di stato è localizzato dalle chiavi
+   * `status*` con fallback al valore grezzo. `N/A` e l'unità `ms` restano.
+   */
+  health: {
+    title: 'Stato sincronizzazione prezzi',
+    subtitle: "Monitoraggio di connettività e prestazioni dell'API Yahoo Finance",
+    periodToday: 'Oggi',
+    periodLast24h: 'Ultime 24h',
+    periodLast100: 'Ultimi 100',
+    /** Nome accessibile del SegmentedControl + didascalia "Periodo: …". */
+    periodAria: 'Periodo di monitoraggio',
+    periodLabel: 'Periodo: {period}',
+    refreshing: 'Aggiornamento…',
+    refresh: 'Aggiorna ora',
+    noData: 'Nessun dato di monitoraggio disponibile.',
+    /** Card delle metriche. */
+    successRate: 'Tasso di successo',
+    totalSuccesses: 'Successi totali',
+    totalFailures: 'Fallimenti totali',
+    rateLimited: 'Richieste limitate',
+    /** Tabella eventi (titolo, aria-label della tabella e intestazioni;
+     *  Tipo/Stato/Code riusano `common.colType`, `positions.colStatus` e
+     *  `common.colCode`). */
+    recentEvents: 'Eventi recenti',
+    colTimestamp: 'Data e ora',
+    colMessage: 'Messaggio',
+    colDuration: 'Durata',
+    /** Etichette del badge di stato per i valori backend noti. */
+    statusSuccess: 'Successo',
+    statusRateLimited: 'Richieste limitate',
+    statusFailure: 'Errore',
+    loadFailed: 'Caricamento dei dati di monitoraggio non riuscito',
+  },
   checklist: {
     title: 'Configura il tuo vault',
     intro: 'Tre passi per iniziare a tracciare i tuoi investimenti.',
@@ -352,6 +484,18 @@ export const it = {
      *  invece di aprire un viewport con scorrimento interno. */
     showAll: 'Mostra tutti ({count})',
     showLess: 'Mostra meno',
+    /** Nomi delle serie dei grafici posizione, capitale e performance
+     *  (legenda/tooltip); `Invested`/`Value`/`Realized`/`Gain/Loss` riusano
+     *  `hero.*`/`chartView.colValue`/`dashboard.colGainLoss` nel chiamante. */
+    seriesCostBasis: 'Costo sostenuto',
+    seriesMarketValue: 'Valore di mercato',
+    seriesCumulative: 'Cumulato',
+    /** Nome della serie dei prezzi di chiusura (minuscolo, come in grafico). */
+    seriesClose: 'chiusura',
+    /** Etichetta del marcatore di split ({ratio} tipo "2/1"). */
+    splitRatio: 'Split {ratio}',
+    /** Stato vuoto del grafico prezzi dell'asset. */
+    noPriceData: 'Nessun dato prezzi disponibile',
   },
   portfolio: {
     tabsLabel: 'Sezioni del portafoglio',
@@ -370,6 +514,45 @@ export const it = {
     viewAllocation: 'Vedi allocazione completa',
     performanceHistory: 'Storico performance',
     seriesPortfolio: 'Portafoglio',
+    /** Pagina lista portafogli e relativa modale di creazione (il titolo
+     *  della pagina riusa `nav.portfolios`, il pulsante Importa
+     *  `portfolio.import`). */
+    new: 'Nuovo portafoglio',
+    createTitle: 'Crea portafoglio',
+    namePlaceholder: 'Nome del portafoglio',
+    descriptionLabel: 'Descrizione',
+    /** Nome accessibile del collegamento che apre un portafoglio. */
+    openNamed: 'Apri {name}',
+    emptyTitle: 'Nessun portafoglio',
+    emptyHint: 'Crea un portafoglio per iniziare',
+    /** Domanda breve del dialogo di eliminazione della lista (il tab
+     *  dettaglio porta la `portfolio.deleteConfirm` più completa). */
+    deleteQuestion: 'Eliminare questo portafoglio?',
+    loadFailed: 'Caricamento dei portafogli non riuscito',
+    created: 'Portafoglio creato',
+    createFailed: 'Creazione del portafoglio non riuscita',
+    /** Modale di import (le etichette riusano `chartView.colName`,
+     *  `asset.factCurrency`, `activity.transactions` e `common.delete/cancel`). */
+    importTitle: 'Importa portafoglio',
+    importHint: 'Scegli un export (.json) di un portafoglio VaultLab da importare.',
+    chooseFile: 'Scegli file',
+    changeFile: 'Cambia file',
+    dateRange: 'Intervallo date',
+    importModeNew: 'Crea come nuovo portafoglio',
+    importModeOverwrite: 'Sovrascrivi portafoglio esistente',
+    importTarget: 'Portafoglio di destinazione',
+    importTargetPlaceholder: 'Seleziona il portafoglio da sovrascrivere',
+    importInvalidFile: 'File non valido: formato di export non riconosciuto',
+    importReadFailed: 'Impossibile leggere il file',
+    imported: 'Portafoglio importato',
+    importFailed: 'Importazione non riuscita',
+    /** Fallback del titolo mentre il record del portafoglio è in caricamento. */
+    fallbackName: 'Portafoglio',
+    /** Fallback dei toast dei caricamenti dello shell e dell'export. */
+    detailLoadFailed: 'Caricamento del portafoglio non riuscito',
+    historyLoadFailed: 'Caricamento dello storico non riuscito',
+    refreshFailed: 'Aggiornamento del portafoglio non riuscito',
+    exportFailed: 'Esportazione non riuscita',
   },
   /**
    * Tab Posizioni del portafoglio: titolo della card (anche nome accessibile
@@ -405,6 +588,8 @@ export const it = {
     emptyFilteredHint: 'Prova a estendere le date o a rimuovere un filtro.',
     transactions: 'Transazioni',
     editTransaction: 'Modifica transazione',
+    /** Fallback del toast del fetch della finestra transazioni dello shell. */
+    loadFailed: 'Caricamento delle transazioni non riuscito',
   },
   tx: {
     titleNew: 'Nuova transazione',
@@ -412,6 +597,21 @@ export const it = {
     deleted: 'Transazione eliminata',
     undo: 'Annulla',
     undoFailed: 'Impossibile ripristinare la transazione',
+    /** Toast di esito del flusso di aggiunta/modifica. */
+    added: 'Transazione aggiunta',
+    updated: 'Transazione aggiornata',
+    /** Etichette e placeholder del form non coperti da `common.col*` (le
+     *  opzioni del tipo riusano `activity.typeBuy/typeSell/typeDividend`). */
+    amount: 'Importo',
+    quantity: 'Quantità',
+    fees: 'Commissioni',
+    notes: 'Note',
+    /** Messaggi di validazione inline. */
+    selectAsset: 'Seleziona un asset',
+    dateRequired: 'La data è obbligatoria',
+    amountRequired: "L'importo deve essere maggiore di 0",
+    quantityRequired: 'La quantità deve essere maggiore di 0',
+    priceRequired: 'Il prezzo deve essere maggiore o uguale a 0',
   },
   asset: {
     tabsLabel: 'Sezioni dettaglio asset',
@@ -445,10 +645,85 @@ export const it = {
     factCurrency: 'Valuta',
     factExchange: 'Mercato',
     factPriceSource: 'Fonte prezzo',
+    /** Opzioni del selettore fonte prezzo nel tab Dati (brand name tenuto). */
+    priceSourceYahoo: 'Yahoo Finance',
+    priceSourceManual: 'Prezzo manuale',
+    priceSourceNone: 'Nessun prezzo',
+    /** Etichette dei tipi asset (chip d'identità, dati principali, selettori
+     *  Tipo). */
+    typeStock: 'Azione',
+    typeEtf: 'ETF',
+    typeBond: 'Obbligazione',
+    typeMutualFund: 'Fondo comune',
+    typeCrypto: 'Cripto',
+    typeCommodity: 'Materie prime',
+    typeCash: 'Liquidità',
+    /** Etichette delle classi di asset (chip d'identità, dati principali,
+     *  selettori Classe, nomi delle fette e titoli del drill della donut
+     *  classi). */
+    classEquity: 'Azioni',
+    classBond: 'Obbligazioni',
+    classCommodity: 'Materie prime',
+    classCurrency: 'Valute',
+    classCrypto: 'Crypto',
+    classRealEstate: 'Immobiliare',
+    classMixed: 'Misto',
+    classOther: 'Altro',
     dangerZone: 'Zona pericolosa',
     manualPrice: 'Inserimento prezzo manuale',
     manualPriceHint: 'Inserisci prezzi datati a mano per gli asset senza fonte prezzi automatica.',
     fixedIncome: 'Attributi obbligazionari',
     fixedIncomeHint: 'Dettagli di emittente, scadenza e cedola per le obbligazioni.',
+    /** Pagina lista asset e relativa eliminazione (titolo della pagina,
+     *  aria-label della tabella e collegamento di ritorno riusano
+     *  `nav.assets`; le intestazioni riusano `positions.colTicker`,
+     *  `chartView.colName`, `asset.factType`, `asset.factCurrency` e
+     *  `common.colActions`). */
+    add: 'Aggiungi asset',
+    newTitle: 'Nuovo asset',
+    lookupHint: 'Cerca un ticker per precompilare i dettagli.',
+    colCountry: 'Paese',
+    /** Nome accessibile del pulsante di eliminazione della riga
+     *  ({ticker} riportato verbatim). */
+    deleteNamed: 'Elimina {ticker}',
+    /** Domanda breve del dialogo di eliminazione della lista (lo shell del
+     *  dettaglio porta la `asset.deleteConfirm` più completa). */
+    deleteQuestion: 'Eliminare {ticker}?',
+    loadFailed: 'Caricamento degli asset non riuscito',
+    created: 'Asset creato',
+    /** Titolo della card dello storico prezzi in Panoramica. */
+    priceHistory: 'Storico prezzo',
+    /** Titolo del form delle caratteristiche nel tab Dati. */
+    characteristics: 'Caratteristiche',
+    /** Stato vuoto della striscia quotazione e avviso per fonte non-Yahoo
+     *  ({source} porta l'etichetta della fonte già localizzata). */
+    noPriceData: 'Nessun dato prezzo',
+    noAutoSync: '{source} — nessun sync automatico',
+    /** Toast delle azioni gestite dallo shell (salvataggio identità,
+     *  aggiornamento meta da Yahoo, backfill, prefill/salvataggi dalle
+     *  modali); i fallimenti generici riusano `common.saveFailed`/
+     *  `common.deleteFailed`. */
+    detailLoadFailed: "Caricamento dell'asset non riuscito",
+    formRequiredFields: 'Ticker, Nome e Valuta sono obbligatori',
+    updated: 'Asset aggiornato',
+    metaRefreshed: 'Campi aggiornati da Yahoo',
+    metaRefreshFailed: 'Aggiornamento non riuscito',
+    backfillDone: 'Storico prezzi aggiornato',
+    backfillFailed: 'Backfill non riuscito',
+    countriesPrefilledJustEtf: 'Paesi precompilati da JustETF',
+    countriesSectorsPrefilledMorningstar: 'Paesi e settori precompilati da Morningstar',
+    regionsPrefilledMorningstar: 'Regioni precompilate da Morningstar',
+    sectorsPrefilledJustEtf: 'Distribuzione settoriale precompilata da JustETF',
+    sectorsPrefilledYahoo: 'Distribuzione settoriale precompilata da Yahoo',
+    sectorsPrefilledMorningstar: 'Distribuzione settoriale precompilata da Morningstar',
+    yahooNoResponse: 'Yahoo non ha risposto',
+    prefillFailed: 'Prefill non riuscito',
+    downloadFailed: 'Download non riuscito',
+    noWeightedCountries: 'Nessun paese con peso: aggiungi prima dei paesi',
+    regionsRecomputed: 'Regioni ricalcolate dai paesi',
+    computeFailed: 'Calcolo non riuscito',
+    geoSaved: 'Distribuzione geografica salvata',
+    sectorsSaved: 'Distribuzione settoriale salvata',
+    countriesSaved: 'Distribuzione paesi salvata',
   },
 } satisfies Dictionary

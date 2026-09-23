@@ -6,8 +6,7 @@
 - Price freshness now lives in the app header on every page: the "Prices as of" stamp is always visible and clickable to refresh quotes on demand, and data-quality warnings (rate-limited or failed updates, holdings missing an FX rate) follow you as a strip under the header instead of sitting on the dashboard
 
 ### Fixes
-- The portfolio detail is translated too: the Overview (the Performance card with its Monthly/Annual toggle and the performance-history card), the Positions and Activity tabs and their tables now follow the interface language
-- The dashboard is fully translated into Italian: the Performance and Portfolios cards, the Monthly/Annual toggle, the Active/Closed investments table and the "Invested assets" table with its empty state now follow the interface language
+- The whole interface now follows the chosen language: the dashboard, the portfolio detail (Overview/Positions/Activity and their tables), the portfolios and assets lists, the asset detail tabs, every modal (create portfolio/asset, import portfolio, add transaction, exposure editing), Settings, the Price Sync Health page, and the asset type/class/price-source labels all switch between Italian and English
 - On phones the asset header's ⋯ menu is gone: its actions (update from Yahoo, backfill the price history, delete) were already duplicated in the Data tab's danger zone, and the menu kept ending up off-screen when the header wrapped
 - On phones the portfolio header's ⋯ menu stays right-aligned when the header wraps, and its panel no longer runs off the screen
 - On phones the allocation drill-down no longer closes as soon as it opens: the bottom sheet stays up so you can read the assets behind the slice

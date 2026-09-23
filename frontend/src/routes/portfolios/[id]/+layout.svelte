@@ -149,8 +149,12 @@
   // Same "1–20 of 137" range label and footer layout as the health page.
   const txRangeLabel = $derived(
     (transactions?.length ?? 0) === 0
-      ? `0 of ${txTotal}`
-      : `${txOffset + 1}–${txOffset + (transactions?.length ?? 0)} of ${txTotal}`,
+      ? t('common.rangeEmpty', { total: txTotal })
+      : t('common.rangeLabel', {
+          from: txOffset + 1,
+          to: txOffset + (transactions?.length ?? 0),
+          total: txTotal,
+        }),
   )
 
   // Monotonic request id (same guard as the performance card): rapid page
@@ -179,7 +183,7 @@
         txTotal = res.total
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load transactions'
+      const message = err instanceof Error ? err.message : t('activity.loadFailed')
       if (req === txReq) toast.error(message)
     } finally {
       if (req === txReq) txLoading = false
@@ -263,7 +267,7 @@
       summary = s
       assets = a
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load portfolio'
+      const message = err instanceof Error ? err.message : t('portfolio.detailLoadFailed')
       toast.error(message)
     }
 
@@ -272,7 +276,7 @@
     try {
       history = await portfolioApi.history(id)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load history'
+      const message = err instanceof Error ? err.message : t('portfolio.historyLoadFailed')
       toast.error(message)
     }
   }
@@ -346,7 +350,7 @@
       summary = s
       history = h
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to refresh portfolio'
+      const message = err instanceof Error ? err.message : t('portfolio.refreshFailed')
       toast.error(message)
     }
     // New/edited transactions change the flows behind the TWR buckets too
@@ -381,7 +385,7 @@
       a.click()
       URL.revokeObjectURL(url)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Export failed'
+      const message = err instanceof Error ? err.message : t('portfolio.exportFailed')
       toast.error(message)
     }
   }
@@ -420,7 +424,7 @@
       toast.success(t('portfolio.deleted'))
       void goto(resolve('/portfolios'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
+      const message = err instanceof Error ? err.message : t('common.deleteFailed')
       toast.error(message)
     } finally {
       deleting = false
@@ -571,7 +575,7 @@
           {t('portfolio.back')}
         </a>
         <h1 class="mt-1 text-2xl font-bold">
-          {portfolio?.name ?? 'Portfolio'}
+          {portfolio?.name ?? t('portfolio.fallbackName')}
           {#if portfolio}
             <span class="text-sm font-medium text-muted-foreground">({portfolio.currency})</span>
           {/if}

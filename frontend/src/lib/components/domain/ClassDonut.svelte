@@ -5,7 +5,7 @@
   import { PieChart } from 'echarts/charts'
   import { LegendComponent, TooltipComponent } from 'echarts/components'
   import { CanvasRenderer } from 'echarts/renderers'
-  import { ASSET_CLASS_LABELS, formatCurrency, formatPercent } from '$lib/format'
+  import { assetClassLabel, formatCurrency, formatPercent } from '$lib/format'
   import type { AssetClassSlice } from '$lib/services/api'
   import { chartSemanticColors, resolvePalette } from '$lib/chartPalette'
   import { VAULTLAB_CHART_THEMES } from '$lib/chartTheme'
@@ -50,12 +50,9 @@
     onDrill?: (classKey: string) => void
   } = $props()
 
-  // Backend class keys are mapped to friendly labels through the shared
-  // ASSET_CLASS_LABELS table; zero/negative weights are dropped.
+  // Backend class keys are mapped to localized labels through the shared
+  // `assetClassLabel` helper; zero/negative weights are dropped.
   const rows = $derived(data.filter((r) => Number(r.weight) > 0))
-  function labelFor(cls: string): string {
-    return ASSET_CLASS_LABELS[cls] ?? cls
-  }
   function isOther(cls: string): boolean {
     return cls.toLowerCase() === 'other'
   }
@@ -116,7 +113,7 @@
       hideDelay: 150,
       formatter: (params: unknown) => {
         const p = params as TooltipItem
-        const row = rows.find((r) => labelFor(r.class) === p.name)
+        const row = rows.find((r) => assetClassLabel(r.class) === p.name)
         if (!row) return ''
         return `${p.marker}${p.name}<br/>${t('chartView.colValue')}: <b>${formatCurrency(row.value, currency)}</b><br/>${t('chartView.colWeight')}: <b>${formatPercent(row.weight)}</b>`
       },
@@ -145,7 +142,7 @@
         // Slice angles come from the amounts, so they stay truthful even when
         // the caller sends weights computed over a different base.
         data: rows.map((r) => ({
-          name: labelFor(r.class),
+          name: assetClassLabel(r.class),
           value: Number(r.value),
           // The aggregated "other" bucket is muted in grey like in the
           // sibling donut charts.
@@ -191,9 +188,9 @@
     <TBody class="max-sm:block">
       {#each rows as r (r.class)}
         <Tr class="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2">
-          <!-- Friendly class label, same mapping the slice names use. -->
+          <!-- Localized class label, same mapping the slice names use. -->
           <Td class="max-sm:col-span-2 max-sm:py-0.5 font-medium break-words">
-            {labelFor(r.class)}
+            {assetClassLabel(r.class)}
           </Td>
           <Td align="right" class="max-sm:min-w-0 max-sm:py-0.5 max-sm:text-left whitespace-nowrap">
             {formatCurrency(r.value, currency)}

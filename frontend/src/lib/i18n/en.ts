@@ -32,9 +32,29 @@ export const en = {
     colValue: 'Value',
     colTotal: 'Total',
     colActions: 'Actions',
+    /** Code label shared by the currencies form/table and the health
+     *  events table. */
+    colCode: 'Code',
     /** Pagination footer buttons of the transactions table. */
     previous: 'Previous',
     next: 'Next',
+    /** Row-range readout next to the pagination buttons ("1–20 of 137",
+     *  empty variant when the window has no rows). */
+    rangeLabel: '{from}–{to} of {total}',
+    rangeEmpty: '0 of {total}',
+    /** Progress line shown while a list/table is still loading. */
+    loading: 'Loading…',
+    /** Generic form-button labels shared by the create/edit dialogs. */
+    create: 'Create',
+    save: 'Save',
+    saving: 'Saving…',
+    saveChanges: 'Save changes',
+    /** Hint rendered under an optional form-field label. */
+    optional: 'optional',
+    /** Generic failure fallbacks when the API carries no message. */
+    deleteFailed: 'Delete failed',
+    saveFailed: 'Save failed',
+    createFailed: 'Create failed',
   },
   nav: {
     /** Accessible name of the sidebar/drawer `<nav>` landmark. */
@@ -156,6 +176,58 @@ export const en = {
     paletteHint: 'Swaps green/red for blue/orange in text and charts. Signs and ▲▼ arrows stay either way.',
   },
   /**
+   * Settings → Profile card (the page title reuses `nav.settings`, the
+   * card heading `settingsTabs.profile`, the Name label `chartView.colName`
+   * and the save button `common.save`/`common.saving`).
+   */
+  profile: {
+    email: 'Email',
+    baseCurrency: 'Base currency',
+    baseCurrencyHint: 'Used to consolidate values across portfolios on the dashboard.',
+    updated: 'Profile updated',
+    updateFailed: 'Update failed',
+  },
+  /** Settings → Password card (labels, inline validation and toasts). */
+  password: {
+    change: 'Change password',
+    current: 'Current password',
+    new: 'New password',
+    confirm: 'Confirm new password',
+    minLengthHint: 'At least 8 characters',
+    currentRequired: 'Current password is required',
+    tooShort: 'Password must be at least 8 characters',
+    mismatch: 'Passwords do not match',
+    currentIncorrect: 'Current password is incorrect',
+    changed: 'Password changed',
+    changeFailed: 'Change failed',
+  },
+  /**
+   * Settings → Currencies card (the Code label reuses `common.colCode`,
+   * Name/Actions `chartView.colName`/`common.colActions`, the loading line
+   * and dialog chrome `common.*`). `{code}` carries the plain currency code.
+   */
+  currencies: {
+    title: 'Managed currencies',
+    select: 'Select a currency',
+    namePlaceholder: 'Optional',
+    allManaged: 'All listed currencies are already managed.',
+    empty: 'No currencies found.',
+    add: 'Add',
+    adding: 'Adding…',
+    added: 'Currency {code} added',
+    conversionUnavailable: 'USD->{code} conversion not available; currency not manageable',
+    alreadyPresent: 'Currency already present',
+    addFailed: 'Failed to add currency',
+    removed: 'Currency {code} removed',
+    remove: 'Remove currency',
+    removeNamed: 'Remove currency {code}',
+    removeFailed: 'Failed to remove currency',
+    inUse: 'Currency in use or protected',
+    deleteTitle: 'Delete currency',
+    deleteConfirm: 'Delete currency {code}?',
+    loadFailed: 'Failed to load currencies',
+  },
+  /**
    * Allocation surfaces (EPIC K bug-fix, progressive D1 sweep): the vault
    * "Overall allocation" card on the dashboard, the portfolio Allocation
    * tab and its Overview digest — panel headings, isolated error states and
@@ -219,6 +291,36 @@ export const en = {
     universeHint:
       'This distribution only applies to equity assets (stocks and equity-class ETFs/funds).',
     universeClassHint: "Set the 'Stocks' or 'Real estate' class in Characteristics to enable it.",
+    /** Edit-modal chrome: column headers, row accessible names and the add
+     *  control (the Save footer reuses `common.save`/`common.saving`/
+     *  `common.colTotal`). */
+    colCountry: 'Country',
+    colWeightPct: 'Weight %',
+    geoArea: 'Geographic area',
+    gicsSector: 'GICS sector',
+    weightAria: 'Weight of {name}',
+    removeAria: 'Remove {name}',
+    addCountryAria: 'Country to add',
+    add: 'Add',
+    /** Provider prefill buttons: short tooltips plus row-specific aria. */
+    prefillJustEtf: 'Prefill from JustETF',
+    prefillYahoo: 'Prefill from Yahoo',
+    prefillMorningstar: 'Prefill from Morningstar',
+    prefillCountriesJustEtf: 'Prefill countries from JustETF',
+    prefillCountriesMorningstar: 'Prefill countries from Morningstar',
+    prefillRegionsMorningstar: 'Prefill regions from Morningstar',
+    prefillSectorsJustEtf: 'Prefill sectors from JustETF',
+    prefillSectorsYahoo: 'Prefill sectors from Yahoo',
+    prefillSectorsMorningstar: 'Prefill sectors from Morningstar',
+    deriveTitle: 'Compute from countries',
+    deriveAria: 'Compute regions from countries',
+    /** Weight-sum validation messages of the modal footers ({pct} carries
+     *  the already-formatted two-decimal sum). */
+    overSum: 'The sum exceeds 100% — currently {pct}%. Lower the weights to save.',
+    over100Title: 'The weights sum to over 100%: lower them to be able to save',
+    residualCountries: 'Unallocated residual: {pct}%.',
+    residualRegions: 'Unclassified residual: {pct}% — excluded from the chart.',
+    sumMustBe100: 'The weights must sum to 100 (±0.5) — current: {pct}%',
   },
   /**
    * Provenance badges (EPIC K bug-fix): the pill label, the tooltip/aria
@@ -326,6 +428,42 @@ export const en = {
     hint: 'Consolidated values use these prices',
     partialHint: 'Prices as of {time} — some updates failed or were rate-limited',
   },
+  /**
+   * Admin price-sync health page (`/admin/health`, nav entry `nav.dataSync`).
+   * Table values fetched from the backend (`event_type`, `code`, `message`)
+   * are rendered verbatim; only the status badge is localised through the
+   * `status*` keys below, falling back to the raw value for unknown
+   * statuses. `N/A` and the `ms` duration unit are kept as technical terms.
+   */
+  health: {
+    title: 'Price Sync Health',
+    subtitle: 'Monitoring Yahoo Finance API connectivity and performance',
+    periodToday: 'Today',
+    periodLast24h: 'Last 24h',
+    periodLast100: 'Last 100',
+    /** SegmentedControl accessible name + "Period: …" caption below. */
+    periodAria: 'Health period',
+    periodLabel: 'Period: {period}',
+    refreshing: 'Refreshing…',
+    refresh: 'Refresh Now',
+    noData: 'No health data available.',
+    /** Metric cards. */
+    successRate: 'Success Rate',
+    totalSuccesses: 'Total Successes',
+    totalFailures: 'Total Failures',
+    rateLimited: 'Rate Limited',
+    /** Events table (heading, table aria-label and headers; Type/Status/Code
+     *  reuse `common.colType`, `positions.colStatus` and `common.colCode`). */
+    recentEvents: 'Recent Events',
+    colTimestamp: 'Timestamp',
+    colMessage: 'Message',
+    colDuration: 'Duration',
+    /** Status-badge labels for the known backend values. */
+    statusSuccess: 'Success',
+    statusRateLimited: 'Rate limited',
+    statusFailure: 'Failure',
+    loadFailed: 'Failed to fetch health data',
+  },
   /** First-run checklist replacing the empty-vault EmptyState (D8). */
   checklist: {
     title: 'Set up your vault',
@@ -396,11 +534,22 @@ export const en = {
      *  instead of opening an inner scroll viewport. */
     showAll: 'Show all ({count})',
     showLess: 'Show less',
+    /** Series names (legend/tooltip identity) of the position, capital and
+     *  performance charts; `Invested`/`Value`/`Realized`/`Gain/Loss` reuse
+     *  `hero.*`/`chartView.colValue`/`dashboard.colGainLoss` at the call site. */
+    seriesCostBasis: 'Cost basis',
+    seriesMarketValue: 'Market value',
+    seriesCumulative: 'Cumulative',
+    /** Price-chart close-series name (kept lower-case, as plotted). */
+    seriesClose: 'close',
+    /** Stock-split marker label ({ratio} like "2/1"). */
+    splitRatio: 'Split {ratio}',
+    /** Empty state of the asset price chart. */
+    noPriceData: 'No price data available',
   },
   /**
    * Portfolio-detail shell (EPIC K.4a, spec §6.2): sticky-header chrome and
-   * the four tier-2 tabs. Card/section copy that predates the dictionary
-   * stays hardcoded until the page's migration sweep (progressive, D1).
+   * the four tier-2 tabs, plus the shell's load/export toast fallbacks.
    */
   portfolio: {
     /** Accessible name of the portfolio tab bar. */
@@ -425,6 +574,44 @@ export const en = {
     performanceHistory: 'Performance history',
     /** Aggregate-series option of that card's asset selector. */
     seriesPortfolio: 'Portfolio',
+    /** Portfolios list page and its create dialog (the page title reuses
+     *  `nav.portfolios`, the Import trigger `portfolio.import`). */
+    new: 'New Portfolio',
+    createTitle: 'Create Portfolio',
+    namePlaceholder: 'Portfolio name',
+    descriptionLabel: 'Description',
+    /** Accessible name of the card link opening a portfolio. */
+    openNamed: 'Open {name}',
+    emptyTitle: 'No portfolios yet',
+    emptyHint: 'Create one to get started',
+    /** Short list-page delete-dialog question (the detail tab carries the
+     *  fuller `portfolio.deleteConfirm`). */
+    deleteQuestion: 'Delete this portfolio?',
+    loadFailed: 'Failed to load portfolios',
+    created: 'Portfolio created',
+    createFailed: 'Failed to create portfolio',
+    /** Import dialog (labels reuse `chartView.colName`, `asset.factCurrency`,
+     *  `activity.transactions` and `common.delete/cancel`). */
+    importTitle: 'Import portfolio',
+    importHint: 'Choose a VaultLab portfolio export (.json) to import.',
+    chooseFile: 'Choose file',
+    changeFile: 'Change file',
+    dateRange: 'Date range',
+    importModeNew: 'Create as new portfolio',
+    importModeOverwrite: 'Overwrite existing portfolio',
+    importTarget: 'Target portfolio',
+    importTargetPlaceholder: 'Select portfolio to overwrite',
+    importInvalidFile: 'Invalid file: export format not recognized',
+    importReadFailed: 'Could not read the file',
+    imported: 'Portfolio imported',
+    importFailed: 'Import failed',
+    /** Heading fallback while the portfolio record is still loading. */
+    fallbackName: 'Portfolio',
+    /** Toast fallbacks of the shell's loads and the export action. */
+    detailLoadFailed: 'Failed to load portfolio',
+    historyLoadFailed: 'Failed to load history',
+    refreshFailed: 'Failed to refresh portfolio',
+    exportFailed: 'Export failed',
   },
   /**
    * Portfolio Positions tab: the card heading (also the accessible name of
@@ -473,12 +660,15 @@ export const en = {
     transactions: 'Transactions',
     /** Accessible name of the row edit button in the transactions table. */
     editTransaction: 'Edit transaction',
+    /** Toast fallback of the shell's transactions-window fetch. */
+    loadFailed: 'Failed to load transactions',
   },
   /**
    * Transaction form + delete feedback (EPIC K.4c): titles are shared by
    * the `ui/Modal` (≥ `sm`) and the `ui/Sheet` (phone) containers; the
    * delete strings drive the undo-based flow (decision D11). The form's
-   * inner field/button copy predates the dictionary (progressive sweep).
+   * inner field labels, placeholders and validation messages live here too;
+   * the shared ones come from `common.*` and `activity.*`.
    */
   tx: {
     titleNew: 'New Transaction',
@@ -487,12 +677,26 @@ export const en = {
     /** Undo action inside the delete toast (5 s window). */
     undo: 'Undo',
     undoFailed: 'The transaction could not be restored',
+    /** Success toasts of the add/edit flow. */
+    added: 'Transaction added',
+    updated: 'Transaction updated',
+    /** Form labels and placeholders not covered by `common.col*` (the type
+     *  options reuse `activity.typeBuy/typeSell/typeDividend`). */
+    amount: 'Amount',
+    quantity: 'Quantity',
+    fees: 'Fees',
+    notes: 'Notes',
+    /** Inline validation messages. */
+    selectAsset: 'Select an asset',
+    dateRequired: 'Date is required',
+    amountRequired: 'Amount must be greater than 0',
+    quantityRequired: 'Quantity must be greater than 0',
+    priceRequired: 'Price must be 0 or greater',
   },
   /**
    * Asset-detail shell (EPIC K.4b, spec §6.3): sticky-header chrome, the
    * three tier-2 tabs, the "Where held" Overview block, the danger-zone
-   * and reserved-section labels. Card copy that predates the dictionary
-   * stays hardcoded until the page's migration sweep (progressive, D1).
+   * and reserved-section labels, plus the shell's action toasts.
    */
   asset: {
     /** Accessible name of the asset tab bar. */
@@ -532,6 +736,28 @@ export const en = {
     factCurrency: 'Currency',
     factExchange: 'Exchange',
     factPriceSource: 'Price source',
+    /** Options of the Data-tab price-source select (brand name kept). */
+    priceSourceYahoo: 'Yahoo Finance',
+    priceSourceManual: 'Manual price',
+    priceSourceNone: 'No price',
+    /** Asset-type labels (identity chips, quick facts, Type selects). */
+    typeStock: 'Stock',
+    typeEtf: 'ETF',
+    typeBond: 'Bond',
+    typeMutualFund: 'Mutual fund',
+    typeCrypto: 'Crypto',
+    typeCommodity: 'Commodity',
+    typeCash: 'Cash',
+    /** Asset-class labels (identity chips, quick facts, Class selects,
+     *  class-donut slice names and drill titles). */
+    classEquity: 'Equities',
+    classBond: 'Bonds',
+    classCommodity: 'Commodities',
+    classCurrency: 'Currencies',
+    classCrypto: 'Crypto',
+    classRealEstate: 'Real estate',
+    classMixed: 'Mixed',
+    classOther: 'Other',
     /** Data tab danger zone (same actions as the header `⋯` menu). */
     dangerZone: 'Danger zone',
     /** Reserved EPIC J placeholders (no behaviour yet). */
@@ -539,6 +765,54 @@ export const en = {
     manualPriceHint: 'Record dated prices by hand for assets without an automatic feed.',
     fixedIncome: 'Fixed-income attributes',
     fixedIncomeHint: 'Issuer, maturity and coupon details for bonds.',
+    /** Assets list page and its delete flows (the page title, the table
+     *  aria-label and the `⋯` back link all reuse `nav.assets`; headers reuse
+     *  `positions.colTicker`, `chartView.colName`, `asset.factType`,
+     *  `asset.factCurrency` and `common.colActions`). */
+    add: 'Add Asset',
+    newTitle: 'New Asset',
+    lookupHint: 'Look up a ticker to prefill the details.',
+    colCountry: 'Country',
+    /** Accessible name of the row trash button ({ticker} verbatim). */
+    deleteNamed: 'Delete {ticker}',
+    /** Short list-page delete-dialog question (the detail shell carries the
+     *  fuller `asset.deleteConfirm`). */
+    deleteQuestion: 'Delete {ticker}?',
+    loadFailed: 'Failed to load assets',
+    created: 'Asset created',
+    /** Overview price-history card heading. */
+    priceHistory: 'Price history',
+    /** Data tab characteristics form heading. */
+    characteristics: 'Characteristics',
+    /** Header quote-strip empty state and the non-Yahoo source warning
+     *  ({source} carries the already-localised price-source label). */
+    noPriceData: 'No price data',
+    noAutoSync: '{source} — no automatic sync',
+    /** Toasts of the shell actions the layout orchestrates (identity save,
+     *  Yahoo meta refresh, backfill, modal prefills/saves); generic failures
+     *  reuse `common.saveFailed`/`common.deleteFailed`. */
+    detailLoadFailed: 'Failed to load asset',
+    formRequiredFields: 'Ticker, Name and Currency are required',
+    updated: 'Asset updated',
+    metaRefreshed: 'Fields updated from Yahoo',
+    metaRefreshFailed: 'Update failed',
+    backfillDone: 'Price history updated',
+    backfillFailed: 'Backfill failed',
+    countriesPrefilledJustEtf: 'Countries prefilled from JustETF',
+    countriesSectorsPrefilledMorningstar: 'Countries and sectors prefilled from Morningstar',
+    regionsPrefilledMorningstar: 'Regions prefilled from Morningstar',
+    sectorsPrefilledJustEtf: 'Sector distribution prefilled from JustETF',
+    sectorsPrefilledYahoo: 'Sector distribution prefilled from Yahoo',
+    sectorsPrefilledMorningstar: 'Sector distribution prefilled from Morningstar',
+    yahooNoResponse: 'Yahoo did not respond',
+    prefillFailed: 'Prefill failed',
+    downloadFailed: 'Download failed',
+    noWeightedCountries: 'No countries with a weight: add countries first',
+    regionsRecomputed: 'Regions recomputed from countries',
+    computeFailed: 'Compute failed',
+    geoSaved: 'Geographic distribution saved',
+    sectorsSaved: 'Sector distribution saved',
+    countriesSaved: 'Country distribution saved',
   },
 }
 

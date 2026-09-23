@@ -1,6 +1,7 @@
 <script lang="ts">
   import { toast } from '$lib/stores/toast.svelte'
   import { api } from '$lib/services/api'
+  import { t, type MessageKey } from '$lib/i18n/index.svelte'
   import Button from '$lib/components/ui/Button.svelte'
   import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
@@ -34,11 +35,13 @@
 
   const PAGE_SIZE = 50
 
-  const periodItems = [
-    { value: 'today', label: 'Today' },
-    { value: '24h', label: 'Last 24h' },
-    { value: '100', label: 'Last 100' },
-  ]
+  // `$derived` so a locale switch live-updates the segmented control labels
+  // (same recipe as the preferences page theme items).
+  const periodItems = $derived([
+    { value: 'today', label: t('health.periodToday') },
+    { value: '24h', label: t('health.periodLast24h') },
+    { value: '100', label: t('health.periodLast100') },
+  ])
 
   let period = $state('today')
   let offset = $state(0)
@@ -50,8 +53,8 @@
   const periodLabel = $derived(periodItems.find((item) => item.value === period)?.label ?? period)
   const rangeLabel = $derived(
     events.length === 0
-      ? `0 of ${eventsTotal}`
-      : `${offset + 1}–${offset + events.length} of ${eventsTotal}`,
+      ? t('common.rangeEmpty', { total: eventsTotal })
+      : t('common.rangeLabel', { from: offset + 1, to: offset + events.length, total: eventsTotal }),
   )
 
   async function fetchHealth() {
@@ -68,7 +71,7 @@
       events = data.events ?? []
       eventsTotal = data.events_total ?? 0
     } catch {
-      toast.error('Failed to fetch health data')
+      toast.error(t('health.loadFailed'))
     } finally {
       loading = false
     }
@@ -97,18 +100,32 @@
     if (status === 'rate_limited' || status.includes('429')) return 'text-warning bg-warning/10 border-warning/20'
     return 'text-negative bg-negative/10 border-negative/20'
   }
+
+  // The badge is the one backend value we localise: known statuses map to
+  // dictionary labels (EN shows title-cased words instead of the raw
+  // snake_case), anything unexpected falls back to the raw value.
+  const STATUS_KEYS: Record<string, MessageKey> = {
+    success: 'health.statusSuccess',
+    rate_limited: 'health.statusRateLimited',
+    failure: 'health.statusFailure',
+  }
+
+  function getStatusLabel(status: string) {
+    const key = STATUS_KEYS[status]
+    return key ? t(key) : status
+  }
 </script>
 
 <div class="mx-auto max-w-6xl p-6">
   <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
     <div>
-      <h1 class="text-2xl font-bold text-foreground">Price Sync Health</h1>
-      <p class="text-muted-foreground">Monitoring Yahoo Finance API connectivity and performance</p>
+      <h1 class="text-2xl font-bold text-foreground">{t('health.title')}</h1>
+      <p class="text-muted-foreground">{t('health.subtitle')}</p>
     </div>
     <div class="flex flex-wrap items-center gap-3">
-      <SegmentedControl items={periodItems} bind:value={getPeriod, setPeriod} ariaLabel="Health period" />
+      <SegmentedControl items={periodItems} bind:value={getPeriod, setPeriod} ariaLabel={t('health.periodAria')} />
       <Button variant="secondary" onclick={fetchHealth} disabled={loading}>
-        {loading ? 'Refreshing...' : 'Refresh Now'}
+        {loading ? t('health.refreshing') : t('health.refresh')}
       </Button>
     </div>
   </div>
@@ -119,13 +136,13 @@
     </div>
   {:else if !summary}
     <div class="py-12 text-center text-muted-foreground">
-      No health data available.
+      {t('health.noData')}
     </div>
   {:else}
-    <div class="mb-3 text-sm text-muted-foreground">Period: {periodLabel}</div>
+    <div class="mb-3 text-sm text-muted-foreground">{t('health.periodLabel', { period: periodLabel })}</div>
     <div class="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
       <div class="rounded-card border border-border bg-surface p-4 shadow-card">
-        <div class="mb-1 text-sm text-muted-foreground">Success Rate</div>
+        <div class="mb-1 text-sm text-muted-foreground">{t('health.successRate')}</div>
         {#if !summary.has_data}
           <div class="text-2xl font-bold tabular-nums text-muted-foreground">N/A</div>
         {:else}
@@ -135,33 +152,33 @@
         {/if}
       </div>
       <div class="rounded-card border border-border bg-surface p-4 shadow-card">
-        <div class="mb-1 text-sm text-muted-foreground">Total Successes</div>
+        <div class="mb-1 text-sm text-muted-foreground">{t('health.totalSuccesses')}</div>
         <div class="text-2xl font-bold tabular-nums text-foreground">{summary.successes}</div>
       </div>
       <div class="rounded-card border border-border bg-surface p-4 shadow-card">
-        <div class="mb-1 text-sm text-muted-foreground">Total Failures</div>
+        <div class="mb-1 text-sm text-muted-foreground">{t('health.totalFailures')}</div>
         <div class="text-2xl font-bold tabular-nums text-negative">{summary.failures}</div>
       </div>
       <div class="rounded-card border border-border bg-surface p-4 shadow-card">
-        <div class="mb-1 text-sm text-muted-foreground">Rate Limited</div>
+        <div class="mb-1 text-sm text-muted-foreground">{t('health.rateLimited')}</div>
         <div class="text-2xl font-bold tabular-nums text-warning">{summary.rate_limited}</div>
       </div>
     </div>
 
     <div class="overflow-hidden rounded-card border border-border bg-surface shadow-card">
       <div class="border-b border-border bg-muted px-6 py-4">
-        <h2 class="font-semibold text-foreground">Recent Events</h2>
+        <h2 class="font-semibold text-foreground">{t('health.recentEvents')}</h2>
       </div>
       <div class="overflow-x-auto px-6 pb-4">
-        <Table aria-label="Recent events">
+        <Table aria-label={t('health.recentEvents')}>
           <THead>
             <Tr>
-              <Th>Timestamp</Th>
-              <Th>Type</Th>
-              <Th>Status</Th>
-              <Th>Code</Th>
-              <Th>Message</Th>
-              <Th align="right">Duration</Th>
+              <Th>{t('health.colTimestamp')}</Th>
+              <Th>{t('common.colType')}</Th>
+              <Th>{t('positions.colStatus')}</Th>
+              <Th>{t('common.colCode')}</Th>
+              <Th>{t('health.colMessage')}</Th>
+              <Th align="right">{t('health.colDuration')}</Th>
             </Tr>
           </THead>
           <TBody>
@@ -171,7 +188,7 @@
                 <Td class="font-medium">{event.event_type}</Td>
                 <Td>
                   <span class="rounded-full border px-2 py-1 text-xs font-medium {getStatusColor(event.status)}">
-                    {event.status}
+                    {getStatusLabel(event.status)}
                   </span>
                 </Td>
                 <Td class="font-mono text-xs">{event.code || '—'}</Td>
@@ -191,7 +208,7 @@
             disabled={offset === 0}
             onclick={() => (offset = Math.max(0, offset - PAGE_SIZE))}
           >
-            Previous
+            {t('common.previous')}
           </Button>
           <Button
             variant="secondary"
@@ -199,7 +216,7 @@
             disabled={offset + PAGE_SIZE >= eventsTotal}
             onclick={() => (offset += PAGE_SIZE)}
           >
-            Next
+            {t('common.next')}
           </Button>
         </div>
       </div>

@@ -334,12 +334,16 @@ The single formatting module, shared by all pages (there is no `utils/` or
 | `formatCurrency(amount, currency='USD')` | `symbol + toLocaleString(...)` with exactly 2 decimals, e.g. `$1,234.56`. Accepts `number` or `string` |
 | `formatPercent(value)` | `toFixed(2) + '%'`, e.g. `12.34%`. Accepts `number` or `string` |
 | `formatSignedPercent(value)` | like `formatPercent` but forces an explicit `+` on positive values, e.g. `+3.42%` / `-1.20%`. Used by the Performance chart tooltip (both the per-bucket `return` and the cumulative `twr` are percentages where the sign carries the meaning). Accepts `number` or `string` |
-| `ASSET_CLASS_LABELS` | map of the 8 backend asset classes to **Italian** UI labels: `equity → Azioni`, `bond → Obbligazioni`, `commodity → Materie prime`, `currency → Valute`, `crypto → Crypto`, `real_estate → Immobiliare`, `mixed → Misto`, `other → Altro` |
+| `ASSET_TYPES` / `ASSET_CLASSES` | read-only value lists offered by the Type / Class selects: `stock, etf, bond, mutual_fund, crypto, commodity` / `equity, bond, commodity, currency, crypto, real_estate, mixed, other` |
+| `assetTypeLabel(type)` / `assetClassLabel(cls)` / `priceSourceLabel(source)` | localized labels for the raw backend values, resolved through the i18n `t()` so they follow the interface language (asset types `asset.typeStock` … `asset.typeCash`, classes `asset.classEquity` … `asset.classOther`, sources `asset.priceSourceYahoo` / `priceSourceManual` / `priceSourceNone`); values outside the tables fall back to the raw string; reactive — they re-render when the locale changes |
 
-The label map is used wherever a class name must be shown: inside
-`ClassDonut` (the asset-class donuts of the dashboard "Allocazione
-complessiva" card and of the portfolio detail allocation section, which map
-the backend class keys themselves), and the asset detail "Classe" selector.
+The label helpers are used wherever these values must be shown:
+`assetClassLabel` inside `ClassDonut` (the asset-class donuts of the dashboard
+"Allocazione complessiva" card and of the portfolio detail allocation section,
+which label the backend class keys themselves) and in the allocation drill
+titles of both pages, and on the asset detail (identity chip, quick fact,
+Class select); `assetTypeLabel` and `priceSourceLabel` likewise back the
+Type/Price-source surfaces of the asset detail and the create-asset modal.
 
 ### Value and metric computations
 
@@ -448,9 +452,9 @@ in white).
 | `CapitalChart.svelte` (`lib/components/domain/`) | **two-line** chart on the **same** category buckets: `invested` (net invested capital, stepped `end` line in the semantic grey `costBasis`) and `value` (market value, smooth line in the semantic green `marketValue`), currency tooltip via `formatCurrency(value, currency)`, `inside` + `slider` dataZoom (or inside-only zoom and a 240px canvas with the `compact` prop), legend `Invested` / `Value`, theme-aware re-init (`{#key}`), "No data" empty state | the **dashboard hero** value-vs-invested chart, fed by the **same** `dashboardPerformance(granularity)` fetch and buckets as `PerformanceChart` (amounts in the user's **base currency**, `currency` from the payload) and following the same monthly/annual toggle; the hero passes `compact` and windows the buckets client-side with the bucket-driven period chips |
 | `Sparkline.svelte` (`lib/components/domain/`) | tiny **axis-less line**: no legend/tooltip/zoom, zeroed grid gutters; accepts flat numbers (hidden index axis) or `{date, value}[]` points (`SparklinePoint`, hidden **time** axis so calendar gaps stay truthful — don't mix the forms), the semantic `marketValue` green by default with an optional `color` override, an optional subtle 10%-opacity area fill (`area`), `smooth` + `sampling: 'lttb'`, no hover (`silent`), a fixed-height strip via `heightClass` (default `h-10`); renders **nothing** below 2 points; the wrapper is `role="img"` with an `aria-label` (caller-provided, else `sparkline.trend`); theme-aware re-init (`{#key}`) | the **portfolio cards** on the **dashboard**: a bottom strip with the portfolio's market-value history, fed by `portfolioApi.history(id)` (the series' `market_value` strings mapped to `{date, value}` points) fetched in the background after the main dashboard load; a failed history silently leaves the card without a sparkline |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out; `complete={false}` renders the donut **open** when the rows sum to < 100 (a transparent residual slice keeps the angles truthful — no gray "Other" slice) | asset detail page (regions donut with `complete={false}` and the sectors donut) and the two exposure modals (`mute` mode: regions in `ExposureGeoModal`, sectors in `ExposureSectorModal`). Countries are shown as bar lists (page card and geo modal), never as a pie. Accepts `ExposureRow[]` (`{name, weight}`). |
-| `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the asset classes (same radius/palette/label style as `ExposurePie`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `ASSET_CLASS_LABELS` for friendly slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above; the optional `onDrill?: (classKey) => void` makes slices clickable — clicking one fires it with the **raw** class key (the `{#key}`-re-inited chart binds the click through the svelte-echarts wrapper's `onclick` ECharts-event prop) and the slices get a pointer cursor | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole vault, base currency), and the **portfolio detail** class panel, fed by `classAllocation(id).classes` (portfolio currency); both call sites pass `onDrill` and open the shared `AllocationDrillPanel` |
+| `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the asset classes (same radius/palette/label style as `ExposurePie`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `assetClassLabel` for localized slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above; the optional `onDrill?: (classKey) => void` makes slices clickable — clicking one fires it with the **raw** class key (the `{#key}`-re-inited chart binds the click through the svelte-echarts wrapper's `onclick` ECharts-event prop) and the slices get a pointer cursor | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole vault, base currency), and the **portfolio detail** class panel, fed by `classAllocation(id).classes` (portfolio currency); both call sites pass `onDrill` and open the shared `AllocationDrillPanel` |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | reusable **horizontal bar chart** over generic `{name, value, weight}[]` rows (`ExposureBarRow`): bars sorted **descending by value** (defensively re-sorted and non-positive rows dropped in the component; the category axis is `inverse`d so the biggest bar sits on top), weight % printed at the bar end, tooltip with amount (`formatCurrency(value, currency)`) and weight (`formatPercent`), hidden value axis (the bars only need to be comparable), canvas height grows with the row count, `colorFor?: (name) => string` per-row colour override (else the resolved `resolvePalette` palette by index), `labelFor?: (name) => string` axis-label mapping (the axis shows the friendly name — e.g. ISO code → full country name via `countryDisplayName` — and the tooltip appends the raw name in parentheses when it differs, "United States (US)"; the axis label column also widens to 140px for mapped labels), `maxVisibleRows?: number` collapses the chart to that many bars by default with a "Show all" control that expands in place (no inner scroll viewport — the page is the only scroll container), optional `label` heading and muted `note` caption, "No data" empty state, theme-aware re-init (`{#key}`); the optional `onDrill?: (rawName) => void` makes bars clickable — clicking one fires it with the row's **raw** name (the bucket key, e.g. `US` / `North America` / `Financials`, even when `labelFor` maps the axis label) through the wrapper's `onclick` ECharts-event prop, and drilled bars get a pointer cursor | the region, sector and country panels of the **dashboard** "Allocazione complessiva" card, fed by `dashboardAllocation().regions` / `.sectors` / `.countries`, and of the **portfolio detail** "Allocazione" section, fed by `geographyAllocation(id).regions` / `sectorAllocation(id).sectors` / `geographyAllocation(id).countries` (in the portfolio currency); callers map `RegionAllocation`/`SectorAllocation`/`CountryAllocation` onto `ExposureBarRow`; countries carry ISO alpha-2 codes rendered with `labelFor={countryDisplayName}` and `maxVisibleRows={10}` on both pages — the ~10 biggest bars are visible by default and a "Show all" control reveals the rest; the region and sector panels pass neither, so their labels stay verbatim and all rows stay visible — the ~10 macro-regions never need the cap; both call sites pass `onDrill` and open the shared `AllocationDrillPanel` |
-| `AllocationDrillPanel.svelte` (`lib/components/domain/`) | read-only **allocation drill-down panel**: the contributing assets behind one allocation bucket, rendered as `ui/Drawer` at ≥ `lg` and `ui/Sheet` below it (via the `viewport` store — the same drawer/sheet split as the transaction form). Controlled like both primitives (`open`/`onClose` props, caller owns the state together with `title`/`dim`/`key`); `fetcher: (dim, key) => Promise<AllocationDrill>` is injected per scope (dashboard: `dashboardAllocationDrill`, portfolio tab: `allocationDrill(id, …)`) and called on open and whenever `dim`/`key` change while open, with a monotonic request id discarding stale responses (the four states follow the `ui/AsyncCard` conventions: skeleton / one-line error + Retry / empty "no assets in this slice" / data). The data table reuses `ui/Table`/`Th`/`Td` with an sr-only caption and, below `sm`, collapses to stacked key–value rows — Asset (ticker linking to `/assets/{id}` + muted name on a second line), Value (`formatCurrency` in the payload's currency), Weight (`formatPercent`, the asset's share of the bucket), Contribution (value × weight/100 in the bucket) and Share of slice (contribution ÷ `total`, guarded to an em dash for empty buckets); rows keep the backend's contribution-descending order and the panel adds no nested scroll area (the drawer/sheet body scrolls) | mounted **once per page** by the dashboard ("Allocazione complessiva" card) and by the portfolio Allocation tab: every `ClassDonut`/`ExposureBarChart` there passes `onDrill` opening this panel with the clicked bucket; the drill `title` is the label the chart displays (`ASSET_CLASS_LABELS` class name, `countryDisplayName` full country name, region/sector name verbatim) |
+| `AllocationDrillPanel.svelte` (`lib/components/domain/`) | read-only **allocation drill-down panel**: the contributing assets behind one allocation bucket, rendered as `ui/Drawer` at ≥ `lg` and `ui/Sheet` below it (via the `viewport` store — the same drawer/sheet split as the transaction form). Controlled like both primitives (`open`/`onClose` props, caller owns the state together with `title`/`dim`/`key`); `fetcher: (dim, key) => Promise<AllocationDrill>` is injected per scope (dashboard: `dashboardAllocationDrill`, portfolio tab: `allocationDrill(id, …)`) and called on open and whenever `dim`/`key` change while open, with a monotonic request id discarding stale responses (the four states follow the `ui/AsyncCard` conventions: skeleton / one-line error + Retry / empty "no assets in this slice" / data). The data table reuses `ui/Table`/`Th`/`Td` with an sr-only caption and, below `sm`, collapses to stacked key–value rows — Asset (ticker linking to `/assets/{id}` + muted name on a second line), Value (`formatCurrency` in the payload's currency), Weight (`formatPercent`, the asset's share of the bucket), Contribution (value × weight/100 in the bucket) and Share of slice (contribution ÷ `total`, guarded to an em dash for empty buckets); rows keep the backend's contribution-descending order and the panel adds no nested scroll area (the drawer/sheet body scrolls) | mounted **once per page** by the dashboard ("Allocazione complessiva" card) and by the portfolio Allocation tab: every `ClassDonut`/`ExposureBarChart` there passes `onDrill` opening this panel with the clicked bucket; the drill `title` is the label the chart displays (`assetClassLabel` class name, `countryDisplayName` full country name, region/sector name verbatim) |
 | `InvestmentsTable.svelte` (`lib/components/domain/`) | shared **active/closed** table (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, optional `title`): columns Invested / Value-Proceeds / Gain-Loss / % / Dividends, rows Active and Closed, signed P/L colored with `pnlColorClass`, amounts via `formatCurrency` | the **dashboard** hero "Breakdown" disclosure (base currency, inside a `<details>` under the hero number) and the **portfolio detail** KPI card (portfolio currency) |
 | `PositionTable.svelte` (`lib/components/domain/`) | generic positions table over the `PositionRow` type (`{assetId?, ticker, name?, qty?, cost?, value?, realized?, unrealized?, roi?, closed?, price?, priceCurrency?}`); `showCost`/`showRealized`/`showUnrealized` toggle the optional columns, `showPrice` adds a Price column (before Qty, formatted with `priceCurrency`, shown even for closed rows), `linkAssets` links the ticker to the asset page; closed rows dash out every cell except realized | the **portfolio detail** Positions table |
 | `AllocationDonut.svelte` (`lib/components/domain/`) | theme-aware donut of `{name, value}[]` shares (weights recomputed on the positive total); `showValue={false}` hides the value in the tooltip (mixed-currency donut) | the **dashboard** "Allocation by portfolio" |
@@ -488,7 +492,7 @@ the screen-reader path. The pattern is uniform across the six wrappers:
   `formatSignedPercent`; the return column keeps `pnlColorClass` like the
   green/red bars). Row labels follow the chart treatment: `ExposureBarChart`
   shows the friendly `labelFor` name with the raw code in parentheses
-  ("United States (US)"), `ClassDonut` the `ASSET_CLASS_LABELS` name, and
+  ("United States (US)"), `ClassDonut` the `assetClassLabel` name, and
   `AllocationDonut` drops the amount column under `showValue={false}`
   (mixed-currency donut), mirroring its tooltip. Columns per chart:
   name/value/weight (bars, class donut), name/weight (`ExposurePie`),
@@ -523,7 +527,7 @@ shape-only affordance whose figures the card already shows as text.
 - **Portfolio detail "Allocazione"** — a `lg:grid-cols-2` grid of panels mirroring the
   dashboard card, in the **portfolio currency**: `ClassDonut` over the
   `AssetClassSlice[]` returned by `portfolioApi.classAllocation` (class keys
-  mapped through `ASSET_CLASS_LABELS` by the component), plus
+  mapped through `assetClassLabel` by the component), plus
   `ExposureBarChart` region, sector and country panels fed by
   `geographyAllocation(id)` (`regions` + `countries`) and
   `sectorAllocation(id)` (`sectors`) with the same equity-universe `note`s
@@ -797,26 +801,22 @@ visible on every page.
   lookups (`nav.dashboard`) and typed as the `MessageKey` union, so `t()`
   call sites are typo-checked too. Lookup order: active locale → English
   (fallback) → the key itself, with a console warning only in dev (never a
-  throw). **Translation is partial**: the shell navigation
+  throw). **The interface copy is on `t()` across the app**: the shell chrome
   (`SidebarNav`, `AppHeader`/`UserMenu`/`ThemeToggle` labels, `SettingsTabs`,
-  `MobileDrawer`, the skip link), the **Settings → Preferences**
-  page and every **allocation-related**
-  string are on `t()` — the dashboard/portfolio/asset allocation & exposure
-  surfaces (`allocation.*`, `exposure.*` groups), the chart empty states,
-  tooltip `Value:`/`Weight:` labels and fallback series names
-  (`chartView.noData`/`noDistribution`/`noClassAllocation`/`noAllocation`/
-  `seriesExposure`/`seriesClassAllocation`), the allocation drill-down panel
-  (`drill.*`), the `ProvenanceBadge`
-  label+description (`provenance.*`), the whole **dashboard**
-  (headings, the portfolio cards' closed line and asset count, the
-  Active/Closed investments table and the "Invested assets" table with its
-  empty state — `dashboard.*`, `investments.*`, `common.assetCount`) and the
-  **portfolio detail** (the Performance card and its Monthly/Annual toggle,
-  the performance-history card, the Positions and Activity tabs with their
-  tables — `performance.*`, `positions.*`, `activity.*`, `common.col*`), all
-  shape-identical in `en.ts`/`it.ts`; the other pages keep their mixed
-  English/Italian copy ("cambio mancante", "Aggiorna da Yahoo", exposure-modal
-  field labels, … — the chapter 6 formatters follow the same mix).
+  `MobileDrawer`, the skip link), the dashboard, the portfolio detail
+  (Overview/Positions/Activity and their tables), the portfolios and assets
+  lists, the asset detail tabs, every modal (create portfolio/asset, import
+  portfolio, add transaction, exposure editing), the Settings pages, the Price
+  Sync Health page and the allocation/exposure surfaces (`allocation.*`,
+  `exposure.*`, the drill-down `drill.*`, the chart series and empty states
+  `chartView.*`, the `ProvenanceBadge` `provenance.*`) — plus the asset
+  type/class/price-source labels, which `lib/format.ts` exposes as localized
+  functions (`assetTypeLabel`/`assetClassLabel`/`priceSourceLabel`) so the
+  identity chips, quick facts, selects and the class donut follow the locale.
+  Every key is shape-identical in `en.ts`/`it.ts`. What stays in its original
+  language: the **sector/region/country data values** (e.g. "Financials",
+  "North America", "United States") and standard finance terms (`Ticker`,
+  `ISIN`, `ETF`, `ROI`, `P/L`, `TWR`, `Yahoo Finance`).
 
 ---
 
@@ -986,7 +986,7 @@ portfolio card carries a value-history sparkline strip.
   class key and the three `ExposureBarChart`s pass it with the raw region,
   sector and country names, each opening the ONE page-level
   `AllocationDrillPanel` (right-side drawer ≥ `lg`, bottom sheet below) —
-  titled with the label the chart displays (`ASSET_CLASS_LABELS` for classes,
+  titled with the label the chart displays (`assetClassLabel` for classes,
   `countryDisplayName` for countries) and fed lazily by
   `portfolioApi.dashboardAllocationDrill(dim, key)`, listing the
   contributing assets (ticker linking to the asset page, value, bucket
@@ -1181,7 +1181,7 @@ Performance card buckets and the allocations are refetched (the shared
 TAB **Allocation** (mirrors the dashboard "Allocazione
 complessiva" card): a `lg:grid-cols-2` grid of panels in the **portfolio
 currency** — **Classi di attività** (`ClassDonut` over `classAllocation()`,
-class keys mapped through `ASSET_CLASS_LABELS` by the component) and the
+class keys mapped through `assetClassLabel` by the component) and the
 equity-only **Settori**, **Regioni** and **Paesi** horizontal bars
 (`ExposureBarChart` over `sectorAllocation()`'s `sectors` and
 `geographyAllocation()`'s `regions` + `countries` — the country panel uses
@@ -1251,8 +1251,8 @@ The sticky shell header (stacked at `top-[var(--app-header-h)]`, its negative
 margins/padding mirroring `<main>`'s responsive `px-4 lg:px-6` / `pt-4 lg:pt-6`):
 
 - Identity row: back link to `/assets`, ticker (mono font) + name, the
-  identity chips **type · class · currency · exchange** (`ASSET_TYPE_LABELS`
-  and `ASSET_CLASS_LABELS` from `lib/format.ts`) and the
+  identity chips **type · class · currency · exchange** (`assetTypeLabel`
+  and `assetClassLabel` from `lib/format.ts`) and the
   "nessun sync automatico" warning chip for non-Yahoo price sources. The
   row carries no actions menu: the three shell-owned actions —
   **Aggiorna da Yahoo** (`assetApi.meta(ticker)` to refresh

@@ -40,7 +40,7 @@
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Spinner from '$lib/components/ui/Spinner.svelte'
   import { ChevronDown } from 'lucide-svelte'
-  import { formatCurrency, formatPercent, ASSET_CLASS_LABELS } from '$lib/format'
+  import { formatCurrency, formatPercent, assetClassLabel } from '$lib/format'
   import { pnlColorClass } from '$lib/ui-colors'
 
   let dash = $state<Dashboard | null>(null)
@@ -316,10 +316,6 @@
   function drillFetch(dim: AllocationDrillDim, key: string): Promise<AllocationDrill> {
     return portfolioApi.dashboardAllocationDrill(dim, key)
   }
-  // Friendly class label, same ASSET_CLASS_LABELS table the donut slices use.
-  function classLabel(cls: string): string {
-    return ASSET_CLASS_LABELS[cls] ?? cls
-  }
 </script>
 
 <div class="p-6">
@@ -544,7 +540,7 @@
                 data={alloc.classes ?? []}
                 currency={alloc.currency}
                 label={t('allocation.assetClasses')}
-                onDrill={(cls) => openDrill('class', cls, classLabel(cls))}
+                onDrill={(cls) => openDrill('class', cls, assetClassLabel(cls))}
               />
             </div>
             <div class="rounded-card border-border bg-surface p-4 shadow-card">

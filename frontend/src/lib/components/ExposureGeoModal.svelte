@@ -211,7 +211,8 @@
       </div>
 
       <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <!-- Countries (regions update only manually, via "Calcola da paesi") -->
+        <!-- Countries (regions update only manually, via the derive button,
+             `exposure.deriveTitle`) -->
         <div class="flex flex-col rounded-card border border-border bg-muted p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
@@ -222,8 +223,8 @@
               <button
                 onclick={prefillCountriesFromETF}
                 disabled={assetType !== 'etf' || fetchingETF || fetchingMorningstar}
-                title="Prefill da JustETF"
-                aria-label="Prefill paesi da JustETF"
+                title={t('exposure.prefillJustEtf')}
+                aria-label={t('exposure.prefillCountriesJustEtf')}
                 class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingETF}
@@ -239,8 +240,8 @@
               <button
                 onclick={prefillCountriesFromMorningstar}
                 disabled={assetType !== 'etf' || fetchingETF || fetchingMorningstar}
-                title="Prefill da Morningstar"
-                aria-label="Prefill paesi da Morningstar"
+                title={t('exposure.prefillMorningstar')}
+                aria-label={t('exposure.prefillCountriesMorningstar')}
                 class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingMorningstar}
@@ -272,8 +273,8 @@
             <div
               class="flex items-center gap-3 border-b border-border pb-2 pl-2 pr-3 text-sm text-muted-foreground"
             >
-              <span class="min-w-0 flex-1 truncate">Paese</span>
-              <span class="w-20 shrink-0 text-right">Peso %</span>
+              <span class="min-w-0 flex-1 truncate">{t('exposure.colCountry')}</span>
+              <span class="w-20 shrink-0 text-right">{t('exposure.colWeightPct')}</span>
               <!-- Spacer matching the remove-button column of the rows. -->
               <span class="w-[22px] shrink-0" aria-hidden="true"></span>
             </div>
@@ -320,7 +321,7 @@
                       step="0.01"
                       inputmode="decimal"
                       value={row.weight}
-                      aria-label="Peso di {displayName}"
+                      aria-label={t('exposure.weightAria', { name: displayName })}
                       oninput={(e) => {
                         row.weight = e.currentTarget.value
                         onCountriesDirty()
@@ -331,8 +332,8 @@
                     <button
                       onclick={() => removeCountry(row.name)}
                       class="shrink-0 rounded p-1 text-muted-foreground hover:bg-negative/10 hover:text-negative"
-                      title="Rimuovi {displayName}"
-                      aria-label="Rimuovi {displayName}"
+                      title={t('exposure.removeAria', { name: displayName })}
+                      aria-label={t('exposure.removeAria', { name: displayName })}
                     >
                       <Trash2 class="h-3.5 w-3.5" />
                     </button>
@@ -345,7 +346,7 @@
               <div class="flex items-center gap-2 pt-3">
                 <select
                   bind:value={addCountryCode}
-                  aria-label="Paese da aggiungere"
+                  aria-label={t('exposure.addCountryAria')}
                   class="focus-ring min-w-0 flex-1 rounded-control border border-input bg-surface px-3 py-1.5 text-sm"
                 >
                   {#each availableCodes as code (code)}
@@ -358,7 +359,7 @@
                   class="flex shrink-0 items-center gap-1 rounded-control border border-input bg-surface px-3 py-1.5 text-sm font-medium text-foreground shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus class="h-4 w-4" />
-                  Aggiungi
+                  {t('exposure.add')}
                 </button>
               </div>
             {/if}
@@ -371,7 +372,7 @@
 
           <div class="mt-3 h-8">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-foreground">Totale</span>
+              <span class="text-sm font-medium text-foreground">{t('common.colTotal')}</span>
               <span
                 class="text-sm font-semibold tabular-nums {totalColorClass(sumCountries, countriesOver)}"
               >{sumCountries.toFixed(2)}%</span>
@@ -389,12 +390,11 @@
           <div class="h-[3.75rem] overflow-hidden pt-1 text-xs leading-5">
             {#if countriesOver}
               <p role="alert" class="text-negative">
-                La somma supera il 100% — attuale {sumCountries.toFixed(2)}%.
-                Riduci i pesi per salvare.
+                {t('exposure.overSum', { pct: sumCountries.toFixed(2) })}
               </p>
             {:else if sumCountries < 99.5}
               <p class="text-muted-foreground">
-                Residuo non attribuito: {(100 - sumCountries).toFixed(2)}%.
+                {t('exposure.residualCountries', { pct: (100 - sumCountries).toFixed(2) })}
               </p>
             {/if}
           </div>
@@ -403,15 +403,13 @@
             <button
               onclick={saveCountries}
               disabled={savingCountries || countriesOver}
-              title={countriesOver
-                ? 'La somma dei pesi supera il 100%: riduci i pesi per poter salvare'
-                : undefined}
+              title={countriesOver ? t('exposure.over100Title') : undefined}
               class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {#if savingCountries}
                 <Loader2 class="h-4 w-4 animate-spin" />
               {/if}
-              {savingCountries ? 'Salvataggio...' : 'Salva'}
+              {savingCountries ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </div>
@@ -427,8 +425,8 @@
               <button
                 onclick={deriveRegionsFromCountries}
                 disabled={derivingRegions || fetchingMorningstar}
-                title="Calcola da paesi"
-                aria-label="Calcola regioni dai paesi"
+                title={t('exposure.deriveTitle')}
+                aria-label={t('exposure.deriveAria')}
                 class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if derivingRegions}
@@ -440,8 +438,8 @@
               <button
                 onclick={prefillRegionsFromMorningstar}
                 disabled={assetType !== 'etf' || derivingRegions || fetchingMorningstar}
-                title="Prefill da Morningstar"
-                aria-label="Prefill regioni da Morningstar"
+                title={t('exposure.prefillMorningstar')}
+                aria-label={t('exposure.prefillRegionsMorningstar')}
                 class="rounded-control border border-input bg-surface p-1.5 shadow-card hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {#if fetchingMorningstar}
@@ -467,8 +465,8 @@
               <table class="w-full text-left text-sm">
                 <thead>
                   <tr class="border-b border-border text-muted-foreground">
-                    <th class="pb-2">Area geografica</th>
-                    <th class="pb-2 text-right">Peso %</th>
+                    <th class="pb-2">{t('exposure.geoArea')}</th>
+                    <th class="pb-2 text-right">{t('exposure.colWeightPct')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -495,7 +493,7 @@
                           step="0.01"
                           inputmode="decimal"
                           value={r.weight}
-                          aria-label="Peso di {r.name}"
+                          aria-label={t('exposure.weightAria', { name: r.name })}
                           oninput={(e) => {
                             r.weight = e.currentTarget.value
                             onRegionsDirty()
@@ -529,7 +527,7 @@
 
           <div class="mt-3 h-8">
             <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-foreground">Totale</span>
+              <span class="text-sm font-medium text-foreground">{t('common.colTotal')}</span>
               <span
                 class="text-sm font-semibold tabular-nums {totalColorClass(sumRegions, regionsOver)}"
               >{sumRegions.toFixed(2)}%</span>
@@ -547,13 +545,12 @@
           <div class="h-[3.75rem] overflow-hidden pt-1 text-xs leading-5">
             {#if regionsOver}
               <p role="alert" class="text-negative">
-                La somma supera il 100% — attuale {sumRegions.toFixed(2)}%.
-                Riduci i pesi per salvare.
+                {t('exposure.overSum', { pct: sumRegions.toFixed(2) })}
               </p>
             {:else if sumRegions < 99.5}
               <p class="flex items-center gap-1.5 text-muted-foreground">
                 <Info class="h-3.5 w-3.5 shrink-0" />
-                Residuo non classificato: {(100 - sumRegions).toFixed(2)}% — escluso dal grafico.
+                {t('exposure.residualRegions', { pct: (100 - sumRegions).toFixed(2) })}
               </p>
             {/if}
           </div>
@@ -562,15 +559,13 @@
             <button
               onclick={saveRegions}
               disabled={savingRegions || regionsOver}
-              title={regionsOver
-                ? 'La somma dei pesi supera il 100%: riduci i pesi per poter salvare'
-                : undefined}
+              title={regionsOver ? t('exposure.over100Title') : undefined}
               class="flex items-center gap-2 rounded-control bg-accent px-4 py-2 text-sm text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {#if savingRegions}
                 <Loader2 class="h-4 w-4 animate-spin" />
               {/if}
-              {savingRegions ? 'Salvataggio...' : 'Salva'}
+              {savingRegions ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </div>

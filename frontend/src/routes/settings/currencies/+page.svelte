@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { toast } from '$lib/stores/toast.svelte'
   import { settingsApi, type Currency } from '$lib/services/api'
+  import { t } from '$lib/i18n/index.svelte'
   import { CURRENCIES } from '$lib/currencies'
   import { currencySymbol } from '$lib/format'
   import { Trash2 } from 'lucide-svelte'
@@ -36,7 +37,7 @@
     try {
       currencies = await listCurrencies()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load currencies'
+      const message = err instanceof Error ? err.message : t('currencies.loadFailed')
       toast.error(message)
     } finally {
       currenciesLoading = false
@@ -67,15 +68,15 @@
       currencies = await listCurrencies()
       newCode = ''
       newName = ''
-      toast.success(`Currency ${code} added`)
+      toast.success(t('currencies.added', { code }))
     } catch (err: unknown) {
       const status = errorStatus(err)
       if (status === 422) {
-        toast.error(`USD->${code} conversion not available; currency not manageable`)
+        toast.error(t('currencies.conversionUnavailable', { code }))
       } else if (status === 409) {
-        toast.error('Currency already present')
+        toast.error(t('currencies.alreadyPresent'))
       } else {
-        toast.error(err instanceof Error ? err.message : 'Failed to add currency')
+        toast.error(err instanceof Error ? err.message : t('currencies.addFailed'))
       }
     } finally {
       addingCurrency = false
@@ -94,13 +95,13 @@
     try {
       await settingsApi.deleteCurrency(code)
       currencies = await listCurrencies()
-      toast.success(`Currency ${code} removed`)
+      toast.success(t('currencies.removed', { code }))
     } catch (err: unknown) {
       const status = errorStatus(err)
       if (status === 409) {
-        toast.error('Currency in use or protected')
+        toast.error(t('currencies.inUse'))
       } else {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove currency')
+        toast.error(err instanceof Error ? err.message : t('currencies.removeFailed'))
       }
     } finally {
       removingCode = ''
@@ -109,48 +110,48 @@
 </script>
 
 <div class="p-6">
-  <h1 class="mb-6 text-2xl font-bold">Settings</h1>
+  <h1 class="mb-6 text-2xl font-bold">{t('nav.settings')}</h1>
 
   <SettingsTabs class="mb-6" />
 
   <Card class="max-w-2xl p-6">
-    <h2 class="mb-4 font-semibold">Valute gestite</h2>
+    <h2 class="mb-4 font-semibold">{t('currencies.title')}</h2>
 
     {#if availableCurrencies.length > 0}
       <!-- Stacked full-width on phones (EPIC K bug-fix): the fixed `w-64`
            code picker + flex-1 name field + Add button overflowed 393px;
            from `sm` the row keeps its original inline shape. -->
       <div class="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
-        <Field label="Code" class="w-full shrink-0 sm:w-64">
+        <Field label={t('common.colCode')} class="w-full shrink-0 sm:w-64">
           <Select value={newCode} onchange={(e) => selectCurrency(e.currentTarget.value)}>
-            <option value="" disabled>Select a currency</option>
+            <option value="" disabled>{t('currencies.select')}</option>
             {#each availableCurrencies as c (c.code)}
               <option value={c.code}>{c.code} — {c.name}</option>
             {/each}
           </Select>
         </Field>
-        <Field label="Name" class="w-full flex-1 sm:w-auto">
-          <Input placeholder="Optional" bind:value={newName} />
+        <Field label={t('chartView.colName')} class="w-full flex-1 sm:w-auto">
+          <Input placeholder={t('currencies.namePlaceholder')} bind:value={newName} />
         </Field>
         <Button onclick={addCurrency} disabled={!newCode || addingCurrency} class="w-full sm:w-auto">
-          {addingCurrency ? 'Adding...' : 'Add'}
+          {addingCurrency ? t('currencies.adding') : t('currencies.add')}
         </Button>
       </div>
     {:else}
-      <p class="mb-4 text-sm text-muted-foreground">All listed currencies are already managed.</p>
+      <p class="mb-4 text-sm text-muted-foreground">{t('currencies.allManaged')}</p>
     {/if}
 
     {#if currenciesLoading}
-      <p class="text-muted-foreground">Loading...</p>
+      <p class="text-muted-foreground">{t('common.loading')}</p>
     {:else if currencies.length === 0}
-      <p class="text-sm text-muted-foreground">No currencies found.</p>
+      <p class="text-sm text-muted-foreground">{t('currencies.empty')}</p>
     {:else}
       <Table>
         <THead>
           <Tr>
-            <Th>Code</Th>
-            <Th>Name</Th>
-            <Th align="right">Actions</Th>
+            <Th>{t('common.colCode')}</Th>
+            <Th>{t('chartView.colName')}</Th>
+            <Th align="right">{t('common.colActions')}</Th>
           </Tr>
         </THead>
         <TBody>
@@ -165,8 +166,8 @@
                   variant="ghost"
                   size="icon"
                   class="text-muted-foreground hover:text-negative"
-                  aria-label={`Remove currency ${c.code}`}
-                  title="Remove currency"
+                  aria-label={t('currencies.removeNamed', { code: c.code })}
+                  title={t('currencies.remove')}
                   disabled={removingCode === c.code}
                   onclick={() => requestDeleteCurrency(c.code)}
                 >
@@ -184,10 +185,10 @@
 <ConfirmDialog
   bind:open={showDeleteDialog}
   variant="danger"
-  title="Delete currency"
-  message={`Delete currency ${currencyToDelete}?`}
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
+  title={t('currencies.deleteTitle')}
+  message={t('currencies.deleteConfirm', { code: currencyToDelete })}
+  confirmLabel={t('common.delete')}
+  cancelLabel={t('common.cancel')}
   loading={showDeleteDialog && removingCode === currencyToDelete}
   onconfirm={removeCurrency}
 />

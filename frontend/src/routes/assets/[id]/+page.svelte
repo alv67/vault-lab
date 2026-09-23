@@ -3,9 +3,9 @@
   import { t } from '$lib/i18n/index.svelte'
   import {
     formatCurrency,
-    ASSET_CLASS_LABELS,
-    ASSET_TYPE_LABELS,
-    PRICE_SOURCE_LABELS,
+    assetTypeLabel,
+    assetClassLabel,
+    priceSourceLabel,
   } from '$lib/format'
   import PriceChart from '$lib/components/PriceChart.svelte'
   import PnlValue from '$lib/components/ui/PnlValue.svelte'
@@ -81,17 +81,17 @@
     if (!a) return []
     return [
       { label: t('asset.factIsin'), value: a.isin || '—', mono: true },
-      { label: t('asset.factType'), value: ASSET_TYPE_LABELS[a.type] ?? a.type, mono: false },
+      { label: t('asset.factType'), value: assetTypeLabel(a.type), mono: false },
       {
         label: t('asset.factClass'),
-        value: a.asset_class ? ASSET_CLASS_LABELS[a.asset_class] ?? a.asset_class : '—',
+        value: a.asset_class ? assetClassLabel(a.asset_class) : '—',
         mono: false,
       },
       { label: t('asset.factCurrency'), value: a.currency, mono: false },
       { label: t('asset.factExchange'), value: a.exchange || '—', mono: false },
       {
         label: t('asset.factPriceSource'),
-        value: PRICE_SOURCE_LABELS[a.price_source || 'yahoo'] ?? a.price_source ?? '—',
+        value: priceSourceLabel(a.price_source || 'yahoo'),
         mono: false,
       },
     ]
@@ -101,7 +101,7 @@
 {#if ctx.asset}
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="font-semibold">Storico prezzo</h2>
+      <h2 class="font-semibold">{t('asset.priceHistory')}</h2>
       <div class="flex gap-1">
         {#each RANGES as r (r.key)}
           <button

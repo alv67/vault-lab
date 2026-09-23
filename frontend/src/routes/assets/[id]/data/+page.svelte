@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '$lib/i18n/index.svelte'
-  import { ASSET_CLASS_LABELS, ASSET_TYPE_LABELS } from '$lib/format'
+  import { ASSET_TYPES, ASSET_CLASSES, assetTypeLabel, assetClassLabel } from '$lib/format'
   import { History, RefreshCw, Trash2 } from 'lucide-svelte'
   import Badge from '$lib/components/ui/Badge.svelte'
   import Button from '$lib/components/ui/Button.svelte'
@@ -24,14 +24,14 @@
 {#if ctx.asset}
   <div class="mb-6 rounded-card border-border bg-surface p-4 shadow-card">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h2 class="font-semibold">Caratteristiche</h2>
+      <h2 class="font-semibold">{t('asset.characteristics')}</h2>
       <Button onclick={ctx.saveAsset} disabled={!ctx.hasChanges || ctx.saving}>
-        {ctx.saving ? 'Salvataggio...' : 'Salva modifiche'}
+        {ctx.saving ? t('common.saving') : t('common.saveChanges')}
       </Button>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
       <div>
-        <label for="asset-ticker" class="mb-1 block text-xs font-medium text-muted-foreground">Ticker</label>
+        <label for="asset-ticker" class="mb-1 block text-xs font-medium text-muted-foreground">{t('positions.colTicker')}</label>
         <input
           id="asset-ticker"
           type="text"
@@ -40,7 +40,7 @@
         />
       </div>
       <div>
-        <label for="asset-isin" class="mb-1 block text-xs font-medium text-muted-foreground">ISIN</label>
+        <label for="asset-isin" class="mb-1 block text-xs font-medium text-muted-foreground">{t('asset.factIsin')}</label>
         <input
           id="asset-isin"
           type="text"
@@ -49,7 +49,7 @@
         />
       </div>
       <div>
-        <label for="asset-name" class="mb-1 block text-xs font-medium text-muted-foreground">Name</label>
+        <label for="asset-name" class="mb-1 block text-xs font-medium text-muted-foreground">{t('chartView.colName')}</label>
         <input
           id="asset-name"
           type="text"
@@ -58,19 +58,19 @@
         />
       </div>
       <div>
-        <label for="asset-type" class="mb-1 block text-xs font-medium text-muted-foreground">Type</label>
+        <label for="asset-type" class="mb-1 block text-xs font-medium text-muted-foreground">{t('asset.factType')}</label>
         <select
           id="asset-type"
           bind:value={ctx.form.type}
           class="w-full rounded-control border border-input px-3 py-2 text-sm"
         >
-          {#each Object.entries(ASSET_TYPE_LABELS) as [value, label] (value)}
-            <option value={value}>{label}</option>
+          {#each ASSET_TYPES as value (value)}
+            <option value={value}>{assetTypeLabel(value)}</option>
           {/each}
         </select>
       </div>
       <div>
-        <label for="asset-currency" class="mb-1 block text-xs font-medium text-muted-foreground">Currency</label>
+        <label for="asset-currency" class="mb-1 block text-xs font-medium text-muted-foreground">{t('asset.factCurrency')}</label>
         <input
           id="asset-currency"
           type="text"
@@ -79,7 +79,7 @@
         />
       </div>
       <div>
-        <label for="asset-exchange" class="mb-1 block text-xs font-medium text-muted-foreground">Exchange</label>
+        <label for="asset-exchange" class="mb-1 block text-xs font-medium text-muted-foreground">{t('asset.factExchange')}</label>
         <input
           id="asset-exchange"
           type="text"
@@ -88,27 +88,27 @@
         />
       </div>
       <div>
-        <label for="asset-class" class="mb-1 block text-xs font-medium text-muted-foreground">Classe</label>
+        <label for="asset-class" class="mb-1 block text-xs font-medium text-muted-foreground">{t('asset.factClass')}</label>
         <select
           id="asset-class"
           bind:value={ctx.form.asset_class}
           class="w-full rounded-control border border-input px-3 py-2 text-sm"
         >
-          {#each Object.entries(ASSET_CLASS_LABELS) as [value, label] (value)}
-            <option value={value}>{label}</option>
+          {#each ASSET_CLASSES as value (value)}
+            <option value={value}>{assetClassLabel(value)}</option>
           {/each}
         </select>
       </div>
       <div>
-        <label for="asset-price-source" class="mb-1 block text-xs font-medium text-muted-foreground">Fonte prezzo</label>
+        <label for="asset-price-source" class="mb-1 block text-xs font-medium text-muted-foreground">{t('asset.factPriceSource')}</label>
         <select
           id="asset-price-source"
           bind:value={ctx.form.price_source}
           class="w-full rounded-control border border-input px-3 py-2 text-sm"
         >
-          <option value="yahoo">Yahoo Finance</option>
-          <option value="manual">Prezzo manuale</option>
-          <option value="none">Nessun prezzo</option>
+          <option value="yahoo">{t('asset.priceSourceYahoo')}</option>
+          <option value="manual">{t('asset.priceSourceManual')}</option>
+          <option value="none">{t('asset.priceSourceNone')}</option>
         </select>
       </div>
     </div>

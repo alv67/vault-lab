@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { resolve } from '$app/paths'
   import { toast } from '$lib/stores/toast.svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import { assetApi, settingsApi, type Asset, type Currency } from '$lib/services/api'
   import { Plus, Trash2 } from 'lucide-svelte'
   import Badge from '$lib/components/ui/Badge.svelte'
@@ -31,7 +32,7 @@
       assets = assetList
       currencies = curList.currencies
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load assets'
+      const message = err instanceof Error ? err.message : t('asset.loadFailed')
       toast.error(message)
     } finally {
       loading = false
@@ -54,9 +55,9 @@
     try {
       await assetApi.remove(id)
       assets = await assetApi.list()
-      toast.success('Asset deleted')
+      toast.success(t('asset.deleted'))
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Delete failed'
+      const message = err instanceof Error ? err.message : t('common.deleteFailed')
       toast.error(message)
     } finally {
       deleting = false
@@ -66,25 +67,25 @@
 
 <div class="p-6">
   <div class="mb-6 flex items-center justify-between">
-    <h1 class="text-2xl font-bold">Assets</h1>
+    <h1 class="text-2xl font-bold">{t('nav.assets')}</h1>
     <Button onclick={() => (showCreate = true)}>
       <Plus class="h-4 w-4" />
-      Add Asset
+      {t('asset.add')}
     </Button>
   </div>
 
   {#if loading}
-    <p class="text-muted-foreground">Loading...</p>
+    <p class="text-muted-foreground">{t('common.loading')}</p>
   {:else}
-    <Table aria-label="Assets">
+    <Table aria-label={t('nav.assets')}>
       <THead>
         <Tr>
-          <Th>Ticker</Th>
-          <Th>Name</Th>
-          <Th>Type</Th>
-          <Th>Currency</Th>
-          <Th>Country</Th>
-          <Th align="right">Actions</Th>
+          <Th>{t('positions.colTicker')}</Th>
+          <Th>{t('chartView.colName')}</Th>
+          <Th>{t('asset.factType')}</Th>
+          <Th>{t('asset.factCurrency')}</Th>
+          <Th>{t('asset.colCountry')}</Th>
+          <Th align="right">{t('common.colActions')}</Th>
         </Tr>
       </THead>
       <TBody>
@@ -101,7 +102,7 @@
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Delete ${a.ticker}`}
+                aria-label={t('asset.deleteNamed', { ticker: a.ticker })}
                 onclick={() => requestDeleteAsset(a.id, a.ticker)}
               >
                 <Trash2 class="h-4 w-4" />
@@ -119,10 +120,10 @@
 <ConfirmDialog
   bind:open={showDeleteDialog}
   variant="danger"
-  title="Delete asset"
-  message={`Delete ${assetToDelete?.ticker ?? ''}?`}
-  confirmLabel="Delete"
-  cancelLabel="Cancel"
+  title={t('asset.delete')}
+  message={t('asset.deleteQuestion', { ticker: assetToDelete?.ticker ?? '' })}
+  confirmLabel={t('common.delete')}
+  cancelLabel={t('common.cancel')}
   loading={deleting}
   onconfirm={deleteAsset}
 />
