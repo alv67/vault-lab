@@ -126,5 +126,5 @@ func exportFilename(name string) string {
 	if b.Len() == 0 {
 		b.WriteString("portfolio")
 	}
-	return "vault-lab-" + b.String() + ".json"
+	return "peculium-" + b.String() + ".json"
 }

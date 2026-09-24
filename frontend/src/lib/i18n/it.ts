@@ -91,6 +91,11 @@ export const it = {
     signOut: 'Esci',
     fallbackName: 'Utente',
   },
+  /** Schermata di login / registrazione. Il wordmark "Peculium" è un nome
+   *  proprio e resta invariato; qui si localizza solo il tagline sotto il logo. */
+  login: {
+    tagline: 'Il tuo patrimonio, a casa tua',
+  },
   theme: {
     group: 'Tema',
     light: 'Chiaro',
@@ -199,7 +204,7 @@ export const it = {
   },
   /**
    * Superfici di allocazione (bug-fix EPIC K, sweep progressivo D1): la card
-   * "Allocazione complessiva" del vault in dashboard, il tab Allocazione del
+   * "Allocazione complessiva" del patrimonio in dashboard, il tab Allocazione del
    * portafoglio e il suo digest in Panoramica — titoli dei pannelli, stati di
    * errore isolati e nota di copertura dell'universo azionario (`{pct}` porta
    * una cifra decimale).
@@ -216,7 +221,7 @@ export const it = {
     countriesEquity: 'Paesi (solo azionario)',
     /** Nota di copertura dell'universo azionario mostrata quando c'era esclusioni. */
     equityUniverse: 'Universo azionario: {pct}% del portafoglio',
-    /** Torta dashboard: valore del vault ripartito per portafoglio. */
+    /** Torta dashboard: valore del patrimonio ripartito per portafoglio. */
     byPortfolio: 'Allocazione per portafoglio',
     mixedCurrencies:
       'I portafogli usano valute diverse: i valori non sono confrontabili, le quote sono indicative.',
@@ -329,7 +334,7 @@ export const it = {
     invested: 'Investito',
   },
   /**
-   * Card Performance (condivisa tra la vista vault della dashboard e la
+   * Card Performance (condivisa tra la vista patrimonio della dashboard e la
    * Panoramica del dettaglio portafoglio): titolo della card e relativo
    * selettore di granularità Mensile/Annuale.
    */
@@ -427,7 +432,7 @@ export const it = {
     loadFailed: 'Caricamento dei dati di monitoraggio non riuscito',
   },
   checklist: {
-    title: 'Configura il tuo vault',
+    title: 'Configura il tuo patrimonio',
     intro: 'Tre passi per iniziare a tracciare i tuoi investimenti.',
     stepPortfolio: 'Crea un portafoglio',
     stepPortfolioHint: 'Raggruppa gli investimenti per obiettivo o conto.',
@@ -441,7 +446,7 @@ export const it = {
   },
   scope: {
     label: 'Ambito',
-    all: 'Tutti i portafogli (Vault)',
+    all: 'Tutti i portafogli (Patrimonio)',
   },
   sparkline: {
     trend: 'Andamento del valore',
@@ -534,7 +539,7 @@ export const it = {
     /** Modale di import (le etichette riusano `chartView.colName`,
      *  `asset.factCurrency`, `activity.transactions` e `common.delete/cancel`). */
     importTitle: 'Importa portafoglio',
-    importHint: 'Scegli un export (.json) di un portafoglio VaultLab da importare.',
+    importHint: 'Scegli un export (.json) di un portafoglio Peculium da importare.',
     chooseFile: 'Scegli file',
     changeFile: 'Cambia file',
     dateRange: 'Intervallo date',

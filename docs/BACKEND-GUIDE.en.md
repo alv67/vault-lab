@@ -1,6 +1,6 @@
-# VaultLab — The backend explained
+# Peculium — The backend explained
 
-> This document explains how the VaultLab backend works: the program that
+> This document explains how the Peculium backend works: the program that
 > manages financial data and makes it available to the website.
 > No programming knowledge is required: server, database and language concepts
 > are explained as we go. If you have never opened a code file, read chapter 2
@@ -9,9 +9,9 @@
 
 ---
 
-## 1. What VaultLab does
+## 1. What Peculium does
 
-VaultLab is an application for keeping track of investments: you record what
+Peculium is an application for keeping track of investments: you record what
 you buy and what you sell, and the app shows you what your securities are
 worth, how much you have gained or lost, and how your portfolio has performed
 over time.
@@ -45,7 +45,7 @@ concepts, feel free to skip this chapter.
   of "name: value" pairs inside curly braces, for example
   `{"email": "mario@example.com", "name": "Mario"}`. You can read it like a
   filled-in form.
-- **Database**: a program that stores data in an orderly way on disk. VaultLab
+- **Database**: a program that stores data in an orderly way on disk. Peculium
   uses **PostgreSQL**.
 - **Table**: inside the database, data is organized into tables (like
   spreadsheets) with rows and columns. The `users` table, for example,
@@ -64,7 +64,7 @@ concepts, feel free to skip this chapter.
 - **Rate limit / throttle**: limiting the number of calls made to an external
   service in a unit of time, so you don't get blocked.
 - **Container**: an isolated environment in which a program runs together with
-  everything it needs. VaultLab uses Docker.
+  everything it needs. Peculium uses Docker.
 - **Redis**: an in-memory database (very fast) that here works as a "shared
   counter" to keep Yahoo calls under control.
 
@@ -113,7 +113,7 @@ The pieces that run (defined in `docker-compose.yml`):
   tickers. Resolution is **market-aware**: tickers with a recognized exchange
   suffix (e.g. `XMME.MI`) resolve via Morningstar on that specific market
   (ISIN can differ by listing), while bare tickers use JustETF. The Go backend
-  calls it through `VAULT_PYTHON_SERVICE_URL`.
+  calls it through `PECULIUM_PYTHON_SERVICE_URL`.
 - **frontend** — the web page.
 
 The backend is **a single Go program** that, depending on the argument passed
@@ -285,7 +285,7 @@ What happens, step by step:
 ### The time-weighted return chart (`GET /dashboard/performance`)
 
 `GET /api/v1/dashboard/performance?granularity=month|year` returns one chart
-for the whole vault (all portfolios aggregated, converted to the user's base
+for the whole wealth (all portfolios aggregated, converted to the user's base
 currency) instead of one series per portfolio. `granularity` defaults to
 `month`; any other value is rejected with 400. The response is
 `{currency, granularity, buckets[]}`, where each bucket carries `period`
@@ -297,7 +297,7 @@ currency) instead of one series per portfolio. `granularity` defaults to
   `return = (Π (1 + r(d)) − 1) × 100` over the days `d` of the bucket, where
   each day carries `r(d) = (V(d) − V(d−1) − flow(d)) / V(d−1)` when
   `V(d−1) > 0` and is skipped (factor 1) otherwise — the first day and the
-  gaps of a fully liquidated vault measure no return, so liquidating and
+  gaps of a fully liquidated wealth measure no return, so liquidating and
   reopening a position never distorts the chart. `V(d)` is the **market
   value only**: `V(d) = mv_priced(d) + bond_at_cost(d)`, the FX-converted
   market value of the priced assets plus the cost basis of the unpriced
@@ -383,7 +383,7 @@ with `ErrInvalidInput` even when the caller bypasses the HTTP parser.
 applies exactly the same daily TWR model to a **single portfolio**, expressed
 in the **portfolio's own currency**: same `granularity` default (`month`, any
 other value → 400) and same `{currency, granularity, buckets[]}` response
-shape as the vault-wide chart. It is simpler than the dashboard version
+shape as the wealth-wide chart. It is simpler than the dashboard version
 because nothing is converted to a base currency: the materialized per-asset
 series is already denominated in the portfolio currency, so `V(d)` needs no
 FX leg at all. Only the cash flows — recorded in the asset currency — are
@@ -563,7 +563,7 @@ signals it (the model shows the `fx_missing` field).
 in `users.base_currency` (default EUR) and editable via `PATCH /users/me`
 with the `base_currency` field (an omitted/empty value keeps the stored one;
 a non-empty value must be an enabled currency from the whitelist, chapter 11,
-otherwise the request is rejected with 400). All vault-wide dashboard
+otherwise the request is rejected with 400). All wealth-wide dashboard
 aggregations are converted into it: `GET /dashboard` returns `base_currency`,
 a `summary` roll-up in the base currency — nested `active` (invested, value,
 gain/loss of the lots still held, plus the dividends of the open positions;
@@ -573,13 +573,13 @@ unpriced open positions stay out of invested/value, see chapter 7) and
 realized_pct) — where
 amounts whose rate is missing are excluded from the totals and reported by
 `fx_missing_count`/`fx_missing_value` (only non-zero amounts are flagged);
-`GET /dashboard/performance` charts the vault-wide percentage time-weighted
+`GET /dashboard/performance` charts the wealth-wide percentage time-weighted
 return (true TWR with daily geometric linking, with the invested/value
 capital series) by month or year in the base currency (chapter 7);
 `GET /portfolios/{id}/performance/buckets` charts the same buckets for a
 single portfolio, staying in that portfolio's own currency (chapter 7);
 `GET /dashboard/allocation` is expressed in the base currency too and
-aggregates every portfolio into the vault-wide `classes`, `regions`,
+aggregates every portfolio into the wealth-wide `classes`, `regions`,
 `countries` and `sectors` breakdowns. The
 per-currency (`by_currency`) and per-portfolio
 (`portfolios`, `assets`) sections of the dashboard keep their own currency.
@@ -649,10 +649,10 @@ through two "brakes":
 
 1. a **FIFO queue** (first in, first out) that guarantees a **minimum
    interval** between one call and the next (default 400ms, configurable with
-   `VAULT_YAHOO_MIN_INTERVAL`);
+   `PECULIUM_YAHOO_MIN_INTERVAL`);
 2. a **shared global counter** (`RateBudget`), implemented in Redis: a cap of
    requests per time window (default 8 requests per second, configurable with
-   `VAULT_YAHOO_GLOBAL_RATE` and `VAULT_YAHOO_GLOBAL_WINDOW`). The counter is
+   `PECULIUM_YAHOO_GLOBAL_RATE` and `PECULIUM_YAHOO_GLOBAL_WINDOW`). The counter is
    shared between the server and the worker, so the two processes together do
    not exceed the limit.
 
@@ -738,7 +738,7 @@ see `meta.go`):
   paging is only client-side UI), with a residual share not exposed as a
   country, so the weights sum to ~95% (no forced scaling to 100).
   The Morningstar region keys (`northAmerica`, `unitedKingdom`, `japan`,
-  `australasia`, ...) are mapped 1:1 onto the canonical VaultLab taxonomy and
+  `australasia`, ...) are mapped 1:1 onto the canonical Peculium taxonomy and
   returned as the `regions` dimension. Like the other fetches this endpoint is a
   **read-only preview**: countries, sectors and the official regions (when
   present) are returned but NOT persisted — the only write is an auto-resolved
@@ -818,7 +818,7 @@ request for an ISIN runs the heavy fetch (Morningstar needs a Chromium/SAL
 session) and stores the result; later requests are served from the cache and
 never call the provider. Each source keeps its own entry, so prefilling from
 JustETF does not warm Morningstar and vice versa. The TTL is
-`VAULT_EXPOSURE_CACHE_TTL` (default 7 days). Country-less results are never
+`PECULIUM_EXPOSURE_CACHE_TTL` (default 7 days). Country-less results are never
 cached, so a transient empty fetch cannot stick for a week. The cache only
 speeds up the read: entries are provider payloads, never stored weights
 (saving still happens exclusively through `PUT /assets/{id}/exposure`).
@@ -847,7 +847,7 @@ call Yahoo again.
 ## 13. The worker
 
 The worker process (`cmd/worker/main.go`) is separate from the server. Every
-interval (`VAULT_PRICE_FETCH_INTERVAL`, default 1 hour) it updates prices:
+interval (`PECULIUM_PRICE_FETCH_INTERVAL`, default 1 hour) it updates prices:
 
 ```go
 ticker := time.NewTicker(interval)

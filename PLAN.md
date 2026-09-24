@@ -1,8 +1,8 @@
-# VaultLab — Piano di Sviluppo
+# Peculium — Piano di Sviluppo
 
 ## 1. Vision & Architettura
 
-**VaultLab** è una webapp self-hosted pensata per homelab, multi-utente, per il tracciamento di investimenti e finanze personali.
+**Peculium** è una webapp self-hosted pensata per homelab, multi-utente, per il tracciamento di investimenti e finanze personali.
 
 ### Stack tecnologico
 

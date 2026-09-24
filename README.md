@@ -1,6 +1,8 @@
-# VaultLab
+# Peculium
 
-**Self-hosted, multi-user personal finance and investment suite for homelabs.**
+**Your wealth, self-hosted.**
+
+Self-hosted, multi-user personal finance and investment suite for homelabs.
 
 Track your investments, monitor asset performance, and gain insights into your financial portfolio — all from your own infrastructure.
 

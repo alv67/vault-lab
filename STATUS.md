@@ -1,4 +1,4 @@
-# VaultLab — Stato Progetto (17 Set 2026)
+# Peculium — Stato Progetto (17 Set 2026)
 
 ## Infrastruttura
 
@@ -164,13 +164,13 @@ ticker corretto. Da documentare o aggiungere selezione exchange nell'autocomplet
   dal ticker** (preferenza ticker esatto, poi similarità nome con `asset.Name`; il valore viene
   persistito sull'asset), poi scarica paesi/regioni + settori e li restituisce come
   **anteprima non persistente** (vedi «Redesign modale distribuzione geografica»: la
-  persistenza avviene solo via `PUT /assets/{id}/exposure`). Config `VAULT_PYTHON_SERVICE_URL`;
+  persistenza avviene solo via `PUT /assets/{id}/exposure`). Config `PECULIUM_PYTHON_SERVICE_URL`;
   servizio `python-service` presente
   sia in `docker-compose.yml` sia in `docker-compose.test.yml`.
 - **Asset duplicato** — `POST /assets` con ticker già esistente ora risponde **409 Conflict** con
   messaggio chiaro e l'id dell'asset esistente (`asset_id` + `id`).
 - **Verifica** — pytest (`python-service/tests`, 17 test), Go `build/vet/test green`; e2e su stack
-  isolato `vaultlab-test`: XMME (14 paesi/13 settori, regioni sommano 100), VWCE e `SMEA.MI` senza
+  isolato `peculium-test`: XMME (14 paesi/13 settori, regioni sommano 100), VWCE e `SMEA.MI` senza
   ISIN auto-risolti correttamente (SMEA.MI → `IE00B4K48X80` iShares Core MSCI Europe).
   Test manuali via **`tests/api-test.http`** (estensione REST Client in VS Code) sullo stack test
   (porta 8081).
@@ -222,7 +222,7 @@ e Morningstar permette di cercare sul mercato esatto.
 - Porto vuoto o totale zero → righe a zero senza bucket `Other` (niente denominatori artificiali).
 - **Verifica**: e2e-unit in `backend/internal/service/service_test.go` (ETF completo, fallback stock
   su domicilio, conversione FX, portafoglio vuoto, bucket `Other`); test manuale di smoke su stack
-  isolato `vaultlab-test` con **`tests/test-epic-b.sh`** (20 check PASS) usando prezzi seminati da
+  isolato `peculium-test` con **`tests/test-epic-b.sh`** (20 check PASS) usando prezzi seminati da
   **`tests/seed-prices.sql`** (Yahoo è disabilitato sullo stack test, quindi i prezzi si scrivono
   solo via SQL) e la raccolta **`tests/api-test.http`** estesa.
 
@@ -247,7 +247,7 @@ e Morningstar permette di cercare sul mercato esatto.
 - **B.9 (issue #44, PR #61)** — storico tassi di cambio per-data (`fx_history`)
   integrato nel series engine per conversioni storiche per-date.
 - **Verifica** — Go build/vet/test green; smoke su stack isolato
-  `vaultlab-test` con `tests/test-epic-b.sh` (20 PASS; gli ETF sono creati con
+  `peculium-test` con `tests/test-epic-b.sh` (20 PASS; gli ETF sono creati con
   `asset_class: equity` per rispettare l'universo strict) + esclusione bond
   verificata end-to-end (covered=2600, excluded=10000, pesi somma 100).
 
@@ -331,7 +331,7 @@ e Morningstar permette di cercare sul mercato esatto.
     dei paesi dalla lista canonica supportata; display usa nomi paese amichevoli
     da `frontend/src/lib/countryNames.ts`.
 - **Verifica**: Go build/vet/test green; python-service pytest (51 test) green;
-  `svelte-check`/eslint clean; e2e su stack isolato `vaultlab-test` con
+  `svelte-check`/eslint clean; e2e su stack isolato `peculium-test` con
   `make test-e2e` (18 PASS, 0 FAIL). Morningstar verificato end-to-end sullo stack
   test: `POST /assets/{id}/fetch-morningstar-exposure` per SMEA restituisce paesi
   canonici (zero-fill, somma raw ~95%) + settori GICS (somma 100) + **regioni
@@ -378,7 +378,7 @@ e Morningstar permette di cercare sul mercato esatto.
   verdi.
 - **Cache esposizione provider (post-B.14)**: `FetchETFExposure` e
   `FetchMorningstarExposure` cachano il payload grezzo del provider in Redis
-  (chiave `vl:lookup:exposure:<source>:<ISIN>`, TTL `VAULT_EXPOSURE_CACHE_TTL`
+  (chiave `vl:lookup:exposure:<source>:<ISIN>`, TTL `PECULIUM_EXPOSURE_CACHE_TTL`
   default 7 giorni): la prima richiesta su un ISIN esegue il fetch pesante, le
   successive rispondono dalla cache; `?refresh=1` forza il refetch e riscrive
   la cache (risultati senza paesi mai cachati; Yahoo `fetch-exposure`
@@ -540,8 +540,8 @@ totali nella **valuta base dell'utente** (default `EUR`).
   in valuta base); `svelte-check`/eslint clean.
 
 ### I.2 — Dashboard attivo vs chiuso (branch `feat/I.1-base-currency`)
-Il riepilogo dashboard (vault e per-portafoglio) separa ora le quote di investimento
-**attive** da quelle **chiuse**, in valuta base a livello vault.
+Il riepilogo dashboard (patrimonio e per-portafoglio) separa ora le quote di investimento
+**attive** da quelle **chiuse**, in valuta base a livello di patrimonio.
 - **Backend**:
   - `position.State`: aggiunti i cumulati dei lotti chiusi `ClosedCost`/`ClosedCostCCY`
     (costo AVCO dei venduto), `Proceeds`/`ProceedsCCY` (incasso netto) e
@@ -628,7 +628,7 @@ titoli) è tracciata a parte nell'issue **#101** e sarà una PR separata.
 
 ## EPIC J — Nuove asset class: bond, certificati, fondi pensione, conti deposito (#113) — pianificata
 
-Estendere VaultLab agli **investimenti a reddito fisso e non quotati**: obbligazioni (tipo, cedola,
+Estendere Peculium agli **investimenti a reddito fisso e non quotati**: obbligazioni (tipo, cedola,
 scadenza, esposizione geo/settoriale), certificati d'investimento (prodotti strutturati), piani
 pensionistici complementari (fondi pensione/PIP) e conti deposito. L'analisi finanziaria
 (30 Ago 2026) ha verificato che le quattro classi sono già tracciabili con il modello attuale
@@ -674,14 +674,14 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 |---|------|-----------|
 | D1 | Lingua UI | i18n leggero IT+EN, **default IT**, fallback EN (introdotto in K.1) |
 | D2 | Nav mobile | **Bottom nav** (4) + **FAB** + "More" sheet; hamburger declassato |
-| D3 | Scope switcher | **Naviga** tra `/` (vault) e `/portfolios/:id` (non filtra) |
+| D3 | Scope switcher | **Naviga** tra `/` (patrimonio) e `/portfolios/:id` (non filtra) |
 | D4 | Ispezione righe | **Drawer** destro ≥ `lg`, **bottom sheet** < `lg` |
 | D5 | Font | **Inter + mono** self-hosted (`@fontsource`, no CDN) |
 | D6 | P/L a11y | Segno + ▲▼ sempre **+** toggle palette **CVD** (blu/arancio) in Preferenze |
 | D7 | Health prezzi | Voce separata "Data & Sync" ora; in futuro spostabile nel menu **Amministrazione** (admin, debug/log) |
 | D8 | Primo avvio | **Checklist guidata** portafoglio → asset → transazione |
 | D9 | Tema | **Default = segui sistema** (non più dark forzato); light/dark pari |
-| D10 | Range hero | **Bucket-driven** (mensile/annuale) ora; serie giornaliera vault come fast-follow |
+| D10 | Range hero | **Bucket-driven** (mensile/annuale) ora; serie giornaliera del patrimonio come fast-follow |
 | D11 | Undo | **Toast ⟲ Undo** (5s) sul delete transazione |
 
 **Fasi di implementazione** (da delegare a `frontend`, richieste backend a `backend`):
@@ -690,7 +690,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 |------|-----------|-------------|
 | **K.1 Foundations** | Token (elevazione a 4 step, type scale, font D5, palette CVD), i18n (D1), tema→system (D9), primitive `DataTable`/`Drawer`/`Sheet`/`Tabs`/`AsyncCard`/`KpiStrip`/`PnlValue`/`PeriodChips` | — |
 | **K.2 Shell adattiva** | BottomNav+FAB+QuickAction (D2), rail@sm–lg, header condensante, entry "Data & Sync" relocabile (D7); ScopeSwitcher (D3) e FreshnessStamp rinviati a K.3 | — |
-| **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera vault (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
+| **K.3 Overview** | 🔄 *in corso — K.3a completata (hero zona A + chip bucket-driven D10, strip qualità, checklist D8, ScopeSwitcher D3, FreshnessStamp) e K.3b completata (sparkline valore nei card portafogli, zona C).* Restano in K.3: digest allocazioni (zone B sotto il hero), card-ificazione tabelle (K.4/K.5) | serie giornaliera del patrimonio (fast-follow); endpoint batchato per gli storici delle sparkline (fast-follow solo se il numero di portafogli cresce) |
 | **K.4 Entità → tab** | ✅ *completata — K.4a (portafoglio: shell `+layout` con header sticky — identità, strip KPI, `[+ Transazione]`, menu `⋯` export/import/elimina — e tab nested-route Overview/Positions/Activity/Allocation con context condiviso), K.4b (asset: shell `+layout` con header sticky — identità + chip quotazione + menu `⋯` — e tab nested-route Panoramica/Esposizione/Dati con context condiviso; nuovo blocco "Dove è detenuto" nel tab Panoramica) e K.4c (filtri Attività persistiti nell'URL — tipo/asset/intervallo date — con refetch filtrato; form transazione responsive Modal/Sheet (D4); eliminazione transazione con toast undo (D11)).* | inventory holdings per-portafoglio (derivata client-side da `GET /dashboard` in K.4b, nessun endpoint nuovo) |
 | **K.5 Power layer** | ✅ *completata — K.5c (toggle palette CVD opzionale, D6: store `palette.svelte.ts`, token `html.cvd`, mirror `chartPalette`, controllo in Preferenze), K.5b ("view as table" nei sei wrapper dati: toggle segmentato condiviso `ui/ChartTableToggle`, tabella accessibile con gli stessi dati, cap opt-out per i chiamanti che elencano già le righe), K.5a (⌘K command palette montata nella shell: sezioni Vai a/Asset/Azioni, matcher locale senza dipendenze, combobox+listbox ARIA completo), backend del drill-down (`GET /portfolios/{id}/allocation/drill` + `GET /dashboard/allocation/drill`: `dim`+`key` → contribuzioni per asset, totali identici ai bucket delle allocazioni) e K.5d (drill-down frontend: fette/barre cliccabili in `ClassDonut`/`ExposureBarChart` e `AllocationDrillPanel` drawer/sheet (D4) con gli asset contribuenti, montato una volta su dashboard e tab Allocazione).* | ✅ endpoint contribuzione drill-down (`dim+key` → asset) esposto; drawer frontend completato in K.5d |
 
@@ -803,7 +803,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > D8: `<ol>` accessibile ①portafoglio ②asset ③transazione con stati
 > done/current/pending derivati solo dal payload, sparisce con portafogli
 > presenti); **`ScopeSwitcher`** (D3: `<select>` nativa da `dash.portfolios`,
-> "Tutti i portafogli (Vault)" + i portafogli, selezionarli **naviga** a
+> "Tutti i portafogli (Patrimonio)" + i portafogli, selezionarli **naviga** a
 > `/portfolios/{id}`). Zone C–E (card portafogli, Allocazione complessiva,
 > Invested assets) invariate; nessuna posizione fissa aggiunta (compatibile
 > con la bottom nav K.2). Nuove chiavi i18n EN/IT (shape identici): `hero.*`,
@@ -1097,7 +1097,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > un bucket renderizzando `ui/Drawer` (≥ `lg`) o `ui/Sheet` (< `lg`) via lo
 > store `viewport`; controllato (`open`/`onClose` della pagina), carica alla
 > apertura e a ogni cambio di `dim`/`key` con un `fetcher` iniettato per
-> scope (`dashboardAllocationDrill` per il vault, `allocationDrill(id, …)`
+> scope (`dashboardAllocationDrill` per il patrimonio, `allocationDrill(id, …)`
 > per il portafoglio — `GET /dashboard/allocation/drill` e
 > `GET /portfolios/{id}/allocation/drill`, chiave URL-encoded da `params`
 > quindi a posto anche con spazi), request id monotònico contro le risposte

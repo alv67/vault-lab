@@ -113,6 +113,11 @@ export const en = {
     /** Fallback shown when the account has no name/email. */
     fallbackName: 'User',
   },
+  /** Login / register screen. The "Peculium" wordmark is a proper noun and
+   *  stays as-is; only the tagline below it is localised. */
+  login: {
+    tagline: 'Your wealth, self-hosted',
+  },
   theme: {
     /** Field label on Preferences and group name of the header popup. */
     group: 'Theme',
@@ -228,7 +233,7 @@ export const en = {
     loadFailed: 'Failed to load currencies',
   },
   /**
-   * Allocation surfaces (EPIC K bug-fix, progressive D1 sweep): the vault
+   * Allocation surfaces (EPIC K bug-fix, progressive D1 sweep): the wealth
    * "Overall allocation" card on the dashboard, the portfolio Allocation
    * tab and its Overview digest — panel headings, isolated error states and
    * the equity-universe coverage note (`{pct}` carries one decimal).
@@ -245,7 +250,7 @@ export const en = {
     countriesEquity: 'Countries (equity only)',
     /** Equity-universe coverage note shown when non-equity was excluded. */
     equityUniverse: 'Equity universe: {pct}% of the portfolio',
-    /** Dashboard donut: vault value split per portfolio. */
+    /** Dashboard donut: wealth value split per portfolio. */
     byPortfolio: 'Allocation by portfolio',
     mixedCurrencies:
       'Portfolios use different currencies: values are not comparable, shares are indicative.',
@@ -346,7 +351,7 @@ export const en = {
     derivedEtfDesc: 'Regions derived from the countries imported from JustETF',
   },
   /**
-   * Vault Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The
+   * Wealth Overview hero zone (EPIC K.3a, redesign spec §6.1 zone A). The
    * `Investments` roll-up heading lives in `investments.title` and the
    * Performance card copy in `performance.*`.
    */
@@ -362,7 +367,7 @@ export const en = {
     invested: 'Invested',
   },
   /**
-   * Performance card (shared by the dashboard vault view and the portfolio
+   * Performance card (shared by the dashboard wealth view and the portfolio
    * detail Overview): the card heading and its Monthly/Annual granularity
    * toggle.
    */
@@ -464,9 +469,9 @@ export const en = {
     statusFailure: 'Failure',
     loadFailed: 'Failed to fetch health data',
   },
-  /** First-run checklist replacing the empty-vault EmptyState (D8). */
+  /** First-run checklist replacing the empty-wealth EmptyState (D8). */
   checklist: {
-    title: 'Set up your vault',
+    title: 'Set up your wealth',
     intro: 'Three steps to start tracking your investments.',
     stepPortfolio: 'Create a portfolio',
     stepPortfolioHint: 'Group investments by goal or account.',
@@ -478,13 +483,13 @@ export const en = {
     current: 'Current step',
     pending: 'Not started',
   },
-  /** Vault ⇄ portfolio scope switcher in the Overview header (D3). */
+  /** Wealth ⇄ portfolio scope switcher in the Overview header (D3). */
   scope: {
     label: 'Scope',
-    all: 'All portfolios (Vault)',
+    all: 'All portfolios (Wealth)',
   },
   /**
-   * Portfolio-card sparklines on the vault Overview (EPIC K.3b, spec §6.1
+   * Portfolio-card sparklines on the wealth Overview (EPIC K.3b, spec §6.1
    * zone C). The shape is supplementary (the card already carries value and
    * P/L), so these are accessible names, not visible copy.
    */
@@ -593,7 +598,7 @@ export const en = {
     /** Import dialog (labels reuse `chartView.colName`, `asset.factCurrency`,
      *  `activity.transactions` and `common.delete/cancel`). */
     importTitle: 'Import portfolio',
-    importHint: 'Choose a VaultLab portfolio export (.json) to import.',
+    importHint: 'Choose a Peculium portfolio export (.json) to import.',
     chooseFile: 'Choose file',
     changeFile: 'Change file',
     dateRange: 'Date range',

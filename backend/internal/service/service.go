@@ -1134,7 +1134,7 @@ func (s *Service) getCachedExposure(ctx context.Context, source, isin string) (*
 }
 
 // setCachedExposure stores a raw provider exposure payload under
-// exposureCacheKey with the configured TTL (VAULT_EXPOSURE_CACHE_TTL). Failures
+// exposureCacheKey with the configured TTL (PECULIUM_EXPOSURE_CACHE_TTL). Failures
 // are logged as warnings and never fail the surrounding request.
 func (s *Service) setCachedExposure(ctx context.Context, source, isin string, ex *model.AssetExposure) {
 	if s.repos == nil || s.repos.Lookup == nil || ex == nil {
