@@ -813,7 +813,7 @@ The two prefill fetches that hit the python-service
 `POST /assets/{id}/fetch-morningstar-exposure`) cache the **raw provider
 payload** in the Redis lookup cache (`s.repos.Lookup`) under the key
 `exposure:<source>:<ISIN>` (source is `justetf` or `morningstar`, the ISIN
-is uppercased; the full Redis key is `vl:lookup:exposure:...`). The first
+is uppercased; the full Redis key is `pc:lookup:exposure:...`). The first
 request for an ISIN runs the heavy fetch (Morningstar needs a Chromium/SAL
 session) and stores the result; later requests are served from the cache and
 never call the provider. Each source keeps its own entry, so prefilling from

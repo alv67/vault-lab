@@ -357,7 +357,7 @@ inline with Svelte 5 **`$derived`** runes. The main ones:
   (a monotonic request id discards stale responses); the hero chart is then
   windowed client-side by a bucket-driven `heroPeriod` `$state` (1Y =
   last 12 / 3Y = last 36 / ALL monthly buckets, persisted in
-  `localStorage['vaultlab-hero-period']`); `hasMultipleCurrencies` drives the
+  `localStorage['peculium-hero-period']`); `hasMultipleCurrencies` drives the
   "Allocation by portfolio" donut (raw values are hidden and a mixed-currency
   note is shown when portfolios use different currencies);
   `glClass` picks the green/red text class for a gain/loss.
@@ -410,7 +410,7 @@ Every chart component follows the same pattern:
 
 <div class="h-[340px] w-full">
   {#key resolved()}
-    <Chart {init} {options} theme={VAULTLAB_CHART_THEMES[resolved()]} />
+    <Chart {init} {options} theme={PECULIUM_CHART_THEMES[resolved()]} />
   {/key}
 </div>
 ```
@@ -428,9 +428,9 @@ theme store tells whether the app is currently painting light or dark; the
 theme flips, because `svelte-echarts` reads the `theme` prop only once at mount.
 Two helpers make this possible:
 
-- `lib/chartTheme.ts` registers two ECharts themes (`vaultlab-light`,
-  `vaultlab-dark`) built from the same tokens as the CSS (axis/legend/tooltip
-  colors) and exports them as `VAULTLAB_CHART_THEMES`;
+- `lib/chartTheme.ts` registers two ECharts themes (`peculium-light`,
+  `peculium-dark`) built from the same tokens as the CSS (axis/legend/tooltip
+  colors) and exports them as `PECULIUM_CHART_THEMES`;
 - `lib/chartPalette.ts` exposes `resolvePalette()` (the `--chart-1..12` series
   colors, read from the DOM and cached per theme), plus `chartSemanticColors()`
   for the special lines (cost basis, realized, split markers, the "Other"
@@ -614,7 +614,7 @@ through `hsl(var(--token) / <alpha-value>)`, opacity modifiers work
   overrides of `--positive`/`--negative` (specificity chosen to beat both
   `:root` and `.dark`); the class is painted before first paint by the
   `app.html` bootstrap and kept in sync by `lib/stores/palette.svelte.ts`
-  (`palette` state with `cvd`, `setCvd()`, storage key `vaultlab-cvd`,
+  (`palette` state with `cvd`, `setCvd()`, storage key `peculium-cvd`,
   cross-tab listener — same pattern as the theme store). Charts get it via
   `lib/chartPalette.ts` (`CHART_SEMANTIC_COLORS_CVD` + a reactive
   `chartSemanticColors()`), and the only component that paints
@@ -628,7 +628,7 @@ through `hsl(var(--token) / <alpha-value>)`, opacity modifiers work
   and dark are first-class, equally-designed themes. The user can override
   with **Light**, **Dark** or **System** from the theme selector in the
   header.
-- The choice is stored in `localStorage` (`vaultlab-theme`) and handled by
+- The choice is stored in `localStorage` (`peculium-theme`) and handled by
   `lib/stores/theme.svelte.ts` (`theme`, `resolved()`, `setThemeMode()`,
   `DEFAULT_MODE = 'system'`); it is also synced across tabs and follows OS
   changes while in `system` mode.
@@ -637,7 +637,7 @@ through `hsl(var(--token) / <alpha-value>)`, opacity modifiers work
   stored, so a reload never flashes the wrong theme (no FOUC). `darkMode:
   'class'` in the Tailwind config makes a single class flip every token.
   A second inline script applies the optional `cvd` class the same way from
-  `localStorage['vaultlab-cvd']`, so the CVD palette (above) never flashes
+  `localStorage['peculium-cvd']`, so the CVD palette (above) never flashes
   green/red either; `html.cvd` deliberately does not care which theme is
   painted — the pair ships light and dark variants.
 
@@ -681,7 +681,7 @@ JS state and CSS never disagree.
 
 - **Desktop (≥ `lg`)** — `AppShell` (root, `h-dvh` + skip-link)
   renders the expandable `Sidebar` (240px ⇄ 64px icon rail, state persisted in
-  `localStorage['vaultlab-sidebar']`), the sticky `AppHeader` with the collapse
+  `localStorage['peculium-sidebar']`), the sticky `AppHeader` with the collapse
   toggle and the global price-freshness control, and the `UserMenu` in the
   sidebar footer.
 - **Tablet (`sm`–`lg`)** — the same sidebar forced to the **64px icon rail**
@@ -791,7 +791,7 @@ visible on every page.
   a tiny dependency-free layer in `src/lib/i18n/`. The rune store
   `index.svelte.ts` exports `SUPPORTED_LOCALES` (`['it', 'en']`),
   `DEFAULT_LOCALE = 'it'`, the reactive `locale` (`locale.current`),
-  `setLocale()` (validates, persists to `localStorage['vaultlab-locale']`,
+  `setLocale()` (validates, persists to `localStorage['peculium-locale']`,
   syncs `<html lang>`, cross-tab listener — mirroring the theme store) and
   `t(key, params)` which reads the reactive locale so components re-render
   on change; `{name}` placeholders are interpolated from `params`. The
@@ -886,7 +886,7 @@ The outcome is reactive and module-scoped, so it survives SPA navigation:
 `finished_at` drives the always-visible **`PriceRefreshButton`** in the app
 header ("Prices as of HH:MM", clickable to refresh quotes on demand), while
 the rate-limit / issues / failure outcome and the dashboard's `fx_missing_*`
-counters (mirrored in the `vaultStatus` store, seeded by the shell so they are
+counters (mirrored in the `dashboardStatus` store, seeded by the shell so they are
 available on non-dashboard pages too) feed the **`DataQualityStrip`**,
 rendered globally as a thin sticky band under the header and shown only when
 something is actionable.
@@ -948,7 +948,7 @@ portfolio card carries a value-history sparkline strip.
   `3Y` (last 36) / `ALL`; with annual buckets only `ALL` applies and the
   chip row hides itself. The options derive from the payload's actual
   `granularity` (never from the toggle state), and the last-used period
-  persists in `localStorage['vaultlab-hero-period']`.
+  persists in `localStorage['peculium-hero-period']`.
 - **Zone B — Performance** card: a header row with the
   title and a `SegmentedControl` ("Monthly" / "Annual") bound to the
   `granularity` state, and a `PerformanceChart` fed by
@@ -1490,7 +1490,7 @@ are translated through the i18n layer (chapter 8).
    toggle's target-state hint and `preferences.paletteHint` carries the full
    explanation — via a second `SegmentedControl` bound to the palette store
    (`setCvd`/`palette.cvd` — applies immediately,
-   persists in `localStorage['vaultlab-cvd']`, charts re-init on flip), and
+   persists in `localStorage['peculium-cvd']`, charts re-init on flip), and
    interface **language** (Italiano/English, default Italian) via
    a `Select` bound to `setLocale` in `lib/i18n/`. All apply immediately and
    persist in `localStorage` (no save button); switching the language

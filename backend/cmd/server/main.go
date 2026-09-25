@@ -20,14 +20,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"github.com/alv67/vault-lab/internal/auth"
-	"github.com/alv67/vault-lab/internal/cache"
-	"github.com/alv67/vault-lab/internal/config"
-	"github.com/alv67/vault-lab/internal/handler"
-	"github.com/alv67/vault-lab/internal/price"
-	"github.com/alv67/vault-lab/internal/repository"
-	"github.com/alv67/vault-lab/internal/series"
-	"github.com/alv67/vault-lab/internal/service"
+	"github.com/alv67/peculium/internal/auth"
+	"github.com/alv67/peculium/internal/cache"
+	"github.com/alv67/peculium/internal/config"
+	"github.com/alv67/peculium/internal/handler"
+	"github.com/alv67/peculium/internal/price"
+	"github.com/alv67/peculium/internal/repository"
+	"github.com/alv67/peculium/internal/series"
+	"github.com/alv67/peculium/internal/service"
 )
 
 func main() {

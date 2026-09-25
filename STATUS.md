@@ -378,7 +378,7 @@ e Morningstar permette di cercare sul mercato esatto.
   verdi.
 - **Cache esposizione provider (post-B.14)**: `FetchETFExposure` e
   `FetchMorningstarExposure` cachano il payload grezzo del provider in Redis
-  (chiave `vl:lookup:exposure:<source>:<ISIN>`, TTL `PECULIUM_EXPOSURE_CACHE_TTL`
+  (chiave `pc:lookup:exposure:<source>:<ISIN>`, TTL `PECULIUM_EXPOSURE_CACHE_TTL`
   default 7 giorni): la prima richiesta su un ISIN esegue il fetch pesante, le
   successive rispondono dalla cache; `?refresh=1` forza il refetch e riscrive
   la cache (risultati senza paesi mai cachati; Yahoo `fetch-exposure`
@@ -481,7 +481,7 @@ e Morningstar permette di cercare sul mercato esatto.
 
 ### EPIC D — Design system & dark mode (#37) — ✅ Completata
 Branch unico `feat/D-design-system`, 5 commit:
-- `feat(tokens)` — token semantici (CSS custom properties HSL in `app.css` mappate in `tailwind.config.js` con `<alpha-value>`), store tema a 3 modalità (light/dark/system, **default dark**), script anti-FOUC in `app.html`, `lib/chartTheme.ts` (temi ECharts `vaultlab-light`/`vaultlab-dark`) e `lib/chartPalette.ts` (palette risolta a runtime).
+- `feat(tokens)` — token semantici (CSS custom properties HSL in `app.css` mappate in `tailwind.config.js` con `<alpha-value>`), store tema a 3 modalità (light/dark/system, **default dark**), script anti-FOUC in `app.html`, `lib/chartTheme.ts` (temi ECharts `peculium-light`/`peculium-dark`) e `lib/chartPalette.ts` (palette risolta a runtime).
 - `feat(ui)` — sweep dei colori hardcoded (~333 classi palette + hex) verso i token su tutte le pagine/componenti; grafici dark-aware.
 - `feat(ui)` — primitive in `src/lib/components/ui/` (Button, Input, Field, Select, Card, Badge, Modal, ConfirmDialog, Spinner, Skeleton, EmptyState, Table, SegmentedControl, StatCard) + refactor Toaster/ProvenanceBadge; i 4 `confirm()` nativi sostituiti da `ConfirmDialog`.
 - `feat(shell)` — `AppShell` responsive: sidebar collassabile (stato persistito in localStorage), header sticky, UserMenu, ThemeToggle a 3 modalità, MobileDrawer accessibile; `Layout.svelte` rimosso.
@@ -709,7 +709,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > layer i18n leggero senza dipendenze esterne in `frontend/src/lib/i18n/`:
 > runtime a rune `index.svelte.ts` (`SUPPORTED_LOCALES = ['it','en']`,
 > `DEFAULT_LOCALE = 'it'`, `locale` reattivo, `setLocale()` persistente in
-> `localStorage['vaultlab-locale']` + sync `<html lang>` + ascolto cross-tab,
+> `localStorage['peculium-locale']` + sync `<html lang>` + ascolto cross-tab,
 > `t(key, params)` con interpolazione `{name}`), dizionari `en.ts`
 > (canonico) / `it.ts` verificati con `satisfies Dictionary` (identità
 > strutturale garantita alla compile-time), chiavi annidate a due livelli
@@ -750,7 +750,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > `isPhone`/`isTablet`/`isDesktop`, SSR-safe via `browser` + feature check,
 > fallback desktop). **Tablet `sm`–`lg`**: la sidebar è forzata a rail di
 > icone da 64px (`collapsed` forzato dalla shell; la preferenza persistita
-> `vaultlab-sidebar` vale solo da `lg` in su), niente hamburger né bottom
+> `peculium-sidebar` vale solo da `lg` in su), niente hamburger né bottom
 > nav; menu utente nel footer del rail (in header resta solo il tema).
 > **Telefono < `sm`**: nessuna sidebar — `BottomNav` fissa con 4 destinazioni
 > (Panoramica · Portafogli · Asset · Altro, decisione D2, target ≥ 44px,
@@ -790,7 +790,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > `PeriodChips` finestre i bucket lato client — mensili → 1Y (ultimi 12) /
 > 3Y (ultimi 36) / TUTTO, annuali → solo TUTTO con chip nascosti; opzioni
 > derivate dalla `granularity` del payload, scelta persistita in
-> `localStorage['vaultlab-hero-period']`. L'`InvestmentsTable` Active/Closed
+> `localStorage['peculium-hero-period']`. L'`InvestmentsTable` Active/Closed
 > si apre in un `<details>` "Dettaglio" a divulgazione progressiva; la vecchia
 > card "Capital invested" è assorbita nell'hero. **Zona B**: card Performance
 > invariata (toggle Monthly/Annual che guida anche l'hero) ora in griglia
@@ -1007,7 +1007,7 @@ STATUS/PLAN. Nessuna modifica al codice UI.
 > **K.5c — Toggle palette CVD (D6) — ✅ completata (questo branch)**:
 > nuovo store `lib/stores/palette.svelte.ts` a specchio di quello del tema:
 > `$state` reattivo `palette.cvd` (default `false`), persistenza in
-> `localStorage['vaultlab-cvd']`, `setCvd()` che commuta la classe `cvd` su
+> `localStorage['peculium-cvd']`, `setCvd()` che commuta la classe `cvd` su
 > `<html>`, listener cross-tab e ri-assert al boot. `app.css` aggiunge gli
 > override `html.cvd`/`html.cvd.dark` di `--positive`/`--negative` con una
 > coppia blu/arancione derivata Okabe–Ito (tema chiaro `#0072b2`/`#c2410c`,

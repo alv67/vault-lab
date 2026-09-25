@@ -80,7 +80,7 @@ Content-Type: application/json
 ### POST /assets/{id}/fetch-morningstar-exposure. Persist them with the "Save"
 ### buttons / PUT /assets/{id}/exposure.
 ### NOTE: the raw provider payload is cached in Redis
-### (vl:lookup:exposure:justetf:<ISIN>, TTL PECULIUM_EXPOSURE_CACHE_TTL = 7d), so
+### (pc:lookup:exposure:justetf:<ISIN>, TTL PECULIUM_EXPOSURE_CACHE_TTL = 7d), so
 ### reruns answer without calling the provider; append ?refresh=1 to force a
 ### fresh fetch and rewrite the cache (see 11b3).
 # @name fetchEtfExposure
@@ -147,7 +147,7 @@ Authorization: Bearer {{token}}
 ### resolver (headless Chromium bootstrap) in the python-service; falls back to
 ### 502 if Morningstar is unreachable in the sandbox (Yahoo disabled, external
 ### calls may be blocked). The raw payload is cached per ISIN under
-### vl:lookup:exposure:morningstar:<ISIN> (its own entry, separate from the
+### pc:lookup:exposure:morningstar:<ISIN> (its own entry, separate from the
 ### JustETF one), so a rerun is served from Redis and never boots Chromium; use
 ### 11b3 to force a refetch.
 # @name fetchMorningstarExposure

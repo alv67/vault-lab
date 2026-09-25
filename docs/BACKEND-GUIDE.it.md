@@ -825,7 +825,7 @@ I due fetch di prefill che interrogano il python-service
 `POST /assets/{id}/fetch-morningstar-exposure`) memorizzano nella cache Redis
 delle lookup (`s.repos.Lookup`) il **payload grezzo del provider**, con chiave
 `exposure:<source>:<ISIN>` (source è `justetf` o `morningstar`, l'ISIN è
-maiuscolo; la chiave Redis completa è `vl:lookup:exposure:...`). La prima
+maiuscolo; la chiave Redis completa è `pc:lookup:exposure:...`). La prima
 richiesta su un ISIN esegue il fetch pesante (Morningstar richiede una
 sessione Chromium/SAL) e lo salva; le successive rispondono dalla cache senza
 richiamare il provider. Ogni fonte ha la sua voce: prefillare da JustETF non
