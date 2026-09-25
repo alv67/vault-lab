@@ -1,6 +1,6 @@
-# VaultLab — The frontend explained
+# Peculium — The frontend explained
 
-> This document explains how the VaultLab frontend works: the web page you see
+> This document explains how the Peculium frontend works: the web page you see
 > in the browser (charts, forms, buttons). It is the companion to the backend
 > guide (`docs/BACKEND-GUIDE.en.md`) and the database guide
 > (`docs/DATABASE-GUIDE.en.md`) and requires no programming knowledge: concepts
@@ -12,7 +12,7 @@
 
 ## 1. What the frontend is
 
-The frontend is the VaultLab web application: the user signs in, creates
+The frontend is the Peculium web application: the user signs in, creates
 portfolios, records transactions, adds securities and looks at charts
 (performance, allocation, prices).
 
@@ -58,9 +58,9 @@ these terms, skip to chapter 3.
   issues two tokens (access and refresh); the frontend keeps them in the
   browser's `localStorage` (see chapter 9).
 - **localStorage**: a small storage area of the browser that survives page
-  reloads. VaultLab stores the two tokens there.
+  reloads. Peculium stores the two tokens there.
 - **Chart library / ECharts**: a ready-made library for drawing charts
-  (line, pie, ...). VaultLab uses ECharts through the `svelte-echarts` wrapper.
+  (line, pie, ...). Peculium uses ECharts through the `svelte-echarts` wrapper.
 - **Proxy / reverse proxy**: a server (here nginx) that receives requests and
   forwards them elsewhere. The browser thinks it is talking to "its own"
   server, but `/api/...` is forwarded to the Go backend.
@@ -155,7 +155,7 @@ frontend/
 ├── postcss.config.js       # tailwindcss + autoprefixer
 ├── Dockerfile              # node build → nginx serve (port 80)
 ├── nginx.conf              # static files + /api/ proxy to backend:8080
-├── static/vault.svg        # favicon
+├── static/peculium.svg     # favicon
 └── src/
     ├── app.html            # root HTML (theme bootstrap, meta theme-color, favicon, title)
     ├── app.css             # @tailwind + semantic tokens (:root / .dark) + base layer
@@ -452,7 +452,7 @@ in white).
 | `CapitalChart.svelte` (`lib/components/domain/`) | **two-line** chart on the **same** category buckets: `invested` (net invested capital, stepped `end` line in the semantic grey `costBasis`) and `value` (market value, smooth line in the semantic green `marketValue`), currency tooltip via `formatCurrency(value, currency)`, `inside` + `slider` dataZoom (or inside-only zoom and a 240px canvas with the `compact` prop), legend `Invested` / `Value`, theme-aware re-init (`{#key}`), "No data" empty state | the **dashboard hero** value-vs-invested chart, fed by the **same** `dashboardPerformance(granularity)` fetch and buckets as `PerformanceChart` (amounts in the user's **base currency**, `currency` from the payload) and following the same monthly/annual toggle; the hero passes `compact` and windows the buckets client-side with the bucket-driven period chips |
 | `Sparkline.svelte` (`lib/components/domain/`) | tiny **axis-less line**: no legend/tooltip/zoom, zeroed grid gutters; accepts flat numbers (hidden index axis) or `{date, value}[]` points (`SparklinePoint`, hidden **time** axis so calendar gaps stay truthful — don't mix the forms), the semantic `marketValue` green by default with an optional `color` override, an optional subtle 10%-opacity area fill (`area`), `smooth` + `sampling: 'lttb'`, no hover (`silent`), a fixed-height strip via `heightClass` (default `h-10`); renders **nothing** below 2 points; the wrapper is `role="img"` with an `aria-label` (caller-provided, else `sparkline.trend`); theme-aware re-init (`{#key}`) | the **portfolio cards** on the **dashboard**: a bottom strip with the portfolio's market-value history, fed by `portfolioApi.history(id)` (the series' `market_value` strings mapped to `{date, value}` points) fetched in the background after the main dashboard load; a failed history silently leaves the card without a sparkline |
 | `ExposurePie.svelte` | **donut** (radius 45%–70%), 12-colour palette, legend shown only when there are ≤ 6 rows, zero-weight rows filtered out; `complete={false}` renders the donut **open** when the rows sum to < 100 (a transparent residual slice keeps the angles truthful — no gray "Other" slice) | asset detail page (regions donut with `complete={false}` and the sectors donut) and the two exposure modals (`mute` mode: regions in `ExposureGeoModal`, sectors in `ExposureSectorModal`). Countries are shown as bar lists (page card and geo modal), never as a pie. Accepts `ExposureRow[]` (`{name, weight}`). |
-| `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the asset classes (same radius/palette/label style as `ExposurePie`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `assetClassLabel` for localized slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above; the optional `onDrill?: (classKey) => void` makes slices clickable — clicking one fires it with the **raw** class key (the `{#key}`-re-inited chart binds the click through the svelte-echarts wrapper's `onclick` ECharts-event prop) and the slices get a pointer cursor | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole vault, base currency), and the **portfolio detail** class panel, fed by `classAllocation(id).classes` (portfolio currency); both call sites pass `onDrill` and open the shared `AllocationDrillPanel` |
+| `ClassDonut.svelte` (`lib/components/domain/`) | **donut** of the asset classes (same radius/palette/label style as `ExposurePie`): rows are `AssetClassSlice[]` (`{class, value, weight}`) mapped through `assetClassLabel` for localized slice names, tooltip shows the amount (`formatCurrency`) and the weight (`formatPercent`), the aggregated `other` slice is muted grey, zero-weight rows dropped, "Nessuna allocazione per classi" empty state; optional `label` heading rendered above; the optional `onDrill?: (classKey) => void` makes slices clickable — clicking one fires it with the **raw** class key (the `{#key}`-re-inited chart binds the click through the svelte-echarts wrapper's `onclick` ECharts-event prop) and the slices get a pointer cursor | the **dashboard** "Allocazione complessiva" class panel, fed by `dashboardAllocation().classes` (whole wealth, base currency), and the **portfolio detail** class panel, fed by `classAllocation(id).classes` (portfolio currency); both call sites pass `onDrill` and open the shared `AllocationDrillPanel` |
 | `ExposureBarChart.svelte` (`lib/components/domain/`) | reusable **horizontal bar chart** over generic `{name, value, weight}[]` rows (`ExposureBarRow`): bars sorted **descending by value** (defensively re-sorted and non-positive rows dropped in the component; the category axis is `inverse`d so the biggest bar sits on top), weight % printed at the bar end, tooltip with amount (`formatCurrency(value, currency)`) and weight (`formatPercent`), hidden value axis (the bars only need to be comparable), canvas height grows with the row count, `colorFor?: (name) => string` per-row colour override (else the resolved `resolvePalette` palette by index), `labelFor?: (name) => string` axis-label mapping (the axis shows the friendly name — e.g. ISO code → full country name via `countryDisplayName` — and the tooltip appends the raw name in parentheses when it differs, "United States (US)"; the axis label column also widens to 140px for mapped labels), `maxVisibleRows?: number` collapses the chart to that many bars by default with a "Show all" control that expands in place (no inner scroll viewport — the page is the only scroll container), optional `label` heading and muted `note` caption, "No data" empty state, theme-aware re-init (`{#key}`); the optional `onDrill?: (rawName) => void` makes bars clickable — clicking one fires it with the row's **raw** name (the bucket key, e.g. `US` / `North America` / `Financials`, even when `labelFor` maps the axis label) through the wrapper's `onclick` ECharts-event prop, and drilled bars get a pointer cursor | the region, sector and country panels of the **dashboard** "Allocazione complessiva" card, fed by `dashboardAllocation().regions` / `.sectors` / `.countries`, and of the **portfolio detail** "Allocazione" section, fed by `geographyAllocation(id).regions` / `sectorAllocation(id).sectors` / `geographyAllocation(id).countries` (in the portfolio currency); callers map `RegionAllocation`/`SectorAllocation`/`CountryAllocation` onto `ExposureBarRow`; countries carry ISO alpha-2 codes rendered with `labelFor={countryDisplayName}` and `maxVisibleRows={10}` on both pages — the ~10 biggest bars are visible by default and a "Show all" control reveals the rest; the region and sector panels pass neither, so their labels stay verbatim and all rows stay visible — the ~10 macro-regions never need the cap; both call sites pass `onDrill` and open the shared `AllocationDrillPanel` |
 | `AllocationDrillPanel.svelte` (`lib/components/domain/`) | read-only **allocation drill-down panel**: the contributing assets behind one allocation bucket, rendered as `ui/Drawer` at ≥ `lg` and `ui/Sheet` below it (via the `viewport` store — the same drawer/sheet split as the transaction form). Controlled like both primitives (`open`/`onClose` props, caller owns the state together with `title`/`dim`/`key`); `fetcher: (dim, key) => Promise<AllocationDrill>` is injected per scope (dashboard: `dashboardAllocationDrill`, portfolio tab: `allocationDrill(id, …)`) and called on open and whenever `dim`/`key` change while open, with a monotonic request id discarding stale responses (the four states follow the `ui/AsyncCard` conventions: skeleton / one-line error + Retry / empty "no assets in this slice" / data). The data table reuses `ui/Table`/`Th`/`Td` with an sr-only caption and, below `sm`, collapses to stacked key–value rows — Asset (ticker linking to `/assets/{id}` + muted name on a second line), Value (`formatCurrency` in the payload's currency), Weight (`formatPercent`, the asset's share of the bucket), Contribution (value × weight/100 in the bucket) and Share of slice (contribution ÷ `total`, guarded to an em dash for empty buckets); rows keep the backend's contribution-descending order and the panel adds no nested scroll area (the drawer/sheet body scrolls) | mounted **once per page** by the dashboard ("Allocazione complessiva" card) and by the portfolio Allocation tab: every `ClassDonut`/`ExposureBarChart` there passes `onDrill` opening this panel with the clicked bucket; the drill `title` is the label the chart displays (`assetClassLabel` class name, `countryDisplayName` full country name, region/sector name verbatim) |
 | `InvestmentsTable.svelte` (`lib/components/domain/`) | shared **active/closed** table (`active: ActiveBreakdown`, `closed: ClosedBreakdown`, `currency`, optional `title`): columns Invested / Value-Proceeds / Gain-Loss / % / Dividends, rows Active and Closed, signed P/L colored with `pnlColorClass`, amounts via `formatCurrency` | the **dashboard** hero "Breakdown" disclosure (base currency, inside a `<details>` under the hero number) and the **portfolio detail** KPI card (portfolio currency) |
@@ -536,7 +536,7 @@ shape-only affordance whose figures the card already shows as text.
   `GET /dashboard/allocation`, which exposes four dimensions: `classes`
   (`ClassDonut`), `regions`, `sectors` and `countries` (all three
   `ExposureBarChart`), arranged in a `lg:grid-cols-2` grid
-  inside the card. Class shares cover the whole vault; regions, sectors and
+  inside the card. Class shares cover the whole wealth; regions, sectors and
   countries are computed over the **equity-only universe** (stocks always,
   ETFs/mutual funds only when `asset_class` is `equity` or `real_estate`);
   bonds, crypto, commodities and unclassified funds are excluded and reported
@@ -784,7 +784,7 @@ visible on every page.
   shell" above).
 - **App-wide**: `app.html` ships `lang="it"` (the i18n default — see the
   language note below — and updated at runtime from the persisted locale),
-  the favicon `/vault.svg`, the light/dark `theme-color` metas, and the
+  the favicon `/peculium.svg`, the light/dark `theme-color` metas, and the
   pre-paint theme bootstrap; the body background/foreground come from
   the tokens via `app.css`.
 - **Language note (i18n)**: translations run on
@@ -915,11 +915,11 @@ portfolio card carries a value-history sparkline strip.
 
 - **Header**: the "Dashboard" title plus the **`ScopeSwitcher`**
   (`domain/ScopeSwitcher.svelte`): a native `<select>` built on
-  the `ui/Select` recipe listing "All portfolios (Vault)" (empty value, the
+  the `ui/Select` recipe listing "All portfolios (Wealth)" (empty value, the
   current page) followed by one option per portfolio from the payload.
   Choosing a portfolio **navigates** — `goto()` to `/portfolios/{id}`, the
   same analytics at portfolio scope — it is tier-2 scope navigation, not a
-  data filter on this page. Rendered only when the vault has portfolios.
+  data filter on this page. Rendered only when the wealth has portfolios.
   (The **`DataQualityStrip`** and the price-freshness control are not
   page-local: they live in the shell/header and are visible on every page —
   see "The session price refresh" above.)
@@ -963,7 +963,7 @@ portfolio card carries a value-history sparkline strip.
   of four panels fed by `dashboardAllocation()`
   (`GET /dashboard/allocation`, aggregated in the user's base currency across
   all portfolios): **Classi di attività**
-  (`ClassDonut` over `classes`, whole vault) and the equity-only **Regioni**,
+  (`ClassDonut` over `classes`, whole wealth) and the equity-only **Regioni**,
   **Settori** and **Paesi** horizontal bars (`ExposureBarChart`
    over `regions` / `sectors` / `countries`; region rows carry the macro-region name verbatim;
   country rows carry ISO alpha-2 codes but are
@@ -1026,7 +1026,7 @@ portfolio card carries a value-history sparkline strip.
   ticker whose tooltip explains that the P/L is 0 because no price is
   available. An empty payload renders a dashed `EmptyState` ("No invested
   assets yet").
-- **Empty vault**: an empty vault shows the guided **first-run checklist**
+- **Empty wealth**: an empty wealth shows the guided **first-run checklist**
   (`domain/FirstRunChecklist.svelte`): a single `Card` whose accessible
   **ordered list** walks ① create a portfolio → ② add an asset → ③ record a
   transaction, each step linking to the page where the action happens
@@ -1035,7 +1035,7 @@ portfolio card carries a value-history sparkline strip.
   done/current/pending states (accent badge, ✓ badge, sr-only status text),
   derived **only** from the dashboard payload (portfolio / invested-asset /
   per-portfolio invested amounts — no extra call). The card auto-hides as
-  soon as the vault has portfolios, because the normal dashboard branch
+  soon as the wealth has portfolios, because the normal dashboard branch
   requires them.
 
 ### `/login` — Sign in / Register (`routes/login/+page.svelte`)
@@ -1096,7 +1096,7 @@ margins/padding mirroring `<main>`'s responsive `px-4 lg:px-6` / `pt-4 lg:pt-6`)
 - Identity row: back link to `/portfolios`, portfolio name + currency (and
   description when present), the `[+ Transaction]` primary action (opens the
   modal, available on every tab) and the `⋯` actions menu: **Export**
-  (`portfolioApi.exportDoc(id)` → JSON file download, `vault-lab-<name>.json`),
+  (`portfolioApi.exportDoc(id)` → JSON file download, `peculium-<name>.json`),
   **Import** and **Delete** (confirm dialog → API → toast →
   back to the list). The import modal is given *this* portfolio as its only
   overwrite target (the all-portfolios picker stays on the list page) and
@@ -1104,7 +1104,7 @@ margins/padding mirroring `<main>`'s responsive `px-4 lg:px-6` / `pt-4 lg:pt-6`)
 - KPI strip ("value + P/L always visible"): headline
   `summary.active.value` in the portfolio currency, signed P/L via two
   `PnlValue`s and muted invested / realized / dividends chips — the
-  same composition as the vault hero, portfolio-scoped.
+  same composition as the wealth hero, portfolio-scoped.
 - `ui/Tabs` bar: Overview / Positions / Activity / Allocation,
   route-derived active state, horizontally scrollable on phones; labels and
   the header/menu copy go through `t()` (`portfolio.*`).

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { toast } from '$lib/stores/toast.svelte'
   import { login, register } from '$lib/stores/auth.svelte'
+  import { t } from '$lib/i18n/index.svelte'
   import Button from '$lib/components/ui/Button.svelte'
   import Field from '$lib/components/ui/Field.svelte'
   import Input from '$lib/components/ui/Input.svelte'
@@ -90,8 +91,9 @@
 <div class="grid min-h-dvh place-items-center bg-background p-4">
   <div class="w-full max-w-sm rounded-card border border-border bg-surface p-6 shadow-raised sm:p-8">
     <div class="mb-6 flex flex-col items-center gap-3">
-      <img src="/vault.svg" alt="" class="h-12 w-12" />
-      <h1 class="text-2xl font-bold text-foreground">VaultLab</h1>
+      <img src="/peculium.svg" alt="" class="h-12 w-12" />
+      <h1 class="text-2xl font-bold text-foreground">Peculium</h1>
+      <p class="text-center text-sm text-muted-foreground">{t('login.tagline')}</p>
     </div>
     <p class="mb-6 text-center text-sm text-muted-foreground">
       {isRegister ? 'Create an account' : 'Sign in to your account'}

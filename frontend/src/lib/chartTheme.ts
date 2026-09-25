@@ -1,5 +1,5 @@
 /**
- * ECharts theme registration for the VaultLab design system (EPIC D / D.1a).
+ * ECharts theme registration for the Peculium design system (EPIC D / D.1a).
  *
  * The canvas renderer cannot resolve CSS custom properties, so the token
  * triples below are a canvas-safe mirror of `:root` / `.dark` in `src/app.css`
