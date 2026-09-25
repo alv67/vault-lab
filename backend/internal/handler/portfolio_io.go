@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
-	"github.com/alv67/vault-lab/internal/auth"
-	"github.com/alv67/vault-lab/internal/model"
-	"github.com/alv67/vault-lab/internal/service"
+	"github.com/alv67/peculium/internal/auth"
+	"github.com/alv67/peculium/internal/model"
+	"github.com/alv67/peculium/internal/service"
 )
 
 // ExportPortfolio streams a portfolio as a downloadable JSON document.

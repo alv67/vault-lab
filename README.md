@@ -55,13 +55,13 @@ and send the requests in order.
 
 ## Project Status
 
-Releases on [`main`](https://github.com/alv67/vault-lab/tree/main): **v0.1.0** (25 Aug 2026,
+Releases on [`main`](https://github.com/alv67/peculium/tree/main): **v0.1.0** (25 Aug 2026,
 first official release), **v0.2.0** (30 Aug 2026, EPIC A — data correctness & security —
 and EPIC B — geographic/sector distribution, asset classes, FX history, charts) and
 **v0.3.0** (11 Sep 2026, asset editing overhaul and per-country exposure editing with
 Morningstar/JustETF prefill).
 
-Active development on the [`develop`](https://github.com/alv67/vault-lab/tree/develop) branch — see [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md) for the roadmap.
+Active development on the [`develop`](https://github.com/alv67/peculium/tree/develop) branch — see [STATUS.md](STATUS.md) and [PLAN.md](PLAN.md) for the roadmap.
 
 ## License
 

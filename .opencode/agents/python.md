@@ -59,7 +59,7 @@ python-service/
 ## Test & verifica
 
 - Unit test: `cd python-service && python3 -m pytest` (deps in `.venv/` del repo; 17 test).
-- Il container va testato SOLO sullo stack isolato: `docker-compose -p vaultlab-test -f docker-compose.test.yml up -d --build` — MAI sullo stack dev/prod (DB `vaultlab`, porta 8080).
+- Il container va testato SOLO sullo stack isolato: `docker-compose -p peculium-test -f docker-compose.test.yml up -d --build` — MAI sullo stack dev/prod (DB `peculium`, porta 8080).
 - Non inserire test e2e che chiamino JustETF reale in CI/automazione: usa fixture HTML mock.
 
 ## Convenzioni progetto
